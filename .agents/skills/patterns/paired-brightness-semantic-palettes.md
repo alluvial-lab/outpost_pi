@@ -74,10 +74,10 @@ ThemeData buildLightTheme() => _buildTheme(
 }
 ```
 
-## Known drift risks
+## Contract maintenance
 
-- The Dart ports are hand-maintained from `tokens.css` (no generation step);
-  app and cockpit duplicate literal assertions in
-  `app/test/ui/core/themes/app_theme_test.dart:8-33` and
-  `cockpit/test/core/ui/themes/app_theme_test.dart:9-32` with no shared
-  cross-surface fixture.
+- The Dart ports remain hand-maintained from `tokens.css` because app and
+  cockpit intentionally keep native semantic APIs. Their direct shared roles
+  are compared against the checked-in `branding/theme-contract.json` fixture;
+  `scripts/sync-brand-contracts.py --check` rejects stale fixture output before
+  either surface can silently drift.

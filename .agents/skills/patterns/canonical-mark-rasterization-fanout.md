@@ -40,10 +40,11 @@ def render_surface(path: Path, size: int, background: str | None) -> None:
                        ink=DARK_INK, accent=DARK_ACCENT), path)
 ```
 
-## Known drift risks
+## Contract maintenance
 
-- `draw_mark` re-encodes the Constellation III geometry in Python rather than
-  reading the canonical `branding/` SVG described as source of truth in
-  `branding/README.md:4-5`; `site/src/app/opengraph-image.tsx:37-46` embeds
-  the geometry a third time independently. Three encodings of one mark is a
-  future drift surface.
+- `branding/logo-foreground.svg` is the single canonical Constellation III
+  geometry. `scripts/brand_contract.py` validates the full-dark, full-light,
+  monochrome, and banner SVG projections, while the synchronizer emits the
+  checked-in TypeScript projection consumed by the site Open Graph image.
+  `draw_mark` and other consumers therefore reuse validated geometry instead
+  of hand-encoding coordinates.

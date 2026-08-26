@@ -2,6 +2,8 @@
    Claude Design handoff bundle (claude.ai/design). Pure SVG — server-safe. */
 import type { ReactNode } from "react";
 
+import { constellationMark } from "@/generated/constellation_mark.generated";
+
 const S = 2; // stroke width
 
 function Ic({
@@ -33,16 +35,30 @@ function Ic({
 /* brand mark — Constellation III: cursor hub tethered to two peer nodes */
 export function LogoMark() {
   return (
-    <svg viewBox="280 300 510 480" fill="none" aria-hidden="true">
+    <svg viewBox={constellationMark.viewBox} fill="none" aria-hidden="true">
       <path
-        d="M 398 564 L 695 385 M 398 564 L 633 693"
+        d={constellationMark.edgePath}
         stroke="currentColor"
-        strokeWidth="34"
-        strokeLinecap="round"
+        strokeWidth={constellationMark.strokeWidth}
+        strokeLinecap={constellationMark.strokeLinecap}
       />
-      <rect x="314" y="480" width="168" height="168" rx="25" fill="var(--green)" />
-      <circle cx="695" cy="385" r="63" fill="currentColor" />
-      <circle cx="633" cy="693" r="71" fill="currentColor" />
+      <rect
+        x={constellationMark.hub.x}
+        y={constellationMark.hub.y}
+        width={constellationMark.hub.width}
+        height={constellationMark.hub.height}
+        rx={constellationMark.hub.radius}
+        fill="var(--green)"
+      />
+      {constellationMark.peers.map((peer) => (
+        <circle
+          key={`${peer.cx}-${peer.cy}`}
+          cx={peer.cx}
+          cy={peer.cy}
+          r={peer.radius}
+          fill="currentColor"
+        />
+      ))}
     </svg>
   );
 }
