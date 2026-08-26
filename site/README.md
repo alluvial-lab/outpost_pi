@@ -29,7 +29,7 @@ Target domain: <https://outpost-pi.kevoun.com>.
 - ESLint 9
 - Package manager: **pnpm**
 
-Dark-only theme; visual identity lives in `../branding/`.
+Dual-mode theme (dark/light, following system preference by default); visual identity lives in `../branding/`.
 
 ## Commands
 

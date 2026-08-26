@@ -78,7 +78,7 @@ Tailwind's Next.js guide for Tailwind 4 uses `@tailwindcss/postcss` in `postcss.
 Project rules:
 
 - Use Tailwind utility classes and centralized CSS variables/tokens; do not introduce CSS modules or styled-components. [remote-pi-site-guidance]{1}
-- `globals.css` owns the dark palette, typography variables, `@theme inline` token mapping, and shared site classes. [remote-pi-site-app-surface]{1}
+- `globals.css` owns the dual-mode palette, typography variables, `@theme inline` token mapping, and shared site classes. [remote-pi-site-app-surface]{1}
 - Keep the canonical accent/palette stable unless doing explicit design work.
 - Prefer reusable presentational components for repeated callouts/cards/docs shells over copy-pasted class blobs.
 
