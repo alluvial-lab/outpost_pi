@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       protocol: ${{ steps.filter.outputs.protocol }}
+      brand-contract: ${{ steps.filter.outputs.brand-contract }}
       pi-extension: ${{ steps.filter.outputs.pi-extension }}
       rust: ${{ steps.filter.outputs.rust }}
       app: ${{ steps.filter.outputs.app }}
@@ -50,6 +51,15 @@ jobs:
               - 'protocol/**'
               - 'tools/protocol-codegen/**'
               - '.github/workflows/ci.yml'
+            brand-contract:
+              - '.mockups/design-system/tokens.css'
+              - 'branding/logo-foreground.svg'
+              - 'branding/theme-contract.json'
+              - 'scripts/brand_contract.py'
+              - 'scripts/generate-brand-assets.py'
+              - 'scripts/sync-brand-contracts.py'
+              - 'site/src/generated/constellation_mark.generated.ts'
+              - '.github/workflows/ci.yml'
             pi-extension:
               - 'pi-extension/**'
               - 'protocol/**'
@@ -62,14 +72,33 @@ jobs:
             app:
               - 'app/**'
               - 'protocol/**'
+              - '.mockups/design-system/tokens.css'
+              - 'branding/theme-contract.json'
               - 'scripts/run_app_perf_regressions.sh'
               - '.github/workflows/ci.yml'
             cockpit:
               - 'cockpit/**'
+              - '.mockups/design-system/tokens.css'
+              - 'branding/theme-contract.json'
               - '.github/workflows/ci.yml'
             site:
               - 'site/**'
+              - 'branding/logo-foreground.svg'
+              - 'scripts/brand_contract.py'
+              - 'scripts/generate-brand-assets.py'
+              - 'scripts/sync-brand-contracts.py'
               - '.github/workflows/ci.yml'
+
+  brand-contract:
+    name: brand contract (fixture + geometry freshness)
+    needs: changes
+    if: needs.changes.outputs.brand-contract == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check generated brand contracts
+        run: python3 scripts/sync-brand-contracts.py --check
 
   protocol:
     name: protocol (fixtures + codegen checks)
