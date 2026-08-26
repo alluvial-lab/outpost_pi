@@ -1,7 +1,7 @@
 ---
 id: feature-site-test-baseline-computed-style-contract
 kind: story
-stage: implementing
+stage: done
 tags: [site, testing]
 parent: feature-site-test-baseline
 depends_on: []
@@ -105,3 +105,38 @@ This checkpoint establishes the Playwright dependency, config, and `check`
 script that the route smoke checkpoint reuses. Keep the browser scope to
 Chromium; adding projects, visual snapshots, or a broader accessibility suite
 is outside this baseline.
+
+## Implementation run
+
+- Executed inline in the host because this harness exposes no implementation
+  subagent adapter. The feature's site-only write boundary was preserved while
+  unrelated app, cockpit, pi-extension, and relay changes remained untouched.
+- Worker capability recorded from the caller: `openai-codex/gpt-5.6-luna` at
+  `xhigh`; this was a bounded browser-test scaffolding delivery.
+
+## Implementation notes
+
+- Added `site/playwright.config.ts` with one Chromium project, a production
+  `next start` server on `127.0.0.1:3100`, and local-only server reuse
+  (`reuseExistingServer` is disabled when `CI` is set).
+- Added `site/tests/theme-contract.ts` and
+  `site/tests/theme-contract.spec.ts`. The four table-driven partitions use
+  browser-computed custom-property values and a hidden probe element, then
+  calculate WCAG 2.1 contrast ratios from the resolved colors. No screenshots,
+  source-text parsing, or DOM emulation is used.
+- Added the `test` and ordered `check` scripts to `site/package.json`, recorded
+  `@playwright/test` in `site/pnpm-lock.yaml`, and ignored Playwright reports
+  and per-test output in the root `.gitignore`.
+
+## Verification evidence
+
+- `cd site && corepack pnpm lint` — PASS.
+- `cd site && corepack pnpm exec tsc --noEmit` — PASS.
+- `cd site && corepack pnpm build` — PASS.
+- `cd site && corepack pnpm exec playwright install chromium` — PASS; Chromium
+  and its headless shell downloaded successfully and no system dependency
+  failure was reported.
+- `cd site && corepack pnpm exec playwright test theme-contract.spec.ts` —
+  PASS (4 tests across all four required partitions).
+- `cd site && corepack pnpm test` — PASS (18 tests, including the route
+  checkpoint currently present in the working tree).
