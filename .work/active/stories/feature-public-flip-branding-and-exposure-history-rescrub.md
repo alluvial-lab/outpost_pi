@@ -347,3 +347,34 @@ mutation and post-push verification. It remains `implementing`, all acceptance
 boxes remain open, and the parent feature remains `implementing`. The agent must
 not clone/rewrite public refs locally, change branch protection, force-push, or
 push any normal commit on the operator's behalf.
+
+## Prep execution record (2026-08-26, operator-authorized)
+
+Operator authorized full scrub + force-push (sole maintainer). Gate lifted;
+destructive steps sequenced at drain boundary (in-flight workers own local
+main lineage until quiesce).
+
+Verified pipeline (artifacts under /tmp/outpost-rescrub/, disposable):
+- git-filter-repo installed standalone (~/.local/bin).
+- Mirror cloned from origin; guard `--all-public-refs` precondition: 15
+  content hits (192.168.50.x / 100.106.7.x literals across session notes,
+  historical AGENTS.md, herdr-setup.sh, 2 backlog items) + 16 forbidden-path
+  hits (.work/session-notes committed pre-gitignore).
+- Replace rules mirror the guard's own regex with semantic placeholders
+  `<lan-ip>` / `<tailnet-ip>` (matches the tree redaction's placeholder
+  style, commit 82768060).
+- Rewrite = `git-filter-repo --force --replace-text <rules>
+  --path-glob '.work/session-notes/*' --invert-paths` (no --refs: globs
+  no-op'd the first attempt — caught by hash-identity verification).
+- Post-rewrite battery on fresh clone: guard PASS, fsck clean, main lineage
+  single root (import commit), LICENSE/NOTICE blob-identical, heads/tags
+  inventory preserved, tree-diff vs origin main = exactly the one redaction
+  line.
+
+Boundary sequence (pending drain quiesce): land local commits normally →
+freeze → re-run pipeline against landed tip → force-push heads+tags only →
+reset local main → fresh-clone proof → ancestry-CI activation commit.
+
+Residual: GitHub retains pre-rewrite objects via refs/pull/* and API caches;
+cache-removal request to GitHub Support is operator-side (draft provided at
+boundary).
