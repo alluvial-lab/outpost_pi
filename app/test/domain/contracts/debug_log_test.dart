@@ -73,6 +73,7 @@ DebugTag tagOf(DebugEvent event) {
     WorkingConvEvent() => DebugTag.workingConv,
     ReplayDedupEvent() => DebugTag.replayDedup,
     LifecycleFailureEvent() => DebugTag.lifecycleFailure,
+    LayoutModeEvent() => DebugTag.layoutMode,
   };
 }
 

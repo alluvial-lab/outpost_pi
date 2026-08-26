@@ -75,6 +75,7 @@ enum DebugTag {
   workingConv,
   replayDedup,
   lifecycleFailure,
+  layoutMode,
 }
 
 /// Name owner-local async operations without accepting free-form site labels.
@@ -559,6 +560,41 @@ abstract interface class DebugLog implements Service {
   /// Wipe ring + file. Does NOT clear `Preferences.debugLogging` (the toggle
   /// state is separate from the captured data).
   Future<void> clear();
+}
+
+/// Layout-mode transition (two-pane gate). Fired when the shell's two-pane
+/// verdict flips, with the metrics that produced it — catches transient
+/// misreported window sizes (e.g. Fold display switches) as the field cause
+/// of phantom half-screen layouts on phone-class displays.
+final class LayoutModeEvent extends DebugEvent {
+  const LayoutModeEvent({
+    required super.ts,
+    required this.twoPane,
+    required this.widthDp,
+    required this.heightDp,
+    required this.shortestSideDp,
+    required this.devicePixelRatio,
+    this.trigger,
+  }) : super(tag: DebugTag.layoutMode);
+
+  final bool twoPane;
+  final int widthDp;
+  final int heightDp;
+  final int shortestSideDp;
+  final double devicePixelRatio;
+  final String? trigger; // builder / resume / zero-state flip
+
+  @override
+  Map<String, Object?> toJson() => {
+    'tag': tag.name,
+    'ts': ts.toUtc().toIso8601String(),
+    'twoPane': twoPane,
+    'widthDp': widthDp,
+    'heightDp': heightDp,
+    'shortestSideDp': shortestSideDp,
+    'dpr': devicePixelRatio,
+    if (trigger != null) 'trigger': _cap(trigger!),
+  };
 }
 
 /// Add an awaited teardown boundary to a composition-owned [DebugLog].

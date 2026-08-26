@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/config/dependencies.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
@@ -450,6 +451,7 @@ AppRouterOwner buildRouter(
           // placeholder.
           final twoPane =
               canUseTwoPaneLayout(ctx) && !ctx.watch<ShellLayout>().isZeroState;
+          _logLayoutModeTransition(ctx, twoPane);
           final content = !twoPane
               ? children[navShell.currentIndex]
               // On a tablet with asymmetric landscape safe areas, each pane's
@@ -686,4 +688,37 @@ class _BootSplash extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Emit a layoutMode debug event when the two-pane verdict or its driving
+/// metrics change. Field diagnosis for phantom half-screen layouts on
+/// phone-class displays (Fold display-switch timing): the capture shows the
+/// exact window metrics the shell believed at the transition.
+void _logLayoutModeTransition(BuildContext ctx, bool twoPane) {
+  final size = MediaQuery.sizeOf(ctx);
+  final dpr = MediaQuery.devicePixelRatioOf(ctx);
+  final key = (twoPane, size.width, size.height, dpr);
+  if (identical(_lastLayoutKey.value, key)) return;
+  final changed = !identical(_lastLayoutKey.value, key);
+  _lastLayoutKey.value = key;
+  if (!changed && _lastLayoutModeLogged) return;
+  _lastLayoutModeLogged = true;
+  injector
+      .get<DebugLog>()
+      .log(LayoutModeEvent(
+        ts: DateTime.now().toUtc(),
+        twoPane: twoPane,
+        widthDp: size.width.round(),
+        heightDp: size.height.round(),
+        shortestSideDp: size.shortestSide.round(),
+        devicePixelRatio: dpr,
+        trigger: 'shell-builder',
+      ));
+}
+
+final _lastLayoutKey = ValueTupleKey();
+bool _lastLayoutModeLogged = false;
+
+class ValueTupleKey {
+  Object? value;
 }
