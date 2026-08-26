@@ -69,6 +69,7 @@ leaking across files in the same process).
 - Simplification: Removed timing dependence from the shared test helper; no assertions were weakened and no behavioral tests were deleted.
 - Discrepancies from design: The required isolated sync suite now contains 115 tests after the already-folded outbox coverage; no production singleton or Hive lifecycle was changed because the failures reproduced at test completion boundaries.
 - Adjacent issues parked: none.
+- Concurrent-work collision: the outbox worker modified the shared `sync_service.dart`/test surface during this run; this fix stayed test-only and staged no production lifecycle changes.
 
 ## Verification evidence
 - `flutter test --no-pub test/data/sync/sync_service_test.dart --concurrency=2`: passed twice consecutively after the final fix, 115/115 each run.
