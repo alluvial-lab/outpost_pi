@@ -1,7 +1,7 @@
 ---
 id: feature-cruft-consolidated-cleanup
 kind: feature
-stage: review
+stage: done
 tags: [refactor, cleanup]
 parent: null
 depends_on: []
@@ -372,3 +372,21 @@ relay cleanup in `cec28e0c`, and the pi-extension expiry coverage in
 `1dc518a3`; the pi-extension blocker was resolved by the full-suite rerun
 recorded in `2df34e54` (typecheck, 1,102 passed / 3 skipped across 60 Vitest
 files, and build green with no waivers).
+
+## Review closure (2026-08-26)
+
+Standard weight, one independent pass: request-changes with ONE blocker,
+adjudicated CONFIRMED and fixed in-pass — the rewritten pi_forward.rs module
+contract showed an inbound `pi_envelope` example missing the required
+`to_room` field (wire contract: relay/src/protocol/generated/cross_pc.rs;
+runtime rejects empty). Fixed: example now carries `"to_room": "main"`;
+cargo fmt/build re-verified.
+
+All removals verified consumer-free (compat getters, mailbox shim,
+PresenceTransitions, parse_hello); EPK removal behavior-neutral; expiry test
+verified substantive (±1ms fake-time boundaries, fence-removal proof); all
+five design skips independently confirmed. Relay 234 + extension 1102/3
+suites green. App full-suite evidence: rides the pending clean run gated on
+the identity-boot fix (shared evidence with the six pinned app items — not
+duplicated per-feature; the one mid-review dirty-tree run was correctly
+discarded as untrustworthy). Feature done.
