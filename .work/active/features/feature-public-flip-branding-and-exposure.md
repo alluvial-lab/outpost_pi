@@ -1,7 +1,7 @@
 ---
 id: feature-public-flip-branding-and-exposure
 kind: feature
-stage: review
+stage: done
 tags: [branding, security, ops, release]
 parent: null
 depends_on: []
@@ -360,3 +360,28 @@ scripts/check-public-exposure.sh --all-public-refs <temp-mirror>
 - **Guard scope:** patterns that are too broad create noisy false positives;
   patterns that are too narrow miss new private coordinates. Start with the
   confirmed operator subnets/local paths and expand only from verified evidence.
+
+## Review closure (2026-08-26)
+
+Standard one pass; no re-review. Receiver adjudication confirmed and this wave
+fixed all three findings:
+
+- **Blocker:** the merge-only and binary-blob history content-scan gap was fixed
+  by enumerating unique reachable blobs and scanning their contents directly.
+  Pre-fix break-it proofs showed the old guard passed both fixtures; the fixed
+  suite now fails closed on both.
+- **Important:** diagnostics now redact network-pattern matches in identifiers,
+  including path components. The pre-fix filename fixture showed the literal in
+  output; the fixed fixture proves the output remains bounded. The history-story
+  pending prose and acceptance evidence were reconciled against its execution
+  record, with the one unsupported product/brand-content check left honestly
+  unchecked.
+- **Coverage-policy comment:** the existing
+  `idea-public-exposure-broader-network-policy` backlog item remains parked; no
+  new item was created. Its examples use semantic range wording so the current
+  guard's tree and history checks remain clean.
+- **Verification:** 11 fixture assertions pass; `--tree` passes; `--history
+  HEAD` passes in `real 19.42s` (`time -p`); and a fresh 38-ref mirror clone of
+  public origin passes `--all-public-refs` and `git fsck --full`.
+
+Feature stage is `done`.

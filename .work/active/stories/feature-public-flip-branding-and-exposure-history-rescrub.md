@@ -46,21 +46,34 @@ archive refs.
 
 ## Acceptance evidence
 
-- [ ] The rewrite input is a mirror clone of
+Evidence below is taken from the `Prep execution record` and the
+`Execution record` that follows; those records supersede the preparation-state
+notes later in this item.
+
+- [x] The rewrite input is a mirror clone of
   `git@github.com:alluvial-lab/outpost_pi.git`, not this checkout or any local
-  archive branch.
-- [ ] Every public head and tag is accounted for before and after the rewrite;
-  no private local ref appears in the push plan.
-- [ ] The post-rewrite mirror and a fresh post-push public clone have zero
-  forbidden history/tree hits and pass `git fsck --full`.
-- [ ] CI scans both the current tree and branch ancestry after the rewritten
+  archive branch. Evidence: the prep record says the mirror was cloned from
+  origin, and the execution record says the rewrite used a mirror built from
+  origin rather than a local archive ref.
+- [x] Every public head and tag is accounted for before and after the rewrite;
+  no private local ref appears in the push plan. Evidence: the execution record
+  records heads plus 36 tags and an explicit heads-and-tags-only refspec.
+- [x] The post-rewrite mirror and a fresh post-push public clone have zero
+  forbidden history/tree hits and pass `git fsck --full`. Evidence: the
+  execution record records guard PASS and clean fsck on both verification
+  batteries, including the fresh public clone.
+- [x] CI scans both the current tree and branch ancestry after the rewritten
   tip is public; no intermediate committed configuration intentionally fails
-  on the known pre-rewrite hit.
+  on the known pre-rewrite hit. Evidence: the execution record records the
+  ancestry-CI activation on the clean tip with full checkout depth.
 - [ ] The single import root, LICENSE, NOTICE, product name, and canonical brand
-  assets survive unchanged in content.
-- [ ] The operator records the force-push/public-clone verification and the
-  cached-object disposition in this item body. Without that operator action,
-  this checkpoint and its parent feature remain active.
+  assets survive unchanged in content. The execution record evidences the
+  import root and LICENSE/NOTICE blobs, but does not record product-name and
+  canonical-brand-asset content checks; that evidence gap remains explicit.
+- [x] The operator records the force-push/public-clone verification and the
+  cached-object disposition in this item body. Evidence: the execution record
+  records the force-push, fresh-clone proof, and the pending GitHub cache-purge
+  request with old objects still fetchable until purge.
 
 ## Ordering constraint
 
@@ -319,7 +332,11 @@ pre/post `main` objects, ref count, `sha256sum "$REF_MAP"`, fresh-clone check
 results, visibility result, and cache decision below. Do not paste the rule file
 or exposed value. Securely delete `WORKDIR` only after the record is complete.
 
-## Preparation verification
+## Preparation verification (historical; superseded-by-execution-record)
+
+The following bullets record the pre-gate state only. They are
+superseded-by-execution-record and do not describe the current execution
+status.
 
 - `scripts/check-public-exposure.test.sh` and current-tree mode — PASS in the
   prerequisite child (`82768060`).
@@ -333,20 +350,14 @@ or exposed value. Securely delete `WORKDIR` only after the record is complete.
 - Mirror clone, filter-repo, ref mutation, remote push, and fresh public clone —
   NOT RUN; they are the operator gate rather than agent verification.
 
-## Operator execution record
+## Superseded preparation state
 
-Pending. Required fields: execution timestamp; old/new `main`; public ref count;
-ref-map SHA-256 and operator-local path; mirror and fresh-clone scanner/fsck
-results; preserved root/provenance/tree evidence; visibility; branch-protection
-restoration; clone/PR coordination; cached-object disposition.
-
-## Blocker
-
-This checkpoint is intentionally blocked on operator-controlled public-ref
-mutation and post-push verification. It remains `implementing`, all acceptance
-boxes remain open, and the parent feature remains `implementing`. The agent must
-not clone/rewrite public refs locally, change branch protection, force-push, or
-push any normal commit on the operator's behalf.
+The former `Operator execution record` and `Blocker` sections are
+**superseded-by-execution-record** (2026-08-26). They recorded the pre-
+authorization state only: operator fields were pending, public-ref mutation was
+blocked, and the item was described as `implementing`. The execution record
+below is the current status and records the authorized rewrite, force-push, and
+post-push verification.
 
 ## Prep execution record (2026-08-26, operator-authorized)
 
