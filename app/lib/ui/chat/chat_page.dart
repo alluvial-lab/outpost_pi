@@ -94,6 +94,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: context.colors.bg,
       body: SafeArea(
+        // API 35+ draws system bars over the app; retain the stable navigation
+        // inset while Scaffold removes animated IME insets from its body.
+        maintainBottomViewPadding: true,
         child: Column(
           children: [
             _buildTopBar(context, state),
