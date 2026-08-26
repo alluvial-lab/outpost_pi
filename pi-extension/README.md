@@ -133,7 +133,7 @@ when the input is empty) to open the Quick Actions sheet:
 | Action | What it does |
 |---|---|
 | **Compact context** | Runs `ctx.compact()` — same as `/compact` in the TUI. |
-| **New session** | Runs `ctx.newSession()` — equivalent to `/new`, asks for confirmation first. |
+| **New session** | Runs `ctx.newSession()` in an interactive command context — equivalent to `/new`, asks for confirmation first. In daemon/restart-managed mode, it acknowledges and exits with `EXIT_FRESH_SESSION` (`42`) so the supervisor or wrapper relaunches Pi without `--continue`. |
 | **Model** | Opens a model picker fed by your authenticated providers (same source the TUI uses) and switches via `pi.setModel(model)`. |
 | **Thinking** | Segmented control with the 6 SDK levels (`off` · `minimal` · `low` · `medium` · `high` · `xhigh`). Changes via `pi.setThinkingLevel(level)`. |
 

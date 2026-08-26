@@ -1,6 +1,6 @@
 ---
 name: pi-extension-typescript
-description: Remote Pi pi-extension TypeScript/Pi SDK reference. Read before editing or reviewing pi-extension/ code, session lifecycle hooks, relay/room metadata, mesh tools, pairing, or Pi SDK integration.
+description: Outpost-Pi pi-extension TypeScript/Pi SDK reference. Read before editing or reviewing pi-extension/ code, session lifecycle hooks, relay/room metadata, mesh tools, pairing, or Pi SDK integration.
 updated: 2026-08-16
 ---
 
@@ -72,7 +72,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 ## Pi SDK lifecycle quick reference
 
-Pi extension lifecycle facts are load-bearing for Remote Pi and should be checked against the installed Pi extension docs when Pi SDK versions change. [pi-docs-extensions]{1}
+Pi extension lifecycle facts are load-bearing for Outpost-Pi and should be checked against the installed Pi extension docs when Pi SDK versions change. [pi-docs-extensions]{1}
 
 ```ts
 pi.on("session_start", async (event, ctx) => {
@@ -101,10 +101,10 @@ Hooks actually used across the extension include: [remote-pi-index-lifecycle]{1}
 - `message_update`, `tool_execution_start`, `tool_execution_end` — stream assistant/tool telemetry to attached owners.
 - `message_end` — records current user and assistant-text facts as durable `outpost-pi.transcript-event.v1` custom entries before broadcasting their transcript projections; execution hooks remain the sole tool transcript producers.
 - `agent_end` — finalizes `agent_done`.
+- `agent_settled` — flushes admitted mesh ingress after retries, compaction, and queued continuations settle; it is also the hot-reload restart boundary.
 - `turn_start` / `turn_end` — publish `room_meta.working`.
 - `session_before_compact` / `session_compact` — bracket compact working-state and record the durable `compaction_recorded` transcript entry before live visibility.
 - `session_start` / `session_shutdown` — capture the freshest session-bound context and tear down stale outgoing instance. These are registered in `pi-extension/src/extension/composition_root.ts` via `registerLifecycleHooks(pi, ports, ...)`, not directly in `src/index.ts`; `index.ts` is the composition entrypoint that wires the `OutpostPiRuntimePorts` seam and invokes `registerLifecycleHooks`.
-- `session_shutdown` — tear down stale outgoing instance.
 
 Session action helpers use `ctx.compact()`, `ctx.newSession({ withSession })`, `ctx.getModel()`, `ctx.abort()`, `pi.setModel(model)`, `pi.setThinkingLevel(level)`, and `SettingsManager.create(cwd)`. `ctx.getModel()` is used defensively in source even though it is less prominently documented than core lifecycle hooks; verify SDK types before changing that call path. [remote-pi-index-lifecycle]{1}
 
@@ -120,7 +120,7 @@ Session replacement order from Pi docs:
 
 `/fork` and `/clone` similarly emit `session_shutdown` then `session_start` with `reason: "fork"`. Treat all captured command/event contexts as session-scoped, not process-global.
 
-## Remote Pi state boundaries
+## Outpost-Pi state boundaries
 
 Important files:
 
@@ -166,7 +166,7 @@ Rules:
 - publish `working: false` on `turn_end`, compaction completion, abort/error cleanup, and session teardown/reconnect hydration where applicable;
 - remember that `compact()` does not run a normal turn, so compaction needs manual `working` brackets;
 - remember that `session_compact` does not flow through `message_end`; record a durable `compaction_recorded` v1 transcript entry so `session_sync` and process reopen replay the same marker;
-- in daemon/RPC mode, `session_new` can acknowledge, reset the mirror, and exit with `EXIT_DAEMON_FRESH_SESSION` (`42`) so the supervisor respawns a fresh Pi session; do not accidentally turn this into an in-process session switch without preserving the daemon contract; [remote-pi-index-lifecycle]{1} [remote-pi-rpc-child]{1}
+- in daemon/RPC or restart-wrapper mode, `session_new` can acknowledge, reset the mirror, and exit with `EXIT_FRESH_SESSION` (`42`) so the supervisor or wrapper respawns a fresh Pi session without `--continue`; do not accidentally turn this into an in-process session switch without preserving the restart contract; [remote-pi-index-lifecycle]{1} [remote-pi-rpc-child]{1}
 - cache the latest room meta so reconnect hello carries current state;
 - test dropped/replayed update scenarios and app hydration behavior before assuming the UI will self-correct.
 

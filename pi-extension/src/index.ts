@@ -2335,8 +2335,9 @@ async function _cmdJoin(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void
  * sender-specific responses (cancelled, pong, session_history) flow back
  * through the right wire instead of being broadcast.
  *
- * Broadcast messages (user_input mirror, agent_chunk, tool_*) still fan out
- * through OwnerMultiplexer from the SDK event handlers; this router only
+ * Broadcast messages (user_input mirror, agent_chunk, and SDK-originated
+ * tool_*) still fan out through OwnerMultiplexer; the agent-network delivery
+ * helper also emits its own tool_request/tool_result pair. This router only
  * handles incoming app→pi requests.
  */
 function _abortCurrentTurn(
