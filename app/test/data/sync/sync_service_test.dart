@@ -2556,13 +2556,19 @@ void main() {
     () async {
       final s = await setup();
       s.ch.push(UserInput(id: 'u9', text: 'from terminal'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.streaming?.inReplyTo == 'u9',
+        reason: 'the foreign echo to seed its cursor',
+      );
       expect(s.sync.streaming, isNotNull, reason: 'cursor before any chunk');
       expect(s.sync.streaming!.buffer, isEmpty);
 
       // Turn produces no text (e.g. only tool calls) → done still clears it.
       s.ch.push(AgentDone(inReplyTo: 'u9'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.streaming == null,
+        reason: 'the text-less turn to clear its cursor',
+      );
       expect(s.sync.streaming, isNull, reason: 'done clears the cursor');
       s.conn.dispose();
       s.sync.dispose();
@@ -2572,9 +2578,15 @@ void main() {
   test('cursor: a chunk appends onto the seeded empty buffer', () async {
     final s = await setup();
     s.ch.push(UserInput(id: 'u1', text: 'hi'));
-    await _settle();
+    await _waitUntil(
+      () => s.sync.streaming?.inReplyTo == 'u1',
+      reason: 'the user echo to seed its cursor',
+    );
     s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'tok'));
-    await _settle();
+    await _waitUntil(
+      () => s.sync.streaming?.buffer == 'tok',
+      reason: 'the chunk to append to the seeded cursor',
+    );
     expect(s.sync.streaming!.buffer, 'tok', reason: 'appended, not replaced');
     s.conn.dispose();
     s.sync.dispose();
