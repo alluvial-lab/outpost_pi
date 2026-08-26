@@ -11,6 +11,22 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ## [Unreleased]
 
+## [v0.8.1] — 2026-08-26
+
+Patch lane (first two-lane cut). One fix, three candidates.
+
+### Fixed
+- **Folded viewport after pane collapse (Pixel Fold)** — folding the
+  device with a focused field left a ghost keyboard inset; the
+  pane-collapse boundary now hides the IME and passes the system's own
+  MediaQuery through untouched (API 35+ edge-to-edge: SafeArea is the only
+  inset authority). Candidate history: rc.1 zeroed system-bar padding
+  (fullscreen regression), rc.2 hand-rebuilt padding and created a second
+  inset authority (ghost nav bar over the composer) — rc.3 deleted the
+  manual math; one regression family pins all three modes. Operator
+  UAT-verified on rc.3; post-pass capture clean (oracles green, zero
+  supersede all day).
+
 ## [v0.8.0] — 2026-08-25
 
 ### Fixed
