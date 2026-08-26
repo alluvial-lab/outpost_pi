@@ -7,14 +7,16 @@ Pillow rasterizer (see below) — no external converter required.
 ## Identity story
 
 An independent Alluvial-Lab product: **the beacon is lit** — a muted terminal
-phosphor green against cool graphite, spoken entirely in Space Mono. The mark
+phosphor green against cool graphite, spoken in a mono-native voice with Space
+Mono across product surfaces. The mark
 is **Constellation III**: the operator's block cursor (phosphor) tethered to
 two peer nodes (ink) — your session, your agents, one mesh. The block hub
 deliberately breaks the share-icon/three-circles pattern; the asymmetric
 spread keeps it a live system, not a diagram.
 
 Sibling separation: Patchbay owns amber-phosphor/warm-panel + IBM Plex;
-Outpost-Pi owns green-phosphor/cool-graphite + Space Mono. No shared tokens.
+Outpost-Pi owns green-phosphor/cool-graphite + Space Mono across product
+surfaces. No shared tokens.
 
 ## Palette
 
@@ -35,7 +37,10 @@ All pairings WCAG-AA verified in both modes. Full token set:
 
 ## Typography
 
-**Console Mono — Space Mono everywhere** (400/700 + italic 400; Google Fonts).
+**Console Mono — Space Mono across product surfaces** (400/700 + italic 400;
+Google Fonts). The generated banner PNG uses the approved Noto Sans Mono
+fallback because Space Mono is not installed on the build VM; the SVG source
+and product surfaces retain the Space Mono contract.
 Wordmark: `outpost_pi` — Space Mono 700, lowercase, letter-spacing ~0.01em
 (the literal mesh name). Tagline voice: "your agents, in your pocket — the
 beacon is lit."
@@ -71,7 +76,7 @@ with LANCZOS. Standard exports:
 | Android monochrome | 432×432 | monochrome |
 | Favicon | 32/16 | full-dark |
 | npm/README logo | 512×512 | full-dark |
-| Banner PNG | 1280×640 | banner.svg (text needs Space Mono present, or convert wordmark to paths first) |
+| Banner PNG | 1280×640 | banner.svg (source text uses Space Mono; the current VM-derived PNG uses the approved Noto Sans Mono fallback) |
 
 ## Updates
 

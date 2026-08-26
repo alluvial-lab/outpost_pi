@@ -86,7 +86,7 @@ release binding.
 
 ## [v0.5.0] — 2026-08-15
 
-Brand identity **v2.0 — Phosphor Beacon** lands across every surface, the repo goes **public**, and the dependency backlog is drained. Dark-native `#0D1210` / light `#F3F6F3`, accent `#74CC9C`/`#256E47` (AA-verified both modes), **Constellation III** mark, **Space Mono** everywhere; design-token contract in `.mockups/design-system/tokens.css`. **No wire-protocol changes.** Deploy: re-sideload app, reinstall cockpit, redeploy site + relay image (dep bumps only for relay). *(Substrate note: tag was cut before the release flow ran; this entry and the `.work/releases/v0.5.0/` record are a retroactive binding. Post-tag hotfixes — gradle wrapper committed for fresh clones/CI, VM-specific gradle tmpdir removed from the repo — land with the next release.)*
+Brand identity **v2.0 — Phosphor Beacon** lands across every surface, the repo goes **public**, and the dependency backlog is drained. Dark-native `#0D1210` / light `#F3F6F3`, accent `#74CC9C`/`#256E47` (AA-verified both modes), **Constellation III** mark, **Space Mono** across product surfaces; the generated banner PNG uses the approved Noto Sans Mono fallback on the build VM; design-token contract in `.mockups/design-system/tokens.css`. **No wire-protocol changes.** Deploy: re-sideload app, reinstall cockpit, redeploy site + relay image (dep bumps only for relay). *(Substrate note: tag was cut before the release flow ran; this entry and the `.work/releases/v0.5.0/` record are a retroactive binding. Post-tag hotfixes — gradle wrapper committed for fresh clones/CI, VM-specific gradle tmpdir removed from the repo — land with the next release.)*
 
 ### Brand
 - **Icon regeneration sweep** — Constellation III regenerated across every surface (Android adaptive set, iOS AppIcon, cockpit macOS/Windows/Linux/web, site favicon + logos) via the Pillow rasterizer; 33/33 asset hashes differ from upstream art.
@@ -661,7 +661,7 @@ no tag; `0.1.0` is its first tracked release.
 - Relay mesh auth cache reverified.
 - Relay control-frame fanout capped.
 
-## [v0.5.0] — 2026-06-29 (repo)
+## [v0.5.0-pre-rebrand] — 2026-06-29 (repo)
 
 Repo-level cross-component release over `v0.4.0`. Captures work that doesn't
 belong to a single component: the agent-reference surface, the adversarial
