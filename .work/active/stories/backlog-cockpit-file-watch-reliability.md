@@ -1,7 +1,7 @@
 ---
 id: backlog-cockpit-file-watch-reliability
 kind: story
-stage: drafting
+stage: implementing
 tags: [cockpit, lifecycle]
 parent: null
 depends_on: []
