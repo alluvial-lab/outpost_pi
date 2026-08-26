@@ -97,6 +97,11 @@ Version-paired changes that break across mixed versions:
   sealed `outer.ct` frames post-pairing, AEAD as the security boundary.
   Re-pairing is the recovery path for key loss. Relay untouched (`ct` stays
   opaque).
+- **Recoverable owner delivery** (`app ↔ extension`, deploy together): the app
+  persists each unconfirmed `user_message` before channel send; an extension
+  restart fence returns `delivery_retry` without SDK delivery, and the app
+  retries the original id only after fresh room/session confirmation. This is
+  durable at-least-once recovery, not exactly-once delivery. Relay untouched.
 - **Storage/keyring/launchd identifiers** (v0.1.0, destructive): Hive boxes
   `dev.outpostpi.*`, keyring `dev.outpostpi.pi`, launchd `dev.outpostpi.supervisord`,
   QR scheme `outpostpi://`, env `OUTPOST_PI_*`/`OUTPOSTPI_*`. Old-label daemon

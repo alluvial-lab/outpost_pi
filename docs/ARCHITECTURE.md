@@ -75,7 +75,9 @@ with ViewModels + states.
   `epk_encoding`, `channel`.
 - `data/sync/` — `sync_service` gates server messages by canonical session,
   converts `session_history` snapshots into transcript events, and replays them
-  idempotently into the append-only store; `sync_events` carries sync deltas.
+  idempotently into the append-only store; it also recovers unconfirmed owner
+  submissions from the encrypted room-scoped outbox after authoritative live
+  room/session hydration. `sync_events` carries sync deltas.
 - `data/mesh/` — `mesh_client`, `mesh_sync_service`, `mesh_blob`,
   `mesh_envelope` (cross-PC app-side state).
 - `data/local/` — Hive boxes + records (`message_record`, `runtime_record`,
@@ -256,7 +258,9 @@ Invariants every surface must hold:
   reconnect, and shutdown — not only on success.
 - **Reconnect hydration** re-applies state without duplicating or dropping
   messages; stale events from a prior session must not overwrite the current
-  view (the contamination vector).
+  view (the contamination vector). Unconfirmed owner submissions remain in the
+  app's encrypted outbox until a matching target-session confirmation is
+  durable; recovery reuses the stable id and waits for fresh room liveness.
 - **Flutter async UI** uses mounted guards after `await`; ViewModels and
   subscriptions close on their lifecycle boundary.
 - **WebSockets, timers, spawned processes, and stream subscriptions** have an
@@ -270,11 +274,17 @@ rather than replacing the active message box.
 
 ## Data flow (send a prompt, end to end)
 
-1. App `chat_viewmodel` → `ClientMessage.user_message` → `ws_transport` →
-   relay WS.
+1. App `chat_viewmodel` → `sync_service`, which records the optimistic
+   transcript fact and persists a recoverable outbox intent before constructing
+   `ClientMessage.user_message` → `ws_transport` → relay WS. If outbox
+   persistence fails, the app fails visibly and does not create an untracked
+   channel send.
 2. Relay forwards by room to the paired pi-extension's WS.
 3. Extension `session/bridge` maps to a Pi SDK `sendUserMessage` call
-   (multimodal: images → text order).
+   (multimodal: images → text order). A restart fence instead returns
+   `delivery_retry` before SDK handoff; after successor-room hydration the app
+   retargets the durable entry and retries the original id. This is
+   at-least-once recovery and may repeat intent across a hard crash boundary.
 4. Pi streams `agent_chunk`s; bridge emits `ServerMessage.agent_chunk` → relay
    → app `sync_service` → `chat_viewmodel` → streaming bubble.
 5. Tool calls emit `tool_request`; `tool_result` follows. (Approval is

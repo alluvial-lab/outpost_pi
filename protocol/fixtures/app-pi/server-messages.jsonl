@@ -12,6 +12,7 @@
 {"type":"tool_result","tool_call_id":"tool-1","result":"/repo"}
 {"type":"tool_result","tool_call_id":"tool-2","error":"failed"}
 {"type":"error","in_reply_to":"msg-2","code":"session_mismatch","message":"stale session"}
+{"type":"error","in_reply_to":"msg-retry","session_id":"sdk-session-1","code":"delivery_retry","message":"receiver is restarting; retry after fresh room confirmation"}
 {"type":"cancelled","in_reply_to":"cancel-1","target_id":"msg-1"}
 {"type":"pong","in_reply_to":"ping-1"}
 {"type":"bye","reason":"peer_stop"}
