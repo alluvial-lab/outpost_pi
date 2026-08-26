@@ -1,8 +1,10 @@
 ---
 id: backlog-mobile-new-button-newsession-no-command-ctx
 created: 2026-08-03
-updated: 2026-08-04
+updated: 2026-08-26
 tags: [app, pi-extension, bug]
+status: superseded
+superseded_by: feature-mobile-slash-command-invocation (active) — names this item as origin; groom 2026-08-26
 ---
 
 # Mobile "New" button: "newSession unavailable (no command ctx yet)"

@@ -1,8 +1,10 @@
 ---
 id: idea-app-sync-service-suite-flakes
 created: 2026-08-22
-updated: 2026-08-22
+updated: 2026-08-26
 tags: [app, testing]
+status: duplicate
+duplicate_of: gate-security-combined-app-verification-flaky (active) — same test-isolation investigation; evidence folded there; groom 2026-08-26
 ---
 
 # Stabilize sync-service assertions under the full Flutter suite
