@@ -24,7 +24,11 @@ import {
   REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS,
   reachabilityBackoffMs,
 } from "../reachability/reachability_contract.js";
-import type { RelayClient, RoomMeta } from "../transport/relay_client.js";
+import {
+  RoomAlreadyOpenError,
+  type RelayClient,
+  type RoomMeta,
+} from "../transport/relay_client.js";
 import {
   appendRelayDispatchOverflowAudit,
   type RelayDispatchOverflowAudit,
@@ -473,15 +477,38 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     }, delayMs);
   }
 
+  /**
+   * Observe the client while authentication is in flight. A link rebind can
+   * close a socket between `connect()` resolving and transport binding; that
+   * close would otherwise be emitted before the reconnect owner is listening.
+   */
+  async function connectRelay(
+    nextRelay: RelayClient,
+    options: { roomId?: string; roomMeta?: RoomMeta },
+  ): Promise<void> {
+    let closedDuringConnect = false;
+    const onClose = (): void => { closedDuringConnect = true; };
+    nextRelay.on("close", onClose);
+    try {
+      await nextRelay.connect(options);
+    } finally {
+      nextRelay.off("close", onClose);
+    }
+    if (closedDuringConnect) {
+      throw new Error("relay closed while connecting");
+    }
+  }
+
   async function attemptReconnect(): Promise<void> {
     if (status() === "disconnected" || !relayUrl || !keypair) return;
     const nextRelay = deps.createRelay(deps.toWebSocketUrl(relayUrl), keypair);
     try {
-      await nextRelay.connect({
+      await connectRelay(nextRelay, {
         ...(roomId ? { roomId } : {}),
         ...(roomMeta ? { roomMeta } : {}),
       });
     } catch {
+      nextRelay.close();
       if (status() !== "disconnected") scheduleReconnect();
       return;
     }
@@ -505,17 +532,9 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     if (!input.keypair) throw new Error("outpost-pi identity not loaded");
     stopping = false;
     clearReconnectTimer();
-    const nextRelay = deps.createRelay(deps.toWebSocketUrl(input.relayUrl), input.keypair);
-    await nextRelay.connect({ roomId: input.roomId, roomMeta: input.roomMeta });
-    if (input.isDisposed?.()) {
-      nextRelay.close();
-      throw new RelayStartAbortedError();
-    }
-    if (relay) {
-      unbindRelay(relay);
-      relay.close();
-    }
-    relay = nextRelay;
+    // Publish retry configuration before the first socket attempt. Boot often
+    // races the network path (notably a tailnet rebind); a transient first
+    // failure must enter the same indefinite reconnect loop as a later close.
     relayUrl = input.relayUrl;
     keypair = input.keypair;
     roomId = input.roomId ?? null;
@@ -523,6 +542,48 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     isDisposed = input.isDisposed ?? null;
     onUnexpectedClose = input.onUnexpectedClose ?? null;
     onConnected = input.onConnected ?? null;
+    reconnectAttempt = 0;
+
+    const nextRelay = deps.createRelay(deps.toWebSocketUrl(input.relayUrl), input.keypair);
+    try {
+      await connectRelay(nextRelay, { roomId: input.roomId, roomMeta: input.roomMeta });
+    } catch (error) {
+      nextRelay.close();
+      if (input.isDisposed?.()) {
+        relayUrl = null;
+        keypair = null;
+        roomId = null;
+        roomMeta = null;
+        throw new RelayStartAbortedError();
+      }
+      // A duplicate room is a stable operator error, not a network outage.
+      // Preserve the command-surface behavior and do not retry it.
+      if (error instanceof RoomAlreadyOpenError) {
+        relayUrl = null;
+        keypair = null;
+        roomId = null;
+        roomMeta = null;
+        emitRelayState(true);
+        throw error;
+      }
+      relay = null;
+      scheduleReconnect();
+      emitRelayState(true);
+      return { roomId: input.roomId };
+    }
+    if (input.isDisposed?.()) {
+      nextRelay.close();
+      relayUrl = null;
+      keypair = null;
+      roomId = null;
+      roomMeta = null;
+      throw new RelayStartAbortedError();
+    }
+    if (relay) {
+      unbindRelay(relay);
+      relay.close();
+    }
+    relay = nextRelay;
     reconnectAttempt = 0;
     bindRelay(nextRelay);
     if (onConnected) void onConnected(nextRelay);

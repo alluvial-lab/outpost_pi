@@ -1,7 +1,7 @@
 ---
 id: backlog-ext-broker-no-reconnect-after-boot-tailscale-rebind
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, bug]
 parent: null
 depends_on: []
@@ -43,3 +43,13 @@ Remediation at the time: full agent restart via `scripts/refresh-dist.sh`
 (fresh brokers connected; see session notes). Related resilience theme:
 `.work/backlog/backlog-app-reconnect-churn-timeout-lifecycle-failures.md`
 (app side, diagnosed 2026-08-22).
+
+## Implementation notes
+- Execution capability: inline current-session implementation; bounded transport lifecycle bug with an explicit reconnect regression.
+- Review weight: standard (source: caller default); bounded inline review completed after the owning suite passed.
+- Files changed: `pi-extension/src/extension/relay_transport.ts`, `pi-extension/src/extension/relay_transport.test.ts`.
+- Tests added/removed: deterministic tests for transient initial-connect failure and a close during boot connect; both assert retry and eventual connected status.
+- Simplification: reused the existing reconnect scheduler for boot failures instead of adding a second retry loop.
+- Discrepancies from design: the defect was in the shared relay transport startup race, not the local UDS Broker; the fix covers both boot-time network failure and a close emitted before transport binding.
+- Adjacent issues parked: none.
+- Verification: `corepack pnpm typecheck`; `corepack pnpm test` (60 files, 1100 passed, 3 skipped); `corepack pnpm build`; targeted relay transport suite (21 passed).
