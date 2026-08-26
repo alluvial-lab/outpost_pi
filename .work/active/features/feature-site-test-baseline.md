@@ -1,7 +1,7 @@
 ---
 id: feature-site-test-baseline
 kind: feature
-stage: review
+stage: done
 tags: [site, testing]
 parent: null
 depends_on: []
@@ -314,3 +314,13 @@ integration rather than separate worker assignments.
 
 The feature is implementation-complete and eligible for the standard feature
 review. No implementation blocker remains.
+
+## Review closure (2026-08-26)
+
+Standard weight, one independent pass: **approve**, no blockers, no important
+findings. Verified: computed-style probes resolve real cascade values; WCAG
+ratios computed from resolved colors (spot-check 9.774 vs 4.5); four-partition
+matrix exercises data-theme precedence; SITE_ROUTES matches the 14-route
+filesystem truth; CI fails closed (&&-chain, no server reuse). One nit noted,
+no action: pre-existing `next start` standalone-output warning (predates this
+feature). Feature done.
