@@ -1,7 +1,7 @@
 ---
 id: feature-site-test-baseline-route-smoke-and-workflow
 kind: story
-stage: implementing
+stage: done
 tags: [site, testing]
 parent: feature-site-test-baseline
 depends_on: [feature-site-test-baseline-computed-style-contract]
@@ -91,3 +91,40 @@ export async function assertRouteRenders(
 Wait for the computed-style checkpoint's runner/config and package scripts.
 This story owns the CI workflow edit and route test only after that harness is
 available; it must not introduce a second runner or duplicate server setup.
+
+## Implementation run
+
+- Executed inline in the host after the computed-style checkpoint reached
+  `done`; no implementation subagent adapter is available in this harness.
+- Worker capability recorded from the caller: `openai-codex/gpt-5.6-luna` at
+  `xhigh`; the route and workflow changes reused the existing Playwright
+  ownership boundary.
+
+## Implementation notes
+
+- Added `site/tests/routes.spec.ts` with one independent production-server
+  smoke test for each explicit route. Each test waits for
+  `domcontentloaded`, then checks only the route's 200 response, non-empty
+  title, and visible `main` element, with the route included in diagnostics.
+- Derived the inventory from the current App Router page files rather than the
+  design count: `find site/src/app -type f -name page.tsx | sort` returned the
+  root page plus thirteen nested page files, yielding the fourteen routes in
+  `SITE_ROUTES`. The build-only `/_not-found` and asset endpoints were not page
+  routes and were intentionally excluded from this baseline.
+- Updated `.github/workflows/ci.yml` to install only Chromium with
+  `pnpm exec playwright install --with-deps chromium` and run the single
+  `pnpm check` entry after frozen dependency installation. The site timeout was
+  increased to 20 minutes for the production build and browser suite.
+
+## Verification evidence
+
+- `cd site && corepack pnpm exec playwright test routes.spec.ts` — PASS (14
+  route tests, one per inventory entry).
+- `cd site && corepack pnpm check` with a temporary Corepack pnpm shim on PATH —
+  PASS (lint, production build, and all 18 Chromium tests). The environment
+  does not provide a global `pnpm` executable, so the temporary shim made the
+  checked-in `pnpm check` script executable without changing repository state.
+- `pnpm exec playwright install --with-deps chromium` is the checked-in CI
+  command; local Chromium installation with
+  `corepack pnpm exec playwright install chromium` passed earlier without a
+  system-dependency error.
