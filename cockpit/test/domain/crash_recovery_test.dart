@@ -5,6 +5,7 @@ import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
 import 'package:cockpit/app/core/data/hive_box_opener.dart';
 import 'package:cockpit/app/core/ui/bootstrap_error_screen.dart';
+import 'package:cockpit/main.dart' as cockpit_main;
 import 'package:cockpit/app/core/utils/spawn_directory.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -67,6 +68,35 @@ void main() {
     expect(find.text('Cockpit could not start'), findsOneWidget);
     expect(find.textContaining('locked'), findsOneWidget);
   });
+
+  testWidgets(
+    'bootstrap wiring catches exhausted store retries without an unhandled throw',
+    (tester) async {
+      var attempts = 0;
+
+      Future<Object?> openStore(String _) async {
+        attempts++;
+        throw const FileSystemException('locked');
+      }
+
+      await expectLater(
+        cockpit_main.runCockpit(
+          bootstrap: () => cockpit_main.bootstrapCockpit(
+            preflight: () async {},
+            openStore: openStore,
+            retryAttempts: 3,
+            retryDelay: Duration.zero,
+          ),
+        ),
+        completes,
+      );
+      expect(attempts, 3);
+
+      await tester.pump();
+      expect(find.text('Cockpit could not start'), findsOneWidget);
+      expect(find.textContaining('locked'), findsOneWidget);
+    },
+  );
 }
 
 final class _Gateway implements TerminalGateway, TerminalSpawnDirectory {
