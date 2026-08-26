@@ -2977,7 +2977,10 @@ void main() {
           ts: liveTs,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).any((row) => row.id == 'local_user1'),
+        reason: 'live user_input projection',
+      );
       final afterLive = messages(
         s.epk,
       ).where((r) => r.role == MsgRole.user).length;
@@ -2987,8 +2990,9 @@ void main() {
       // scheme this would add a SECOND event-store row (incompatible
       // eventIds). With deterministic identity it collapses (and the
       // projection guard dedupes by id regardless).
-      s.ch.push(
+      await s.sync.debugApplyHistory(
         SessionHistory(
+          sessionId: s.sessionId,
           inReplyTo: 'sync1',
           sessionStartedAt: 0,
           events: const [
@@ -3001,7 +3005,6 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
 
       final userRows = messages(
         s.epk,
