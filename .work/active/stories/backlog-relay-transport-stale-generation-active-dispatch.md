@@ -50,5 +50,6 @@ generation's handler remains unresolved.
 - Simplification: used one per-binding `AbortController` shared by data/control dispatch rather than adding a second stale-work queue or global retry policy.
 - Discrepancies from design: chose cooperative generation-owned cancellation over a global stale-dispatch cap; transport releases retained cells immediately while production owner handling fences side effects at async boundaries.
 - Adjacent issues parked: none.
+- Parallel-work collision: a later fresh-session lifecycle worker modified `pi-extension/src/index.ts` and E2E host support after this story's commit; the files were not staged or overwritten. The dirty index change is disjoint from the signal edits and is left for that worker.
 - Verification: `corepack pnpm typecheck`; `corepack pnpm test` (60 files, 1102 passed, 3 skipped); `corepack pnpm build`; targeted relay transport suite (22 passed).
 - Bounded inline review: pass; each relay binding owns one abort controller, unbind aborts before releasing active accounting, stale fanout is suppressed, and owner reattach checks the signal after awaited gates. No material blockers.
