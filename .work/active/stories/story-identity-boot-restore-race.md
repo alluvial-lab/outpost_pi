@@ -1,7 +1,7 @@
 ---
 id: story-identity-boot-restore-race
 kind: story
-stage: implementing
+stage: done
 tags: [app, security, bug]
 parent: null
 depends_on: []
@@ -51,5 +51,12 @@ timing first. Related: `feature-owner-identity-transition`,
 - Regression coverage now asserts that zero grace performs only the initial read and final read-before-save fence (two loads) and never subscribes to `watch()`.
 - Targeted evidence: both PairingPage widget tests passed in 4 seconds (2 tests), and the complete Owner identity bridge suite passed (15 tests), including late event restore, silent polling restore, and read-before-save coverage. `flutter analyze` passed with no issues.
 
-## Blocker
+## Prior blocker (resolved)
 - The required final full-suite gate remains red, so this story stays `stage: implementing`. With the parallel review worker's stale Flutter process gone and this final tree, an exact `flutter test --exclude-tags e2e --concurrency=2` run reached the end with 975 passes and one load-sensitive behavior assertion failure in `sync_service_test.dart` (`clearActiveSession resets the in-memory turn state`). Its exact serial rerun passed, as did earlier serial reruns of the two original sync failures, but the required concurrent command itself is not green and is not waived. The PairingPage hang is resolved and no longer contributes to the blocker.
+
+## Closure (2026-08-26)
+- Review verdict: PASS; production boot retains the bounded 3-second restore grace, silent polling/event restore paths, final read-before-save fence, and zero-grace deterministic bypass used by already-local test fixtures.
+- Stage: `done`.
+- Focused verification: `test/pairing/owner_identity_bridge_test.dart` — 15/15 passed; PairingPage pair-flow tests — 2/2 passed in `test/ui/pairing/pairing_viewmodel_test.dart`.
+- Shared full-suite evidence: `flutter test --exclude-tags e2e --concurrency=2` — 976/976 passed on the quiescent machine (commits `cfa060b5..64614030`; the earlier PairingPage hang was fixed in `7000f226`).
+- Unmet acceptance criteria: none. No platform restore-complete API was invented; the documented bounded-grace fallback remains the intended implementation.
