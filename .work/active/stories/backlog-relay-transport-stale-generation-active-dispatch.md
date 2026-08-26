@@ -1,7 +1,7 @@
 ---
 id: backlog-relay-transport-stale-generation-active-dispatch
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, security]
 parent: null
 depends_on: []
@@ -51,3 +51,4 @@ generation's handler remains unresolved.
 - Discrepancies from design: chose cooperative generation-owned cancellation over a global stale-dispatch cap; transport releases retained cells immediately while production owner handling fences side effects at async boundaries.
 - Adjacent issues parked: none.
 - Verification: `corepack pnpm typecheck`; `corepack pnpm test` (60 files, 1102 passed, 3 skipped); `corepack pnpm build`; targeted relay transport suite (22 passed).
+- Bounded inline review: pass; each relay binding owns one abort controller, unbind aborts before releasing active accounting, stale fanout is suppressed, and owner reattach checks the signal after awaited gates. No material blockers.
