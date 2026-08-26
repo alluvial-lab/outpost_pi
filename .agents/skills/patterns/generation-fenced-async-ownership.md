@@ -2,12 +2,14 @@
 
 ## Rationale
 
-A mobile lifecycle can change while an awaited storage, transport, or platform
-operation is in flight. The owner records a monotonically increasing generation
+A mobile or transport lifecycle can change while an awaited storage, transport,
+or platform operation is in flight. The owner records a monotonically increasing generation
 before starting the operation, invalidates it on replacement or disposal, and
-checks it again before each side effect. This prevents stale completions from
-installing subscriptions, publishing state, sending to a replacement session, or
-writing a newer owner's cache.
+checks it again before each side effect. A transport may pair that predicate
+with an `AbortController`: abort actively tells handler-owned I/O to stop, while
+the generation/current check remains the authority that suppresses stale
+completions. This prevents stale work from installing subscriptions, publishing
+state, sending to a replacement session, or writing a newer owner's cache.
 
 ## When to use
 
@@ -103,6 +105,43 @@ if (!current()) return false;
 The member and deletion loops at the same anchor repeat `current()` checks
 before each mutation and after every awaited save/delete, ending with
 `return current();`.
+
+### Owner outbox send fences persistence and channel replacement
+
+**File:** `app/lib/data/sync/sync_service.dart:520-539,588-595`
+
+```dart
+await _ownerDeliveryOutbox.upsert(delivery);
+if (!_isCurrentLifecycle(generation, ref) ||
+    !identical(_conn.channel, initialChannel) ||
+    (!held && !_conn.isRoomLive(ref.peerEpk, ref.roomId))) {
+  _retainReconnectRacedSend(/* ... */);
+  return;
+}
+```
+
+The send captures both lifecycle generation and channel before awaited outbox
+persistence, then revalidates them before choosing a channel write. A reconnect
+cannot turn a durable intent into an untracked send on a dead or replacement
+socket.
+
+### Relay dispatch pairs AbortSignal with a current-generation predicate
+
+**File:** `pi-extension/src/extension/relay_transport.ts:219-222,247,331-337`
+
+```ts
+function connectionIsCurrent(binding: RelayBinding): boolean {
+  return relayBinding?.generation === binding.generation &&
+    relay === binding.relay && !stopping && !isDisposed?.();
+}
+
+const dispatchAbort = new AbortController();
+// on unbind: dispatchAbort.abort(); queued work is released
+```
+
+Each relay binding owns a generation and abort signal. Unbinding aborts active
+handler I/O and releases queued work; handlers still receive
+`connectionIsCurrent` so a late completion cannot publish stale effects.
 
 ## Common violations
 
