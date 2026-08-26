@@ -2412,10 +2412,25 @@ describe("multi-channel broadcast (W2D)", () => {
       await flushSecureOutbound();
 
       const beforeSettlement = sentToPeerSince(sendsBefore, peer).map((sent) => sent.inner);
-      expect(beforeSettlement.some((message) => message.type === "user_input")).toBe(false);
+      const preSettlementConfirmation = beforeSettlement.find(
+        (message) => message.type === "user_input",
+      );
+      expect(preSettlementConfirmation).toMatchObject({
+        type: "user_input",
+        id: "cli_replacement_turn_order",
+        text: "hello before replacement turn settlement",
+        ts: expect.any(Number),
+      });
       expect(beforeSettlement.some((message) => message.type === "user_message")).toBe(false);
       expect(debugLog.byTag("wake_outcome")).toHaveLength(0);
       expect(debugLog.byTag("msg_delivered")).toHaveLength(0);
+      expect(durableTranscriptEntries.map((entry) => entry.data)).toContainEqual(
+        expect.objectContaining({
+          kind: "user_confirmed",
+          clientMessageId: "cli_replacement_turn_order",
+          ts: preSettlementConfirmation?.["ts"],
+        }),
+      );
 
       resolveReplacementTurn();
       await vi.waitFor(() => expect(debugLog.byTag("msg_delivered")).toHaveLength(1));
@@ -2425,6 +2440,7 @@ describe("multi-channel broadcast (W2D)", () => {
         type: "user_message",
         id: "cli_replacement_turn_order",
         text: "hello before replacement turn settlement",
+        ts: preSettlementConfirmation?.["ts"],
       }));
       expect(debugLog.byTag("wake_outcome")).toContainEqual(expect.objectContaining({
         tag: "wake_outcome",
