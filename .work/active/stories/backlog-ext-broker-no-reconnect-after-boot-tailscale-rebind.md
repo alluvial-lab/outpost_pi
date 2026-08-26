@@ -20,7 +20,7 @@ Diagnosis on the VM (03:2x UTC):
   whole time; `GET /health` OK via both localhost and the tailscale path.
 - All pi agents (restart wrapper) started ~2 min after boot; the extension
   broker in EVERY agent had **zero established sockets** to
-  `http://<tailnet-ip>:3300` (the configured relay URL in
+  `http://<tailnet-relay-host>:3300` (the configured relay URL in
   `~/.pi/remote/config.json`) hours later — only the model-API connection
   remained per process.
 - `~/.pi/remote/owner-channel-audit.jsonl` last writes at 00:37 UTC:
