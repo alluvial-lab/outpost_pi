@@ -1,7 +1,7 @@
 ---
 id: feature-theme-token-cross-surface-contract-app-theme-properties
 kind: story
-stage: implementing
+stage: done
 tags: [app, branding, testing]
 parent: feature-theme-token-cross-surface-contract
 depends_on: [feature-theme-token-cross-surface-contract-contract-tooling]
@@ -30,3 +30,24 @@ Surface-specific derived roles remain native `AppColors` concerns; the fixture a
 ## Ordering constraint
 
 Requires the checked-in shared fixture and its freshness check. Its proven role-name mapping is then reused by the cockpit checkpoint.
+
+## Implementation
+
+- Added a test-only `ThemeContractFixture` loader that validates the checked-in
+  schema, both brightness role maps, and supported color encodings.
+- Replaced duplicated dark/light hex matrices with fixture-backed direct role
+  mappings for `AppColors`, while leaving app-only derived roles native.
+- Added public-builder coverage for brightness, theme extensions, Material
+  semantic slots, and computed WCAG 2.1 ratios for all four required pairs.
+- Retained Space Mono and strong-divider contract assertions.
+
+## Verification
+
+- `cd app && flutter analyze` — PASS (zero issues).
+- `cd app && flutter test test/ui/core/themes/app_theme_test.dart` — PASS (5 tests).
+- `cd app && flutter test --exclude-tags e2e --concurrency=2` — PASS after
+  rerun; the earlier run hit a concurrent sync-service test failure while that
+  file was being changed by another worker.
+
+No production Dart code or deviation from the shared golden-fixture decision
+was required.

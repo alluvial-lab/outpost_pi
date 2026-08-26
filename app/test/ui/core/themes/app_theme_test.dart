@@ -2,44 +2,112 @@ import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'theme_contract_fixture.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('dark palette mirrors the Phosphor Beacon contract', () {
-    expect(AppColors.dark.bg, const Color(0xFF0D1210));
-    expect(AppColors.dark.surface, const Color(0xFF131A16));
-    expect(AppColors.dark.border, const Color(0xFF1E2620));
-    expect(AppColors.dark.borderStrong, const Color(0xFF2A342C));
-    expect(AppColors.dark.text, const Color(0xFFE4EFE8));
-    expect(AppColors.dark.muted, const Color(0xFF89978D));
-    expect(AppColors.dark.accent, const Color(0xFF74CC9C));
-    expect(AppColors.dark.onAccent, const Color(0xFF0A2418));
-    expect(AppColors.dark.success, const Color(0xFF7FD99A));
-    expect(AppColors.dark.warning, const Color(0xFFE6C86E));
-    expect(AppColors.dark.error, const Color(0xFFFF8B7D));
-    expect(AppColors.dark.working, const Color(0xFF7DB8E8));
+  test('native palettes match the shared Phosphor Beacon contract', () {
+    final fixture = ThemeContractFixture.load();
+    for (final mode in _themeModes) {
+      final actual = appContractRoles(mode.colors);
+      for (final entry in actual.entries) {
+        expect(
+          entry.value,
+          fixture.color(mode.brightness, entry.key),
+          reason:
+              '${mode.name} role ${entry.key} drifted from the shared fixture',
+        );
+      }
+    }
   });
 
-  test('light palette mirrors the Phosphor Beacon contract', () {
-    expect(AppColors.light.bg, const Color(0xFFF3F6F3));
-    expect(AppColors.light.surface, const Color(0xFFF8FAF8));
-    expect(AppColors.light.border, const Color(0xFFDFE6DF));
-    expect(AppColors.light.borderStrong, const Color(0xFFC2CEC3));
-    expect(AppColors.light.text, const Color(0xFF182019));
-    expect(AppColors.light.muted, const Color(0xFF57635A));
-    expect(AppColors.light.accent, const Color(0xFF256E47));
-    expect(AppColors.light.onAccent, const Color(0xFFFFFFFF));
-    expect(AppColors.light.success, const Color(0xFF3E7A4E));
-    expect(AppColors.light.warning, const Color(0xFF8A6A1F));
-    expect(AppColors.light.error, const Color(0xFFB34234));
-    expect(AppColors.light.working, const Color(0xFF33689B));
+  test('public theme builders install the requested semantic theme', () {
+    for (final mode in _themeModes) {
+      final theme = mode.build();
+      final colors = theme.extension<AppColors>();
+      final typography = theme.extension<AppTypography>();
+      expect(theme.brightness, mode.brightness, reason: mode.name);
+      expect(
+        colors,
+        same(mode.colors),
+        reason: '${mode.name} colors extension',
+      );
+      expect(
+        typography,
+        same(mode.typography),
+        reason: '${mode.name} typography extension',
+      );
+      expect(theme.scaffoldBackgroundColor, mode.colors.bg, reason: mode.name);
+
+      final scheme = theme.colorScheme;
+      expect(scheme.brightness, mode.brightness, reason: '${mode.name} scheme');
+      expect(scheme.surface, mode.colors.bg, reason: '${mode.name} surface');
+      expect(
+        scheme.onSurface,
+        mode.colors.text,
+        reason: '${mode.name} onSurface',
+      );
+      expect(
+        scheme.primary,
+        mode.colors.accent,
+        reason: '${mode.name} primary',
+      );
+      expect(
+        scheme.onPrimary,
+        mode.colors.onAccent,
+        reason: '${mode.name} onPrimary',
+      );
+      expect(
+        scheme.secondary,
+        mode.colors.muted,
+        reason: '${mode.name} secondary',
+      );
+      expect(
+        scheme.onSecondary,
+        mode.colors.text,
+        reason: '${mode.name} onSecondary',
+      );
+      expect(scheme.error, mode.colors.error, reason: '${mode.name} error');
+      expect(
+        scheme.onError,
+        mode.colors.onAccent,
+        reason: '${mode.name} onError',
+      );
+      expect(
+        scheme.outline,
+        mode.colors.border,
+        reason: '${mode.name} outline',
+      );
+    }
+  });
+
+  test('built theme colors meet the shared WCAG AA threshold', () {
+    final fixture = ThemeContractFixture.load();
+    for (final mode in _themeModes) {
+      final colors = mode.build().extension<AppColors>()!;
+      final pairs = <String, (Color foreground, Color background)>{
+        'primary text/background': (colors.text, colors.bg),
+        'muted text/background': (colors.muted, colors.bg),
+        'accent/background': (colors.accent, colors.bg),
+        'on-accent/accent': (colors.onAccent, colors.accent),
+      };
+      for (final pair in pairs.entries) {
+        final ratio = wcagContrast(pair.value.$1, pair.value.$2);
+        expect(
+          ratio,
+          greaterThanOrEqualTo(fixture.wcagAaNormalText),
+          reason: '${mode.name} ${pair.key} ratio was $ratio',
+        );
+      }
+    }
   });
 
   test('strong divider token improves contrast over the hairline border', () {
     for (final colors in <AppColors>[AppColors.dark, AppColors.light]) {
       expect(
-        _contrast(colors.borderStrong, colors.bg),
-        greaterThan(_contrast(colors.border, colors.bg)),
+        wcagContrast(colors.borderStrong, colors.bg),
+        greaterThan(wcagContrast(colors.border, colors.bg)),
       );
     }
   });
@@ -80,14 +148,28 @@ void main() {
   });
 }
 
-double _contrast(Color foreground, Color background) {
-  final foregroundLuminance = foreground.computeLuminance();
-  final backgroundLuminance = background.computeLuminance();
-  final lighter = foregroundLuminance > backgroundLuminance
-      ? foregroundLuminance
-      : backgroundLuminance;
-  final darker = foregroundLuminance > backgroundLuminance
-      ? backgroundLuminance
-      : foregroundLuminance;
-  return (lighter + 0.05) / (darker + 0.05);
-}
+final _themeModes =
+    <
+      ({
+        String name,
+        Brightness brightness,
+        ThemeData Function() build,
+        AppColors colors,
+        AppTypography typography,
+      })
+    >[
+      (
+        name: 'dark',
+        brightness: Brightness.dark,
+        build: buildDarkTheme,
+        colors: AppColors.dark,
+        typography: AppTypography.dark,
+      ),
+      (
+        name: 'light',
+        brightness: Brightness.light,
+        build: buildLightTheme,
+        colors: AppColors.light,
+        typography: AppTypography.light,
+      ),
+    ];
