@@ -1,14 +1,14 @@
 ---
 id: app-hydration-truncated-flag-not-surfaced
 kind: story
-stage: implementing
+stage: done
 tags: [app, ux]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-25
-updated: 2026-08-27
+updated: 2026-08-26
 ---
 
 # Session hydration truncation is invisible in the app
@@ -38,5 +38,13 @@ Not release-blocking; the bounded sync is the designed contract.
 - Adjacent issues parked: none.
 - Concurrent-work collision: a shared-checkout worker commit (`a4873ac8`) carried the hydration files under an unrelated cockpit message; the app surface was revalidated and restored in `efc574fb`.
 
-## Blocker
+## Prior blocker (resolved)
 - Required `flutter analyze && flutter test --exclude-tags e2e --concurrency=2` verification was attempted. Analyze passed; the full suite reached 972 tests but timed out in two unrelated `PairingPage` widget tests after 10 minutes each. The focused truncation regression passed. Per test-integrity rules, the story remains `stage: implementing` until the required full suite is green.
+
+## Closure (2026-08-26)
+- Review verdict: PASS; the existing `session_history.truncated` signal is carried through `SyncService` and `ChatViewModel` and rendered as the keyed transcript notice required by the story.
+- Stage: `done`.
+- Focused verification: `test/data/sync/sync_service_test.dart --plain-name 'truncated session history is exposed as active-session state'` — 1/1 passed.
+- Shared full-suite evidence: `flutter test --exclude-tags e2e --concurrency=2` — 976/976 passed on the quiescent machine (commits `cfa060b5..64614030`; the earlier PairingPage hang was fixed in `7000f226`).
+- Collision review: resolved and accurately recorded. The hydration files were accidentally carried by the unrelated shared-checkout commit `a4873ac8`; `efc574fb` restored the app surface, and later sync-fix commits legitimately changed the shared sync test. No unresolved collision remains.
+- Unmet acceptance criteria: none. On-demand larger-limit backfill remains explicitly deferred, as documented above.
