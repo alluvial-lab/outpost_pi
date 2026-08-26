@@ -159,7 +159,8 @@ fanout was used.
   `AGENTS.local.md` and `.work/session-notes/**` are ignored and untracked.
 - **Exposure regression found:** the scrubbed pre-flip sensitive commits are
   reachable only from intentionally retained private local branches, but
-  `origin/main` contains one post-flip commit (`a649b3dd`) with the literal
+  `origin/main` contains one post-flip commit (pre-rewrite hash withheld —
+  its content carried the literal
   tailnet relay address and the current active story still carries it. The
   separately published `feat/app-theme-system` head has no known address hit.
 

@@ -48,10 +48,13 @@ gate (i.e., without needing a pre-existing slash-command to arm the context)?
 ## Acceptance
 
 - [x] Per-command verify table recorded in this body.
-- [ ] If a clean path exists for some commands: a wire action + app entry +
+- [x] If a clean path exists for some commands: a wire action + app entry +
       round-trip test for at least one; if not: documented why (gated), parked.
-      **Research close:** a clean subset exists; implementation belongs to the
-      parent feature's design/implementation flow, not this verify-only story.
+      **Research close (reconciled 2026-08-26, Phase-8):** the parent feature's
+      eligibility adjudication consumed this table and concluded **no command
+      qualifies** for a mobile dedicated operation (per-command rationale in
+      the parent body); the "if not: documented why" branch is the resolved
+      terminal state — see feature-mobile-slash-command-invocation (done).
 
 ## Ordering
 
