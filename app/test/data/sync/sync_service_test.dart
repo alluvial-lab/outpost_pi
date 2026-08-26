@@ -454,7 +454,10 @@ void main() {
         pairedAt: '2026-01-01T00:00:00Z',
       ),
     );
-    await _settle(); // _onlineActivated → activate(epk) settles
+    await _waitUntil(
+      () => conn.status is StatusOnline && conn.activePeer?.remoteEpk == epk,
+      reason: 'the adopted fake channel to become active',
+    );
     ch.pushRaw(
       PairOk(
         inReplyTo: 'pair_$_counter',
@@ -464,9 +467,15 @@ void main() {
         sessionId: sessionId,
       ),
     );
-    await _settle(); // ConnectionManager learns active session id
+    await _waitUntil(
+      () => conn.activeSessionId == sessionId,
+      reason: 'ConnectionManager to learn the canonical session id',
+    );
     await sync.activate(epk, 'main');
-    await _settle();
+    await _waitUntil(
+      () => sync.activeSessionRef?.sessionId == sessionId,
+      reason: 'SyncService to bind the canonical session id',
+    );
     return (conn: conn, ch: ch, sync: sync, epk: epk, sessionId: sessionId);
   }
 
@@ -825,7 +834,10 @@ void main() {
       s.ch.pushRaw(
         AgentChunk(sessionId: s.sessionId, inReplyTo: 'u1', delta: 'keep'),
       );
-      await _settle();
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'keep',
+        reason: 'the accepted same-session chunk to stream',
+      );
       expect(s.sync.streaming?.buffer, 'keep');
       expect(s.sync.turnProjection.working, isTrue);
       s.conn.dispose();
@@ -1292,7 +1304,13 @@ void main() {
     () async {
       final s = await setup();
       s.ch.push(UserInput(id: 'u1', text: 'hi'));
-      await _settle();
+      await _waitUntil(
+        () =>
+            messages(s.epk).singleOrNull?.id == 'u1' &&
+            s.sync.turnProjection.cancelTargetId == 'u1' &&
+            index(s.epk)?.status == SessionActivity.working,
+        reason: 'the confirmed user row and working index projection',
+      );
 
       final m = messages(s.epk);
       expect(m, hasLength(1));
@@ -5714,11 +5732,17 @@ void main() {
     test('agent_done projects idle', () async {
       final s = await setup();
       s.ch.push(UserInput(id: 'u_agent_done', text: 'hi'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.turnProjection.cancelTargetId == 'u_agent_done',
+        reason: 'the agent_done fixture turn to become active',
+      );
       expect(s.sync.turnProjection.working, isTrue);
 
       s.ch.push(AgentDone(inReplyTo: 'u_agent_done'));
-      await _settle();
+      await _waitUntil(
+        () => !s.sync.turnProjection.working,
+        reason: 'agent_done to project idle',
+      );
 
       expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.turnProjection.cancelTargetId, isNull);
@@ -5729,7 +5753,10 @@ void main() {
     test('provider error projects idle', () async {
       final s = await setup();
       s.ch.push(AgentChunk(inReplyTo: 'u_provider_error', delta: 'partial'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'partial',
+        reason: 'the provider-error fixture stream to become active',
+      );
       expect(s.sync.turnProjection.working, isTrue);
 
       s.ch.push(
@@ -5739,7 +5766,10 @@ void main() {
           message: 'model failed',
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => !s.sync.turnProjection.working,
+        reason: 'the provider error to project idle',
+      );
 
       expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.turnProjection.cancelTargetId, isNull);
@@ -5750,11 +5780,17 @@ void main() {
     test('cancel/abort projects idle', () async {
       final s = await setup();
       s.ch.push(UserInput(id: 'u_cancel', text: 'stop me'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.turnProjection.cancelTargetId == 'u_cancel',
+        reason: 'the cancellation fixture turn to become active',
+      );
       expect(s.sync.turnProjection.working, isTrue);
 
       s.ch.push(Cancelled(inReplyTo: 'cancel-1', targetId: 'u_cancel'));
-      await _settle();
+      await _waitUntil(
+        () => !s.sync.turnProjection.working,
+        reason: 'the cancellation to project idle',
+      );
 
       expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.turnProjection.cancelTargetId, isNull);
