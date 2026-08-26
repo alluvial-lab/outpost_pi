@@ -1191,7 +1191,14 @@ class SyncService extends Service {
           ),
         );
         if (!_isCurrentLifecycle(generation, ref)) return;
-        _armSendTimeout(delivery.id, DateTime.now());
+        final resentAt = DateTime.now();
+        // Activation already rebuilt the persisted row's timeout from its
+        // original timestamp. Preserve an overdue backstop: replacing its
+        // immediately-due timer here would give a stale bubble a fresh window
+        // merely because durable recovery resent the stable id.
+        if (resentAt.difference(delivery.createdAt) < pendingSendTimeout) {
+          _armSendTimeout(delivery.id, resentAt);
+        }
         _logDebug(
           SendQueueEvent(
             ts: DateTime.now(),
