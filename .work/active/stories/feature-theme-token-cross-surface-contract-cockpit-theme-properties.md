@@ -5,7 +5,7 @@ stage: done
 tags: [cockpit, branding, testing]
 parent: feature-theme-token-cross-surface-contract
 depends_on: [feature-theme-token-cross-surface-contract-app-theme-properties]
-release_binding: null
+release_binding: v0.9.0
 gate_origin: null
 created: 2026-08-26
 updated: 2026-08-26

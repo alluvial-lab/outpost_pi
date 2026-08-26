@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, app]
 parent: feature-fresh-session-shutdown-and-recoverable-delivery
 depends_on: []
-release_binding: null
+release_binding: v0.9.0
 gate_origin: null
 created: 2026-08-26
 updated: 2026-08-26

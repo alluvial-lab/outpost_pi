@@ -5,7 +5,7 @@ stage: done
 tags: [app, testing]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.9.0
 gate_origin: security
 created: 2026-07-19
 updated: 2026-08-27

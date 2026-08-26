@@ -5,7 +5,7 @@ stage: done
 tags: [refactor, cleanup, relay]
 parent: feature-cruft-consolidated-cleanup
 depends_on: [feature-cruft-consolidated-cleanup-step-1-app]
-release_binding: null
+release_binding: v0.9.0
 gate_origin: null
 created: 2026-08-26
 updated: 2026-08-26
