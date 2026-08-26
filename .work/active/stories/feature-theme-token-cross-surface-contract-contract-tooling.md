@@ -1,0 +1,32 @@
+---
+id: feature-theme-token-cross-surface-contract-contract-tooling
+kind: story
+stage: implementing
+tags: [branding, site, testing]
+parent: feature-theme-token-cross-surface-contract
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-08-26
+updated: 2026-08-26
+---
+
+# Establish the shared brand-contract fixture and canonical mark projection
+
+## Checkpoint
+
+Create the root/site-tooling anchor for the cross-surface contract. A standard-library Python synchronizer reads `.mockups/design-system/tokens.css` into one checked-in `branding/theme-contract.json` golden fixture and reads `branding/logo-foreground.svg` into one typed geometry model. The same geometry model drives Pillow rasterization and a checked-in generated TypeScript projection consumed by the Open Graph image. CI checks generated projections for drift and routes contract changes into the app, cockpit, and site lanes.
+
+This is intentionally golden-based rather than Dart code generation: mobile and desktop retain their native semantic palettes, while the fixture makes their shared contract roles comparable without adding generated production Dart or a CSS parser to either Flutter build.
+
+## Acceptance evidence
+
+- `python3 scripts/sync-brand-contracts.py --check` exits zero only when `branding/theme-contract.json` and `site/src/generated/constellation_mark.generated.ts` match their canonical CSS/SVG inputs.
+- `scripts/generate-brand-assets.py` obtains Constellation III geometry from `branding/logo-foreground.svg`; no coordinate/radius/stroke literals remain in the rasterizer.
+- `site/src/app/opengraph-image.tsx` consumes the generated mark projection; no independent mark geometry remains in the component.
+- CI runs the synchronizer for changes to tokens, canonical branding SVGs, brand scripts, or generated projections, and contract changes trigger the app, cockpit, and site verification lanes.
+- `pnpm lint && pnpm build` passes from `site/`; the brand synchronizer check passes from the repository root.
+
+## Ordering constraint
+
+This checkpoint is the anchor for both Flutter port checks. Complete it before either surface adopts the fixture.
