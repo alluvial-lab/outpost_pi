@@ -1,8 +1,10 @@
 ---
 id: idea-site-test-baseline
 created: 2026-07-23
-updated: 2026-07-23
+updated: 2026-08-26
 tags: [site, testing]
+status: folded
+folded_into: feature-site-test-baseline (groom 2026-08-26)
 ---
 
 # Site test baseline

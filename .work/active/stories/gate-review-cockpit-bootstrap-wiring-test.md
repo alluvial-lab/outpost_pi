@@ -1,8 +1,14 @@
 ---
 id: gate-review-cockpit-bootstrap-wiring-test
-created: 2026-08-16
-updated: 2026-08-16
+kind: story
+stage: drafting
 tags: [cockpit, testing]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-08-16
+updated: 2026-08-26
 ---
 
 # Cockpit Hive bootstrap wiring needs an injectable boundary test

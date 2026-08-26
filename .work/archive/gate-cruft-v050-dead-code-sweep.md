@@ -1,8 +1,10 @@
 ---
 id: gate-cruft-v050-dead-code-sweep
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-26
 tags: [pi-extension, app, cleanup]
+status: folded
+folded_into: feature-cruft-consolidated-cleanup (groom 2026-08-26)
 ---
 
 # Post-v0.5.0 dead-code sweep (2 verified instances)

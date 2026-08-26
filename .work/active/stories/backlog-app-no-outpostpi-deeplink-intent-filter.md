@@ -1,8 +1,14 @@
 ---
 id: backlog-app-no-outpostpi-deeplink-intent-filter
-created: 2026-08-23
-updated: 2026-08-23
+kind: story
+stage: drafting
 tags: [app, bug]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-08-23
+updated: 2026-08-26
 ---
 
 # `outpostpi://` scheme parsed by the app but not declared as a VIEW intent-filter

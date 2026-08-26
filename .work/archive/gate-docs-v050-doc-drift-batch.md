@@ -1,8 +1,10 @@
 ---
 id: gate-docs-v050-doc-drift-batch
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-26
 tags: [docs, branding]
+status: folded
+folded_into: feature-doc-drift-repair (groom 2026-08-26)
 ---
 
 # Post-v0.5.0 documentation drift batch (7 findings)

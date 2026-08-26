@@ -1,8 +1,10 @@
 ---
 id: gate-tests-theme-dual-mode-contrast
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-26
 tags: [app, cockpit, testing]
+status: folded
+folded_into: feature-theme-token-cross-surface-contract (groom 2026-08-26)
 ---
 
 # Theme tests assert literals but not effective dual-mode wiring or AA contrast

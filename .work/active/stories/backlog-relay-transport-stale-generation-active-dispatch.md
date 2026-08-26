@@ -1,8 +1,14 @@
 ---
 id: backlog-relay-transport-stale-generation-active-dispatch
-created: 2026-07-23
-updated: 2026-07-23
+kind: story
+stage: drafting
 tags: [pi-extension, security]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-23
+updated: 2026-08-26
 ---
 
 # Generation-owned cancellation for in-flight relay dispatches
