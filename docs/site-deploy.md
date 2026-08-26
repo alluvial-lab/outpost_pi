@@ -45,24 +45,37 @@ EDGE:  /srv/stubs/dev.kevoun.com/    # stub: site/stubs/dev.kevoun.com/index.htm
 EDGE:  /etc/caddy/Caddyfile          # + blocks below
 ```
 
-## 3. Build + deploy (from the dev VM)
+## 3. Build + stage (on the dev VM) — deploy is two-hop
 
-From the repo root:
+The dev VM has **no network path to the LXC or the edge Caddy** (operator
+confirmed 2026-08-26). The operator relays artifacts via their machine
+(operator-relay-machine):
+
+On the dev VM:
 
 ```bash
 cd site && corepack pnpm install --frozen-lockfile && corepack pnpm build
-rm -rf /tmp/site-deploy && mkdir -p /tmp/site-deploy
-cp -r .next/standalone/. /tmp/site-deploy/
-cp -r .next/static /tmp/site-deploy/.next/static
-cp -r public /tmp/site-deploy/public
-rsync -av --delete /tmp/site-deploy/ <lxc>:/opt/outpost-site/
-rsync -av stubs/kevoun.com/ <edge-caddy>:/srv/stubs/kevoun.com/
-rsync -av stubs/dev.kevoun.com/ <edge-caddy>:/srv/stubs/dev.kevoun.com/
+rm -rf /tmp/outpost-site-deploy && mkdir -p /tmp/outpost-site-deploy/site
+cp -r .next/standalone/. /tmp/outpost-site-deploy/site/
+cp -r .next/static /tmp/outpost-site-deploy/site/.next/static
+cp -r public /tmp/outpost-site-deploy/site/public
+cp -r stubs /tmp/outpost-site-deploy/stubs
+# (+ DEPLOY.txt quick instructions)
+tar -C /tmp -czf /tmp/outpost-site-deploy.tar.gz outpost-site-deploy
+```
+
+Pull the tarball to the operator machine, then from there:
+
+```bash
+rsync -av --delete outpost-site-deploy/site/ <lxc>:/opt/outpost-site/
+rsync -av outpost-site-deploy/stubs/kevoun.com/ <edge>:/srv/stubs/kevoun.com/
+rsync -av outpost-site-deploy/stubs/dev.kevoun.com/ <edge>:/srv/stubs/dev.kevoun.com/
 ```
 
 The standalone build is self-contained (node_modules included); the LXC only
 needs the Node runtime. The `public/` copy is what puts `assetlinks.json`
-on the wire.
+on the wire. The tarball is a one-shot artifact (rebuildable via this step);
+never commit it.
 
 ## 4. systemd unit on the LXC — `/etc/systemd/system/outpost-site.service`
 
@@ -141,8 +154,9 @@ the app, not a chooser. These checks are part of `docs/release-uat.md`.
 
 ## Redeploys
 
-Repeat step 3; restart the app on the LXC
-(`systemctl restart outpost-site`). Stub-only changes: just the stub rsync
-lines (no restart — `file_server` reads per request). The exposure guard
+Rebuild + restage the tarball on the dev VM, pull it, and rsync (the
+two-hop flow above); restart the app on the LXC (`systemctl restart
+outpost-site`). Stub-only changes: restage stubs + the two stub rsync lines
+from the operator machine (no restart — `file_server` reads per request). The exposure guard
 (`scripts/check-public-exposure.sh`) covers repo content at build time;
 host hardening is standard LXC hygiene.
