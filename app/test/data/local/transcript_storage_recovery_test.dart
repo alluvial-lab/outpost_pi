@@ -82,6 +82,9 @@ void main() {
       await (await Hive.openBox<dynamic>(
         orphanName,
       )).put('event', {'text': 'orphan'});
+      final outbox = LocalBoxes().ownerDeliveryOutboxBox();
+      await outbox.put('delivery', {'text': 'unconfirmed'});
+      final outboxName = outbox.name;
       await LocalBoxes().runtimeBox().put('room', {'online': true});
       final unrelated = await Hive.openBox<dynamic>('pairings');
       await unrelated.put('peer', 'retain me');
@@ -94,6 +97,7 @@ void main() {
 
       expect(await Hive.boxExists('sessions_index_v3'), isFalse);
       expect(await Hive.boxExists('runtime'), isFalse);
+      expect(await Hive.boxExists(outboxName), isFalse);
       expect(await Hive.boxExists(eventsName), isFalse);
       expect(await Hive.boxExists(messagesName), isFalse);
       expect(await Hive.boxExists(orphanName), isFalse);

@@ -38,14 +38,10 @@ final class UserMessageSubmitted extends TranscriptEvent {
   /// Keep a steered submission out of transcript order until canonical pickup.
   final bool awaitingPickup;
 
-  /// `true` when this message was held pending (never written to the
-  /// channel) because the room was offline at send time (option-1 guard or
-  /// the offline branch). The reconnect re-send path
-  /// (story-app-reattempt-held-pending-on-reconnect) re-sends only held
-  /// messages that are still pending/failed, so they actually reach the Pi
-  /// instead of leaving a permanent failure badge. `false` (default) for
-  /// messages that were written to the channel — those are handled by the
-  /// late-confirmation path (SessionHistory replay) if they time out.
+  /// `true` when the first attempt was held locally because the room was
+  /// offline; `false` when it reached a channel. This remains provenance for
+  /// transcript/UI projection only. The encrypted owner-delivery outbox is the
+  /// single resend authority for both held and sent-but-unconfirmed messages.
   final bool held;
 }
 

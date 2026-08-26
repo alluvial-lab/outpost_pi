@@ -20,6 +20,7 @@ const Set<String> kAdmissibleFailureCodes = {
   // App-local codes.
   'send_error',
   'send_timeout',
+  'outbox_error',
   'cancelled',
 };
 

@@ -8,6 +8,7 @@ import 'package:app/data/debug/debug_log_impl.dart';
 import 'package:app/data/mesh/mesh_client.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/local/boxes.dart';
+import 'package:app/data/local/hive_owner_delivery_outbox.dart';
 import 'package:app/data/local/transcript_event_store_hive.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/repositories/home_read_repository.dart';
@@ -28,6 +29,7 @@ import 'package:app/data/voice/speech_service.dart';
 import 'package:app/domain/contracts/debug_capture_upload.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/dismissed_update_store.dart';
+import 'package:app/domain/contracts/owner_delivery_outbox.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/contracts/update_checker.dart';
 import 'package:app/domain/contracts/url_opener.dart';
@@ -86,6 +88,9 @@ Future<void> setupDependencies() async {
   // Repository/dispose contract onto the append-only store adapter.
   _injector.addOther<TranscriptEventStore>(
     () => HiveTranscriptEventStore(_injector.get<LocalBoxes>()),
+  );
+  _injector.addOther<OwnerDeliveryOutbox>(
+    () => HiveOwnerDeliveryOutbox(_injector.get<LocalBoxes>()),
   );
 
   // Plan 23 — Owner-key sync. The store talks to the native plugin
@@ -154,6 +159,7 @@ Future<void> setupDependencies() async {
       _injector.get<ConnectionManager>(),
       _injector.get<LocalBoxes>(),
       transcriptEventStore: _injector.get<TranscriptEventStore>(),
+      ownerDeliveryOutbox: _injector.get<OwnerDeliveryOutbox>(),
       debugLog: _injector.get<DebugLog>(),
     ),
   );

@@ -36,7 +36,7 @@ class _FakeChannel implements IChannel, IControlLink {
   final List<ClientMessage> sent = [];
   final List<Map<String, dynamic>> sentControl = [];
   Object? sendFailure;
-  Completer<ClientMessage>? nextSendStarted;
+  Completer<UserMessage>? nextUserMessageStarted;
   String defaultSessionId = '';
 
   @override
@@ -45,9 +45,11 @@ class _FakeChannel implements IChannel, IControlLink {
   Future<void> send(ClientMessage msg) async {
     final failure = sendFailure;
     if (failure != null) throw failure;
-    final started = nextSendStarted;
-    nextSendStarted = null;
-    if (started != null && !started.isCompleted) started.complete(msg);
+    final started = nextUserMessageStarted;
+    if (started != null && msg is UserMessage) {
+      nextUserMessageStarted = null;
+      if (!started.isCompleted) started.complete(msg);
+    }
     sent.add(msg);
   }
 
@@ -363,8 +365,18 @@ final Map<String, String> _sessionByEpk = <String, String>{};
 
 late Directory _dir;
 
-Future<void> _settle() =>
-    Future<void>.delayed(const Duration(milliseconds: 30));
+/// Drain the fake channel and SyncService write queues without waiting on wall
+/// clock time. Each zero-delay turn lets one queued stream delivery and its
+/// detached write continuation complete; callers use [_waitUntil] when they
+/// need a state-specific completion barrier.
+Future<void> _settle() async {
+  // A fixed number of event-loop turns is a deterministic completion barrier:
+  // it does not advance wall-clock timers, so a gated fake remains genuinely
+  // gated and each test can release its own completion explicitly.
+  for (var turn = 0; turn < 100; turn++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
 
 Future<void> _waitUntil(
   bool Function() condition, {
@@ -415,6 +427,7 @@ void main() {
     final conn = ConnectionManager(
       factory: (_, _) async => ch,
       storage: _FakeStorage(),
+      emitDebounce: Duration.zero,
     );
     final boxes = LocalBoxes();
     final sync = SyncService(
@@ -5172,8 +5185,8 @@ void main() {
         );
         expect(reconnect.sent.whereType<UserMessage>(), isEmpty);
 
-        final resendStarted = Completer<ClientMessage>();
-        reconnect.nextSendStarted = resendStarted;
+        final resendStarted = Completer<UserMessage>();
+        reconnect.nextUserMessageStarted = resendStarted;
         reconnect.pushControl(
           RoomsSnapshot(
             peer: s.epk,
@@ -5195,7 +5208,7 @@ void main() {
         );
         expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
         expect(resent, isA<UserMessage>());
-        expect((resent as UserMessage).id, held.clientMessageId);
+        expect(resent.id, held.clientMessageId);
         expect(resent.text, 'held across relay reconnect');
         expect(
           reconnect.sent.whereType<UserMessage>(),

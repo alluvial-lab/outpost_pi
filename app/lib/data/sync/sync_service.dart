@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app/data/local/boxes.dart';
+import 'package:app/data/local/hive_owner_delivery_outbox.dart';
 import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/data/local/records/session_index_record.dart';
@@ -23,8 +24,10 @@ import 'package:app/data/sync/session_gate.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/room_snapshot_change.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/domain/contracts/owner_delivery_outbox.dart';
 import 'package:app/domain/contracts/service.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
+import 'package:app/domain/entities/pending_owner_delivery.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
@@ -106,6 +109,7 @@ class SyncService extends Service {
   final ConnectionManager _conn;
   final LocalBoxes _boxes;
   final TranscriptEventStore _eventStore;
+  final OwnerDeliveryOutbox _ownerDeliveryOutbox;
   final DebugLog? _debugLog;
   final Future<void> Function(String key, Map<String, dynamic> value)?
   _runtimeRecordWriter;
@@ -211,23 +215,17 @@ class SyncService extends Service {
   final StreamController<List<ChatMessage>> _identityPendingController =
       StreamController<List<ChatMessage>>.broadcast();
 
-  /// Ids of held-pending messages already re-sent on reconnect this session
-  /// (story-app-reattempt-held-pending-on-reconnect). Prevents the
-  /// self-retrigger loop: the re-send's own `working:true` room_meta update
-  /// re-fires `_onRoomsChanged`, but each id is re-sent at most once per
-  /// session. Cleared on session switch (the `_activeRef` change path).
-  ///
-  /// NOTE: the self-retrigger is now harmless (the Pi-side ingress idempotency
-  /// guard re-echoes without re-waking on a duplicate), so this guard's only
-  /// value is avoiding redundant traffic. It is an in-flight set (cleared on
-  /// send failure) rather than a permanent block, so a failed re-send can be
-  /// retried on a later healthy reconnect — not permanently suppressed.
-  final Set<String> _resentHeldPendingIds = {};
+  // One successful recovery send per lifecycle generation. The set survives
+  // repeated room snapshots in that generation, but failed sends are removed
+  // so the next healthy reconnect can retry.
+  int? _ownerDeliveryRecoveryGeneration;
+  final Set<String> _recoveredOwnerDeliveryIds = <String>{};
 
   SyncService(
     this._conn,
     this._boxes, {
     TranscriptEventStore? transcriptEventStore,
+    OwnerDeliveryOutbox? ownerDeliveryOutbox,
     DebugLog? debugLog,
     Future<void> Function(String key, Map<String, dynamic> value)?
     runtimeRecordWriter,
@@ -235,6 +233,8 @@ class SyncService extends Service {
     this.deliveryPendingEchoTimeout = const Duration(seconds: 60),
     PendingSendTimerFactory? pendingSendTimerFactory,
   }) : _eventStore = transcriptEventStore ?? HiveTranscriptEventStore(_boxes),
+       _ownerDeliveryOutbox =
+           ownerDeliveryOutbox ?? HiveOwnerDeliveryOutbox(_boxes),
        _debugLog = debugLog,
        _runtimeRecordWriter = runtimeRecordWriter,
        _pendingSendTimerFactory =
@@ -394,7 +394,7 @@ class SyncService extends Service {
       if (!_isCurrentLifecycle(generation, nextRef)) return;
       await _bindIdentityPendingSends(nextRef, generation);
       if (!_isCurrentLifecycle(generation, nextRef)) return;
-      await _resendHeldPendingMessages(generation, nextRef);
+      await _recoverPendingOwnerDeliveries(generation, nextRef);
       if (!_isCurrentLifecycle(generation, nextRef)) return;
     }
     _emitIdentityPendingMessages();
@@ -422,9 +422,9 @@ class SyncService extends Service {
 
   /// Append an optimistic user event and send it when the active room is live.
   ///
-  /// Offline or stale-room sends remain held pending for reconnect retry and
-  /// eventually become visible failures; the method never sends without a
-  /// canonical session identity.
+  /// Every canonical submission persists an encrypted recovery intent before
+  /// channel send. Offline or stale-room sends remain held for authoritative
+  /// room/session recovery; the method never sends untracked intent.
   Future<void> sendMessage(
     String text, {
     MessageImage? image,
@@ -438,18 +438,42 @@ class SyncService extends Service {
     final isSteer = streamingBehavior == UserMessageStreamingBehavior.steer;
     final sessionId = ref?.sessionId;
     if (ref == null || sessionId == null || sessionId.isEmpty) {
-      _queueIdentityPendingSend(
-        _IdentityPendingSend(
-          id: id,
-          peerEpk: epk,
-          roomId: _activeRoomId,
-          sessionId: null,
-          text: text,
-          image: image,
-          streamingBehavior: streamingBehavior,
-          ts: now,
-        ),
+      final identityPending = _IdentityPendingSend(
+        id: id,
+        peerEpk: epk,
+        roomId: _activeRoomId,
+        sessionId: null,
+        text: text,
+        image: image,
+        streamingBehavior: streamingBehavior,
+        ts: now,
       );
+      if (epk != null) {
+        try {
+          await _ownerDeliveryOutbox.upsert(
+            PendingOwnerDelivery(
+              id: id,
+              peerEpk: epk,
+              roomId: _activeRoomId,
+              targetSessionId: null,
+              text: text,
+              createdAt: now,
+              image: image,
+              awaitingPickup:
+                  streamingBehavior == UserMessageStreamingBehavior.steer,
+            ),
+          );
+        } on Object {
+          identityPending.status = UserMsgStatus.failed;
+          _queueIdentityPendingSend(identityPending);
+          _identityPendingTimers.remove(id)?.cancel();
+          _logDebug(
+            MsgFailedEvent(ts: DateTime.now(), id: id, code: 'outbox_error'),
+          );
+          return;
+        }
+      }
+      _queueIdentityPendingSend(identityPending);
       debugPrint(
         '[msg-send] id=$id blocked: session identity unavailable; held pending',
       );
@@ -457,13 +481,9 @@ class SyncService extends Service {
       _logDebug(SendQueueEvent(ts: now, id: id, phase: SendQueuePhase.held));
       return;
     }
-    // Compute whether this send will be held pending (never written to the
-    // channel) because the connection is offline or the active room is not
-    // live. Recorded on the UserMessageSubmitted event so the reconnect
-    // re-send path (story-app-reattempt-held-pending-on-reconnect) knows
-    // which failed/pending rows to re-send. Messages that WERE written to
-    // the channel are left to the late-confirmation path (SessionHistory
-    // replay) if they time out.
+    // `held` remains transcript/UI provenance only: it records whether the
+    // first attempt reached a channel. The encrypted owner outbox is the sole
+    // recovery authority for both held and sent-but-unconfirmed submissions.
     final initialChannel = _conn.channel;
     final activeEpk = _activeEpk;
     final held =
@@ -484,6 +504,31 @@ class SyncService extends Service {
         ),
         preserveTurnState: isSteer,
       );
+      try {
+        await _ownerDeliveryOutbox.upsert(
+          PendingOwnerDelivery(
+            id: id,
+            peerEpk: ref.peerEpk,
+            roomId: ref.roomId,
+            targetSessionId: ref.sessionId,
+            text: text,
+            createdAt: now,
+            image: image,
+            awaitingPickup:
+                streamingBehavior == UserMessageStreamingBehavior.steer,
+          ),
+        );
+      } on Object {
+        await _failPendingSend(
+          id,
+          code: 'outbox_error',
+          message:
+              'Message recovery could not be saved. Nothing was sent to the Pi.',
+          expectedRef: ref,
+          expectedGeneration: generation,
+        );
+        return;
+      }
       if (!_isCurrentLifecycle(generation, ref) ||
           !identical(_conn.channel, initialChannel) ||
           (!held && !_conn.isRoomLive(ref.peerEpk, ref.roomId))) {
@@ -1037,7 +1082,6 @@ class SyncService extends Service {
     final sessionChanged = nextRef != expectedRef;
     if (sessionChanged) {
       _pendingSyncRequest = true;
-      _resentHeldPendingIds.clear();
       generation = ++_lifecycleGeneration;
       expectedRef = nextRef;
       // Activation already binds identity-pending sends and performs one
@@ -1048,109 +1092,123 @@ class SyncService extends Service {
       await _bindIdentityPendingSends(expectedRef, generation);
       if (!_isCurrentLifecycle(generation, expectedRef)) return;
       if (replayHeld) {
-        await _resendHeldPendingMessages(generation, expectedRef);
+        await _recoverPendingOwnerDeliveries(generation, expectedRef);
         if (!_isCurrentLifecycle(generation, expectedRef)) return;
       }
     }
     if (sessionChanged || _pendingSyncRequest) requestSync();
   }
 
-  /// Re-send messages whose `UserMessageSubmitted` event has `held: true`
-  /// (never written to the channel because the room was offline at send
-  /// time) and that are still pending or failed (not confirmed). Reuses the
-  /// ORIGINAL `clientMessageId` so the echo/replay dedupes by id. A relay
-  /// channel alone is not sufficient: room liveness must have been confirmed
-  /// in the current transport generation, and is revalidated after async reads.
-  /// Each id is re-sent at most once per session (`_resentHeldPendingIds`) to
-  /// prevent the self-retrigger loop (the re-send's own `working:true`
-  /// room_meta update re-fires `_onRoomsChanged`).
-  Future<void> _resendHeldPendingMessages(
+  /// Recover durable owner prompts after authoritative room/session hydration.
+  ///
+  /// Retargeting and the idempotent submitted transcript fact are durable before
+  /// the original client id is sent. A channel alone is never reachability
+  /// proof; both the canonical session and current room liveness are rechecked
+  /// after every async boundary.
+  Future<void> _recoverPendingOwnerDeliveries(
     int generation,
     RemoteSessionRef ref,
   ) async {
     if (!_isCurrentLifecycle(generation, ref)) return;
-    final ch = _conn.channel;
-    if (ch == null || !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
-      return; // relay-only reconnect: wait for fresh room confirmation
+    final channel = _conn.channel;
+    if (channel == null || !_conn.isRoomLive(ref.peerEpk, ref.roomId)) return;
+    if (_ownerDeliveryRecoveryGeneration != generation) {
+      _ownerDeliveryRecoveryGeneration = generation;
+      _recoveredOwnerDeliveryIds.clear();
     }
-    final key = TranscriptSessionKey(
-      peerId: ref.peerEpk,
+
+    final pending = await _ownerDeliveryOutbox.listForRoom(
+      peerEpk: ref.peerEpk,
       roomId: ref.roomId,
-      sessionId: ref.sessionId,
     );
-    final events = await _eventStore.readSession(key);
     if (!_isCurrentLifecycle(generation, ref) ||
         !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
       return;
     }
-    final confirmedIds = <String>{};
-    final heldPending = <UserMessageSubmitted>[];
-    for (final e in events) {
-      if (e is UserMessageConfirmed) {
-        confirmedIds.add(e.clientMessageId);
-      } else if (e is UserMessageSubmitted && e.held) {
-        heldPending.add(e);
-      }
-    }
-    for (final submitted in heldPending) {
-      final id = submitted.clientMessageId;
-      if (confirmedIds.contains(id)) continue; // already delivered
-      if (_resentHeldPendingIds.contains(id)) continue; // in-flight this sweep
-      // Re-verify the channel is still the active one (could have rotated
-      // during the loop). Reuses the ORIGINAL id so the echo/replay dedupes.
+
+    for (final original in pending) {
+      if (_recoveredOwnerDeliveryIds.contains(original.id)) continue;
       if (!_isCurrentLifecycle(generation, ref)) return;
-      final currentCh = _conn.channel;
-      if (currentCh == null || !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
+      final currentChannel = _conn.channel;
+      if (currentChannel == null ||
+          !identical(currentChannel, channel) ||
+          !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
         return;
       }
-      _resentHeldPendingIds.add(id); // in-flight guard for this sweep
+
+      _recoveredOwnerDeliveryIds.add(original.id);
       try {
+        final delivery = original.targetSessionId == ref.sessionId
+            ? original
+            : original.target(ref.sessionId);
+        if (delivery != original) {
+          await _ownerDeliveryOutbox.upsert(delivery);
+        }
         if (!_isCurrentLifecycle(generation, ref)) return;
-        await currentCh.send(
-          UserMessage(
-            id: id,
+
+        await _appendTranscriptEvent(
+          UserMessageSubmitted(
+            eventId: 'local:user_submitted:${delivery.id}',
             sessionId: ref.sessionId,
-            text: submitted.text,
-            streamingBehavior: submitted.awaitingPickup
+            ts: delivery.createdAt,
+            clientMessageId: delivery.id,
+            text: delivery.text,
+            image: delivery.image,
+            held: true,
+            awaitingPickup: delivery.awaitingPickup,
+          ),
+          preserveTurnState: delivery.awaitingPickup,
+        );
+        if (!_isCurrentLifecycle(generation, ref)) return;
+        final sendChannel = _conn.channel;
+        if (sendChannel == null ||
+            !identical(sendChannel, channel) ||
+            !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
+          return;
+        }
+
+        await sendChannel.send(
+          UserMessage(
+            id: delivery.id,
+            sessionId: ref.sessionId,
+            text: delivery.text,
+            streamingBehavior: delivery.awaitingPickup
                 ? UserMessageStreamingBehavior.steer
                 : null,
-            images: submitted.image == null
+            images: delivery.image == null
                 ? null
-                : [
+                : <WireImage>[
                     WireImage(
-                      data: submitted.image!.data,
-                      mime: submitted.image!.mime,
+                      data: delivery.image!.data,
+                      mime: delivery.image!.mime,
                     ),
                   ],
           ),
         );
         if (!_isCurrentLifecycle(generation, ref)) return;
-        // Re-arm the send-timeout from now (the original ts is stale).
-        _armSendTimeout(id, DateTime.now());
+        _armSendTimeout(delivery.id, DateTime.now());
         _logDebug(
           SendQueueEvent(
             ts: DateTime.now(),
-            id: id,
+            id: delivery.id,
             phase: SendQueuePhase.resend,
             outcome: SendQueueOutcome.sent,
           ),
         );
-        debugPrint('[msg-resend] id=$id (held-pending re-sent on reconnect)');
-      } catch (err) {
+        debugPrint('[msg-resend] id=${delivery.id} (durable owner outbox)');
+      } on Object {
+        _recoveredOwnerDeliveryIds.remove(original.id);
         if (!_isCurrentLifecycle(generation, ref)) return;
-        // Remove from in-flight so a later healthy reconnect can retry —
-        // a failed re-send must NOT be permanently suppressed.
-        _resentHeldPendingIds.remove(id);
         _logDebug(
           SendQueueEvent(
             ts: DateTime.now(),
-            id: id,
+            id: original.id,
             phase: SendQueuePhase.resend,
             outcome: SendQueueOutcome.failed,
             code: 'send_error',
           ),
         );
-        debugPrint('[msg-resend] id=$id failed');
+        debugPrint('[msg-resend] id=${original.id} failed');
       }
     }
   }
@@ -1364,11 +1422,12 @@ class SyncService extends Service {
                 ts,
               )
             : 'server:user_confirmed:$id';
-        _runDetachedTranscriptWrite(
-          () => _appendTranscriptEvent(
+        _runDetachedTranscriptWrite(() async {
+          final confirmedSessionId = _activeTranscriptSessionId();
+          await _appendTranscriptEvent(
             UserMessageConfirmed(
               eventId: userEventId,
-              sessionId: _activeTranscriptSessionId(),
+              sessionId: confirmedSessionId,
               ts: ts != null
                   ? DateTime.fromMillisecondsSinceEpoch(ts)
                   : DateTime.now(),
@@ -1383,9 +1442,12 @@ class SyncService extends Service {
                   streamingBehavior != UserMessageStreamingBehavior.steer,
             ),
             preserveTurnState: true,
-          ),
-          expectedRef: expectedRef,
-        );
+          );
+          await _ownerDeliveryOutbox.removeConfirmed(
+            id: id,
+            confirmedSessionId: confirmedSessionId,
+          );
+        }, expectedRef: expectedRef);
         // Steering input should not start/replace the working turn bubble.
         if (streamingBehavior == UserMessageStreamingBehavior.steer) {
           _setActivity(SessionActivity.working, preview: text);
@@ -1534,6 +1596,20 @@ class SyncService extends Service {
           write: () async {
             try {
               await _appendTranscriptEvents(terminalEvents);
+              final targetSessionId = expectedRef?.sessionId;
+              if (targetSessionId != null) {
+                await _ownerDeliveryOutbox.removeConfirmed(
+                  id: targetId,
+                  confirmedSessionId: targetSessionId,
+                );
+                if (pendingSteeringId != null &&
+                    pendingSteeringId != targetId) {
+                  await _ownerDeliveryOutbox.removeConfirmed(
+                    id: pendingSteeringId,
+                    confirmedSessionId: targetSessionId,
+                  );
+                }
+              }
             } finally {
               if (_isCurrentLifecycle(cancellationGeneration, expectedRef) &&
                   _pendingSteeringId == pendingSteeringId) {
@@ -1575,6 +1651,12 @@ class SyncService extends Service {
           _handleDeliveryPending(inReplyTo);
           break;
         }
+        if (code == 'delivery_retry') {
+          if (inReplyTo != null) {
+            _pendingSendTimers.remove(inReplyTo)?.cancel();
+          }
+          break;
+        }
         if (code.contains('unknown_peer')) {
           if (!_eventController.isClosed) {
             _eventController.add(const PairingRevoked());
@@ -1603,13 +1685,22 @@ class SyncService extends Service {
                 rejectsPendingSteering)) {
           _runDetachedWrite(
             operation: LifecycleOperation.transcriptWrite,
-            write: () => _failPendingSend(
-              pendingId,
-              code: code,
-              message: message,
-              expectedRef: expectedRef,
-              eventTs: diagnosticTs,
-            ),
+            write: () async {
+              await _failPendingSend(
+                pendingId,
+                code: code,
+                message: message,
+                expectedRef: expectedRef,
+                eventTs: diagnosticTs,
+              );
+              final targetSessionId = expectedRef?.sessionId;
+              if (targetSessionId != null) {
+                await _ownerDeliveryOutbox.removeConfirmed(
+                  id: pendingId,
+                  confirmedSessionId: targetSessionId,
+                );
+              }
+            },
             expectedRef: expectedRef,
             requestReplayOnFailure: true,
           );
@@ -2200,6 +2291,14 @@ class SyncService extends Service {
           history.sessionStartedAt,
           generation,
         );
+        if (!_isCurrentLifecycle(generation, ref)) return;
+        for (final event in history.events) {
+          if (event is! UserInputEvt) continue;
+          await _ownerDeliveryOutbox.removeConfirmed(
+            id: event.id,
+            confirmedSessionId: history.sessionId,
+          );
+        }
         if (_isCurrentLifecycle(generation, ref)) {
           _markPersistenceRecovered(ref);
         }
