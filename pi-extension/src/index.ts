@@ -2913,6 +2913,23 @@ export function _setHotReloadingForTest(value: boolean): void {
   else _freshSessionShutdown.resetForTest();
 }
 
+/** Test-host seam for observing the production owner-delivery fence. */
+export function _getOwnerDeliveryFenceReasonForTest():
+  | "hot_reload"
+  | "fresh_session"
+  | null {
+  return _freshSessionShutdown.fenceReason;
+}
+
+/** Await protected owner ingress and outbound sequence persistence in tests. */
+export async function _drainOwnerChannelsForTest(): Promise<void> {
+  const drains = _owners.entries().map(({ channel }) => {
+    const drainable = channel as PeerChannel & { whenIdle?: () => Promise<void> };
+    return drainable.whenIdle?.() ?? Promise.resolve();
+  });
+  await Promise.allSettled(drains);
+}
+
 /** Publish this process's nonce so an external arming command can target it. */
 function _writeRuntimeIdentity(): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1") return;

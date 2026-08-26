@@ -40,6 +40,22 @@ final class PiHostTurnControlStatus {
   final String phase;
 }
 
+final class PiHostDeliveryControlStatus {
+  const PiHostDeliveryControlStatus({
+    required this.fenced,
+    required this.sdkDeliveryCount,
+  });
+
+  factory PiHostDeliveryControlStatus.fromJson(Map<String, dynamic> json) =>
+      PiHostDeliveryControlStatus(
+        fenced: json['fenced'] as bool,
+        sdkDeliveryCount: (json['sdkDeliveryCount'] as num).toInt(),
+      );
+
+  final bool fenced;
+  final int sdkDeliveryCount;
+}
+
 final class PiHostEvent {
   const PiHostEvent({
     required this.sequence,
@@ -108,15 +124,31 @@ final class PiHostClient {
     await _json('POST', '/turn-control/resolve');
   }
 
-  Future<PiHostStatus> restartForIsolation() async {
+  Future<PiHostDeliveryControlStatus> beginDeliveryQuiesce() async =>
+      PiHostDeliveryControlStatus.fromJson(
+        await _json('POST', '/delivery-control/quiesce'),
+      );
+
+  Future<PiHostDeliveryControlStatus> deliveryControlStatus() async =>
+      PiHostDeliveryControlStatus.fromJson(
+        await _json('GET', '/delivery-control'),
+      );
+
+  Future<PiHostStatus> restartForIsolation() => _restart('/__restart');
+
+  /// Restart with pairing/channel state preserved and a fresh SDK session.
+  Future<PiHostStatus> restartForFreshSession() =>
+      _restart('/__restart?preserve=1&fresh=1');
+
+  Future<PiHostStatus> _restart(String path) async {
     final before = await status();
-    await _json('POST', '/__restart');
+    await _json('POST', path);
     return eventually<PiHostStatus>(
       () async {
         final value = await status();
         return value.generation != before.generation &&
                 value.relayConnected &&
-                value.state == 'started'
+                (value.state == 'started' || value.state == 'paired')
             ? value
             : null;
       },

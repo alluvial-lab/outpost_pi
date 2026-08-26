@@ -39,6 +39,11 @@ export interface PiHostTurnControlStatus {
   readonly phase: "idle" | "armed" | "pending" | "settled";
 }
 
+export interface PiHostDeliveryControlStatus {
+  readonly fenced: boolean;
+  readonly sdkDeliveryCount: number;
+}
+
 type ProductionModule = {
   default: ExtensionFactory;
   outpostPiTestHarness: {
@@ -61,6 +66,12 @@ type ProductionModule = {
     refreshMeshMembership(): Promise<void>;
   };
   _getLockedNameForTest(): string | null;
+  _getOwnerDeliveryFenceReasonForTest():
+    | "hot_reload"
+    | "fresh_session"
+    | null;
+  _drainOwnerChannelsForTest(): Promise<void>;
+  _setHotReloadingForTest(value: boolean): void;
   _resetCwdLockForTest(): void;
   _startRelayForTest(ctx: unknown): Promise<void>;
 };
@@ -88,6 +99,7 @@ export class E2ePiHostRuntime {
   private turnControlPhase: PiHostTurnControlStatus["phase"] = "idle";
   private stagedReply: string | null = null;
   private deferredTurnResolve: (() => void) | null = null;
+  private sdkDeliveryCount = 0;
   private readonly sessions = new Map<string, SessionManager>();
 
   private constructor(
@@ -105,6 +117,7 @@ export class E2ePiHostRuntime {
     cwd: string;
     seededTranscriptText: string;
     preserveState?: boolean;
+    freshSession?: boolean;
     agentName?: string;
   }): Promise<E2ePiHostRuntime> {
     process.env.OUTPOST_PI_RELAY = options.relayUrl;
@@ -131,7 +144,7 @@ export class E2ePiHostRuntime {
     mkdirSync(options.cwd, { recursive: true });
 
     const sessionDir = join(homedir(), ".pi", "e2e-sessions");
-    const sessionManager = options.preserveState
+    const sessionManager = options.preserveState && !options.freshSession
       ? SessionManager.continueRecent(options.cwd, sessionDir)
       : SessionManager.create(options.cwd, sessionDir);
     if (!options.preserveState) {
@@ -290,6 +303,21 @@ export class E2ePiHostRuntime {
     return { phase: this.turnControlPhase };
   }
 
+  /** Fence production owner ingress without fabricating an app response. */
+  async beginDeliveryQuiesce(): Promise<PiHostDeliveryControlStatus> {
+    this.production._setHotReloadingForTest(true);
+    return this.deliveryControlStatus();
+  }
+
+  /** Report production-fence state and actual SDK adapter delivery count. */
+  async deliveryControlStatus(): Promise<PiHostDeliveryControlStatus> {
+    await this.production._drainOwnerChannelsForTest();
+    return {
+      fenced: this.production._getOwnerDeliveryFenceReasonForTest() !== null,
+      sdkDeliveryCount: this.sdkDeliveryCount,
+    };
+  }
+
   /** List session identities retained by this process-local live test host. */
   sessionIds(): readonly string[] {
     return [...this.sessions.keys()];
@@ -380,6 +408,7 @@ export class E2ePiHostRuntime {
   private async handleSendUserMessage(
     content: Parameters<ExtensionActions["sendUserMessage"]>[0],
   ): Promise<void> {
+    this.sdkDeliveryCount += 1;
     const message = { role: "user" as const, content, timestamp: Date.now() };
     this.sessionManager.appendMessage(message as never);
     await this.runner.emitMessageEnd({ type: "message_end", message: message as never });

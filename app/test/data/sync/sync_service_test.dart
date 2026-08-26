@@ -552,7 +552,8 @@ void main() {
 
       s.ch.push(UserInput(id: 'new-u1', text: 'new session row'));
       await _waitUntil(
-        () => messages(s.epk, rotatedSession).singleOrNull?.text ==
+        () =>
+            messages(s.epk, rotatedSession).singleOrNull?.text ==
             'new session row',
         reason: 'the replacement session row to persist',
       );
@@ -4613,7 +4614,8 @@ void main() {
         ),
       );
       await _waitUntil(
-        () => messages(s.epk).map((r) => r.id).toList().join(',') ==
+        () =>
+            messages(s.epk).map((r) => r.id).toList().join(',') ==
             'fresh,equal',
         reason: 'the equal-boundary replay to persist additively',
       );
@@ -5656,7 +5658,10 @@ void main() {
             eos: true,
           ),
         );
-        await _settle();
+        await _waitUntil(
+          () => !s.sync.turnProjection.working,
+          reason: 'history replay terminal projection',
+        );
 
         expect(s.sync.turnProjection.working, isFalse);
         expect(s.sync.turnProjection.cancelTargetId, isNull);
