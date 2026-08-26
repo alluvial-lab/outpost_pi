@@ -12,12 +12,23 @@ from brand_contract import (
     build_theme_fixture,
     load_mark_geometry,
     render_mark_typescript,
+    validate_mark_projection,
     render_theme_json,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKENS_CSS = ROOT / ".mockups/design-system/tokens.css"
 MARK_SVG = ROOT / "branding/logo-foreground.svg"
+MARK_PROJECTION_SVGS = (
+    (ROOT / "branding/logo-full-dark.svg", (0.0, 0.0, 1024.0, 1024.0), None),
+    (ROOT / "branding/logo-full-light.svg", (0.0, 0.0, 1024.0, 1024.0), None),
+    (ROOT / "branding/logo-monochrome.svg", (0.0, 0.0, 1024.0, 1024.0), None),
+    (
+        ROOT / "branding/banner.svg",
+        (0.0, 0.0, 1280.0, 640.0),
+        "translate(96, 190) scale(0.2539)",
+    ),
+)
 THEME_FIXTURE = ROOT / "branding/theme-contract.json"
 MARK_PROJECTION = ROOT / "site/src/generated/constellation_mark.generated.ts"
 
@@ -26,6 +37,13 @@ def sync_contracts(*, check: bool) -> bool:
     """Check or write the projections derived from canonical brand inputs."""
     fixture = build_theme_fixture(TOKENS_CSS.read_text(encoding="utf-8"))
     mark = load_mark_geometry(MARK_SVG)
+    for projection, view_box, transform in MARK_PROJECTION_SVGS:
+        validate_mark_projection(
+            projection,
+            mark,
+            expected_view_box=view_box,
+            expected_transform=transform,
+        )
     expected = {
         THEME_FIXTURE: render_theme_json(fixture),
         MARK_PROJECTION: render_mark_typescript(mark),
@@ -35,7 +53,11 @@ def sync_contracts(*, check: bool) -> bool:
         if stale:
             print("Stale brand contract projection(s):")
             for path in stale:
-                print(f"  {path.relative_to(ROOT)}")
+                try:
+                    display_path = path.relative_to(ROOT)
+                except ValueError:
+                    display_path = path
+                print(f"  {display_path}")
             return False
         print("Brand contract projections are fresh.")
         return True
