@@ -847,15 +847,17 @@ void main() {
 
   void registerTwoPaneRouterSeamTest() {
     testWidgets(
-      'production pane collapse hides IME without consuming system-bar or modal insets',
+      'folded edge-to-edge collapse passes system padding through across IME cycles',
       (tester) async {
         const screen = Size(842, 701);
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = screen;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPadding);
         addTearDown(tester.view.resetViewInsets);
         addTearDown(tester.view.resetViewPadding);
+        tester.view.padding = const FakeViewPadding(top: 24, bottom: 48);
         tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 48);
         final textInputCalls = <MethodCall>[];
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -952,6 +954,15 @@ void main() {
           }
         }
 
+        Future<void> setKeyboardInset(double inset) async {
+          tester.view.padding = FakeViewPadding(
+            top: 24,
+            bottom: inset == 0 ? 48 : 0,
+          );
+          tester.view.viewInsets = FakeViewPadding(bottom: inset);
+          await pumpRouterFrames();
+        }
+
         try {
           await tester.pumpWidget(
             MultiProvider(
@@ -984,8 +995,7 @@ void main() {
           expect(detailComposer, findsOneWidget);
           await tester.tap(detailComposer);
           await tester.enterText(detailComposer, 'router keyboard seam');
-          tester.view.viewInsets = const FakeViewPadding(bottom: 280);
-          await pumpRouterFrames();
+          await setKeyboardInset(280);
 
           expect(tester.getRect(find.byType(HomePage)), homeBefore);
           expect(selection.current!.ref, selectionBefore);
@@ -1011,15 +1021,32 @@ void main() {
                 'clear its inset',
           );
           for (final inset in <double>[200, 80, 0]) {
-            tester.view.viewInsets = FakeViewPadding(bottom: inset);
-            await pumpRouterFrames();
+            await setKeyboardInset(inset);
+            final homeContext = tester.element(find.byType(HomePage));
+            expect(MediaQuery.viewInsetsOf(homeContext).bottom, inset);
             expect(
-              MediaQuery.viewInsetsOf(
-                tester.element(find.byType(HomePage)),
-              ).bottom,
-              inset,
+              MediaQuery.paddingOf(homeContext),
+              EdgeInsets.only(top: 24, bottom: inset == 0 ? 48 : 0),
+              reason:
+                  'the collapsed route must receive FlutterView.padding '
+                  'unchanged instead of a reconstructed MediaQuery value',
             );
           }
+          final dismissal = tester.widget<PaneCollapseImeDismissal>(
+            find.byType(PaneCollapseImeDismissal),
+          );
+          expect(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is MediaQuery &&
+                  identical(widget.child, dismissal.child),
+              description: 'pane-collapse MediaQuery padding override',
+            ),
+            findsNothing,
+            reason:
+                'pane collapse owns TextInput.hide only; SafeArea must consume '
+                'the platform MediaQuery without an intermediate override',
+          );
           expect(tester.getSize(find.byType(HomePage)), const Size(411, 797));
           final foldedHomeBody = tester.getRect(
             find.descendant(
@@ -1032,13 +1059,73 @@ void main() {
             foldedHomeBody.bottom,
             797 - 48,
             reason:
-                'pane collapse must hide only the IME; the folded Home safe '
-                'area must continue reserving the Android navigation bar',
+                'forced edge-to-edge keeps the navigation bar over the app; '
+                'folded Home content must stop above its 48dp safe padding',
+          );
+
+          await tester.tap(find.byType(SessionTile));
+          await pumpRouterFrames();
+          expect(find.byType(ChatPage), findsOneWidget);
+          final foldedComposer = find.byKey(const Key('input-bar-height'));
+          final foldedChatField = find.descendant(
+            of: find.byType(ChatPage),
+            matching: find.byType(TextField),
+          );
+          expect(tester.getBottomLeft(foldedComposer).dy, 797 - 48);
+          await tester.tap(foldedChatField);
+          for (final inset in <double>[80, 160, 280, 160, 80, 0]) {
+            await setKeyboardInset(inset);
+            expect(
+              tester.getBottomLeft(foldedComposer).dy,
+              inset == 0 ? 797 - 48 : 797 - inset,
+              reason:
+                  'the folded chat composer must track the IME and then stop '
+                  'above the persistent three-button navigation bar',
+            );
+          }
+          expect(
+            MediaQuery.viewInsetsOf(
+              tester.element(find.byType(ChatPage)),
+            ).bottom,
+            0,
+          );
+          expect(tester.getSize(find.byType(ChatPage)), const Size(411, 797));
+
+          tester.view.padding = const FakeViewPadding(top: 24);
+          await pumpRouterFrames();
+          expect(
+            MediaQuery.paddingOf(tester.element(find.byType(ChatPage))).bottom,
+            0,
+            reason:
+                'the routed chat must see the platform padding unchanged even '
+                'during a delayed Android metrics update',
+          );
+          expect(
+            tester.getBottomLeft(foldedComposer).dy,
+            797 - 48,
+            reason:
+                'SafeArea must retain stable system-bar view padding while '
+                'the transient platform padding catches up after IME close',
+          );
+
+          tester.view.padding = const FakeViewPadding(top: 24, bottom: 48);
+          owner.router.pop();
+          await pumpRouterFrames();
+          expect(find.byType(HomePage), findsOneWidget);
+          expect(
+            tester
+                .getRect(
+                  find.descendant(
+                    of: find.byType(HomePage),
+                    matching: find.byType(CustomScrollView),
+                  ),
+                )
+                .bottom,
+            797 - 48,
           );
 
           tester.view.physicalSize = screen;
-          tester.view.viewInsets = const FakeViewPadding(bottom: 280);
-          await pumpRouterFrames();
+          await setKeyboardInset(280);
 
           await tester.longPress(find.byType(SessionTile));
           await pumpRouterFrames();
@@ -1071,8 +1158,7 @@ void main() {
           expect(selection.current!.ref, selectionBefore);
 
           for (final inset in <double>[200, 80, 0]) {
-            tester.view.viewInsets = FakeViewPadding(bottom: inset);
-            await pumpRouterFrames();
+            await setKeyboardInset(inset);
             expect(
               MediaQuery.viewInsetsOf(tester.element(renameDialog)).bottom,
               inset,
