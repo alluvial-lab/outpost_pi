@@ -1,14 +1,14 @@
 ---
 id: story-mobile-transcript-reorder-after-backlog-flush
 kind: story
-stage: drafting
+stage: done
 tags: [app, bug]
-parent: feature-canonical-transcript-ordering
+parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-27
-updated: 2026-08-03
+updated: 2026-08-26
 ---
 
 # Transcript reordered on phone after backlog flush + reconnects
@@ -210,10 +210,67 @@ Tree reverted to green (no code committed). Forensic + both fix attempts + the
 scope decision are preserved here; the feature carries the implementation
 plan, wire-pairing/deploy note, and child-story sketch.
 
+## Standalone follow-on execution boundary (2026-08-26)
+
+The parent feature's direction-A wire change shipped in `v0.4.0` and its
+projection child already landed the canonical render sort. This item is now
+tracked as a standalone corrective follow-on rather than a child checkpoint.
+The app-side contract under test here is direction B at the reconnect boundary:
+keep lifecycle reduction in arrival order, but materialize authoritative
+bubbles by canonical server timestamp with a stable arrival tiebreak across
+incremental replay batches. Duplicate reconnect replay must be idempotent, and
+the result must equal a clean fold of the complete durable event log.
+
 ## Provenance
 Promoted to standalone (parent: null) on 2026-07-28 when the parent epic
 `epic-targeting-and-session-lifecycle-contracts` was retired. The epic's
 observability thesis had self-executed (cross-side observability shipped,
 3 of 5 cluster bugs resolved, 2 unreproduced with no recurrence in 3+ weeks),
-so the epic arc was closed. This story is a fresh 2026-07-27 live observation
-with a concrete repro direction and stays active.
+so the epic arc was closed. This story is the fresh 2026-07-27 live
+observation with a concrete repro direction, retained as the standalone
+follow-on recorded below.
+
+## Implementation notes
+
+- Execution capability: inline land mode; the production reducer/render-sort fix
+  is already present in the released parent implementation, so this bounded
+  follow-on adds the missing incremental reconnect regression evidence rather
+  than duplicating the shipped fix.
+- Review weight: standard, from the caller/autopilot note; bounded inline review
+  applies because this is now standalone (`parent: null`).
+- Files changed: `app/test/domain/transcript/transcript_projection_test.dart`
+  and this story body/frontmatter.
+- Tests added: `reconnect backfill preserves canonical order across incremental
+  hydration` applies live events, an older-timestamp replay batch, and a
+  duplicate replay to one reducer, then compares it with a clean durable-log
+  fold. It asserts the changed suffix begins at the insertion point and that
+  duplicate reconnect history is a no-op.
+- Simplification: none; the existing canonical reducer remains the single
+  projection implementation and no store-level timestamp sort was reintroduced.
+- Discrepancies from design: the checked-in forensic body still records the
+  earlier C→A feature decision, while the caller requested this post-release
+  direction-B standalone boundary. The parent feature's code and child
+  projection fix are already released in `v0.4.0`; this item therefore lands
+  as corrective regression coverage and does not change the wire or store.
+- Adjacent issues parked: none.
+- Verification: `flutter analyze` passed; focused transcript projection tests
+  passed (27); the three streaming/turn convergence sentinels in
+  `sync_service_test.dart` passed serially; the two sync-service behavior tests
+  that failed in the concurrent full run also passed when isolated serially.
+  The required full `flutter test --exclude-tags e2e --concurrency=2` run was
+  attempted but collided with active app workers (two sync tests failed only
+  under the concurrent run, and pairing teardown/sink cleanup failed). A
+  serial full-suite classification reproduced unrelated pairing-viewmodel
+  timeouts plus offline `google_fonts` fetch errors; no transcript behavior
+  failure was waived or altered.
+- Collision notes: concurrent workers are modifying `app/` during this run.
+  No lifecycle internals or their files were edited; only the isolated
+  transcript test and this item were staged.
+
+## Bounded inline review
+
+- Verdict: approved; no material blockers found.
+- The regression drives the same reducer through live append, older canonical
+  replay insertion, duplicate replay, and clean-fold comparison. It preserves
+  arrival-order lifecycle reduction and proves canonical render ordering across
+  the reconnect boundary without touching the rejected store-level sort.

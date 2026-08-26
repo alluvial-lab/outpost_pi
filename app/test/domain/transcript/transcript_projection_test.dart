@@ -190,6 +190,79 @@ void main() {
     ]);
   });
 
+  test(
+    'reconnect backfill preserves canonical order across incremental hydration',
+    () {
+      final liveEvents = <TranscriptEvent>[
+        UserMessageConfirmed(
+          eventId: 'server:user:live',
+          sessionId: session,
+          ts: base,
+          clientMessageId: 'live-user',
+          text: 'live prompt',
+        ),
+        AssistantMessageCommitted(
+          eventId: 'server:assistant:live',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 100)),
+          messageId: 'live-assistant',
+          replyTo: 'live-user',
+          text: 'live response',
+        ),
+      ];
+      final replayEvents = <TranscriptEvent>[
+        UserMessageConfirmed(
+          eventId: 'server:user:backfill',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 50)),
+          clientMessageId: 'backfill-user',
+          text: 'backfilled prompt',
+        ),
+        AssistantMessageCommitted(
+          eventId: 'server:assistant:backfill',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 60)),
+          messageId: 'backfill-assistant',
+          replyTo: 'backfill-user',
+          text: 'backfilled response',
+        ),
+      ];
+      final reducer = TranscriptProjectionReducer.empty(sessionId: session);
+
+      final liveUpdate = reducer.applyAll(liveEvents);
+      expect(liveUpdate.projection.messages.map((message) => message.id), [
+        'live-user',
+        'live-assistant',
+      ]);
+
+      final replayUpdate = reducer.applyAll(replayEvents);
+      expect(replayUpdate.acceptedEvents, hasLength(replayEvents.length));
+      expect(replayUpdate.firstChangedMessageIndex, 1);
+      expect(replayUpdate.projection.messages.map((message) => message.id), [
+        'live-user',
+        'backfill-user',
+        'backfill-assistant',
+        'live-assistant',
+      ]);
+
+      final duplicateReplay = reducer.applyAll(replayEvents);
+      expect(duplicateReplay.acceptedEvents, isEmpty);
+      expect(duplicateReplay.firstChangedMessageIndex, isNull);
+      expect(duplicateReplay.projection.messages.map((message) => message.id), [
+        'live-user',
+        'backfill-user',
+        'backfill-assistant',
+        'live-assistant',
+      ]);
+
+      final cleanProjection = deriveTranscriptProjection(
+        sessionId: session,
+        events: [...liveEvents, ...replayEvents],
+      );
+      _expectProjectionEquivalent(replayUpdate.projection, cleanProjection);
+    },
+  );
+
   test('server-timed tool ignores phone skew when result precedes request', () {
     final skewedPhoneNow = base.add(const Duration(hours: 12));
     final projection = deriveTranscriptProjection(
