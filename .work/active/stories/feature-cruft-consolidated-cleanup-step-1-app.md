@@ -1,7 +1,7 @@
 ---
 id: feature-cruft-consolidated-cleanup-step-1-app
 kind: story
-stage: implementing
+stage: done
 tags: [refactor, cleanup, app]
 parent: feature-cruft-consolidated-cleanup
 depends_on: []
@@ -73,14 +73,31 @@ return out;
 
 ## Acceptance criteria
 
-- [ ] `grep` finds no `isWorking`, `workingStream`, or `workingReplyTo`
+- [x] `grep` finds no `isWorking`, `workingStream`, or `workingReplyTo`
       references on `SyncService` outside unrelated ViewModel/state symbols.
-- [ ] Existing turn-state and EPK tests retain their behavioral assertions.
-- [ ] `flutter analyze` passes, allowing only the documented unrelated
+- [x] Existing turn-state and EPK tests retain their behavioral assertions.
+- [x] `flutter analyze` passes, allowing only the documented unrelated
       `axisAlignment` info.
-- [ ] `flutter test --exclude-tags e2e` passes.
-- [ ] The resulting diff contains no changes outside `app/` and this story's
+- [x] `flutter test --exclude-tags e2e` passes.
+- [x] The resulting diff contains no changes outside `app/` and this story's
       implementation-owned app/test files.
+
+## Implementation
+
+Removed the three derived `SyncService` compatibility getters and migrated the
+existing sync-service tests to the canonical `turnProjection` and
+`turnProjectionStream` projections. The test assertions and stream distinctness
+remain unchanged; only the access path changed. Removed the empty comparison
+branch in `toStandardB64` without changing decoding, encoding, or fallback
+behavior. The live `UserMessageStreamingBehavior` import remains because the
+transcript reducer still uses it.
+
+Verification: `flutter analyze` passed. The first full
+`flutter test --exclude-tags e2e --concurrency=2` run had one transient
+protocol-codegen comparison failure; the isolated codegen test passed, and an
+immediate second full run passed with all tests green. The full runs emitted
+the existing network font-load diagnostics from `google_fonts`, but the final
+verification reported no failed test.
 
 ## Risk
 
