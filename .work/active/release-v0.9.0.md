@@ -24,3 +24,6 @@ late-bound archived stub (gate-tests-fakesession-buildcontext-duplicate-
 projection, done, never claimed by a prior release).
 
 ## Gate runs
+
+### Gate runs
+- **gate-tests** (2026-08-26) — 3 findings (High=1 bound: relay-failover production-seam interface coverage; Medium=2 backlog: brand-parser rejection matrix, cockpit fail-once commit recovery). Inline scanner, reduced isolation. Commit 0ceb8417.
