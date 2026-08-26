@@ -12,6 +12,7 @@ fi
 
 # Keep the executable patterns from containing the literal values they reject.
 NETWORK_LITERAL_REGEX='(^|[^0-9])(192[.]168[.]50|100[.]106[.]7)[.][0-9]{1,3}([^0-9]|$)'
+NETWORK_LITERAL_SANITIZE_REGEX='192[.]168[.]50[.][0-9]{1,3}|100[.]106[.]7[.][0-9]{1,3}'
 FORBIDDEN_PATH_REGEX='(^|/)(AGENTS[.]local[.]md|[.]env[^/]*|id_(rsa|dsa|ecdsa|ed25519)|[^/]+[.](pem|key|p12|pfx))$|(^|/)[.]work/session-notes(/|$)'
 
 FINDING_COUNT=0
@@ -31,10 +32,22 @@ Modes:
 USAGE
 }
 
+sanitize_identifier() {
+  local identifier="$1"
+  local matched
+
+  while [[ "$identifier" =~ $NETWORK_LITERAL_SANITIZE_REGEX ]]; do
+    matched="${BASH_REMATCH[0]}"
+    identifier="${identifier/"$matched"/<redacted-network-literal>}"
+  done
+  printf '%s' "$identifier"
+}
+
 report_finding() {
   local category="$1"
   local identifier="$2"
 
+  identifier="$(sanitize_identifier "$identifier")"
   if (( FINDING_COUNT < MAX_FINDINGS )); then
     printf 'public-exposure: %s: %s\n' "$category" "$identifier" >&2
   elif (( SUPPRESSION_REPORTED == 0 )); then
@@ -130,19 +143,65 @@ scan_history_paths() {
 scan_history_content() {
   local repo_root="$1"
   shift
-  local line
-  local commit='unknown'
+  local blob_ids
+  local matches
+  local xargs_status
+  local blob_id
+  local scan_jobs="${PUBLIC_EXPOSURE_HISTORY_JOBS:-4}"
   local failed=0
 
-  while IFS= read -r line; do
-    if [[ "$line" == @@* ]]; then
-      commit="${line#@@}"
-    elif [[ -n "$line" ]]; then
-      report_finding 'history content' "$commit $line"
-      failed=1
-    fi
-  done < <(git -C "$repo_root" log --full-history --root --no-renames \
-    --format='@@%H' --name-only -G "$NETWORK_LITERAL_REGEX" "$@" --)
+  if [[ ! "$scan_jobs" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'public-exposure: PUBLIC_EXPOSURE_HISTORY_JOBS must be a positive integer\n' >&2
+    return 1
+  fi
+
+  # Diff-based history searches omit merge commits and binary diffs. Enumerate
+  # the unique blobs reachable from the requested revisions and inspect their
+  # contents directly so the scan covers every committed tree representation.
+  blob_ids="$(git -C "$repo_root" rev-list --objects "$@" |
+    awk '{print $1}' | sort -u |
+    git -C "$repo_root" cat-file --batch-check='%(objectname) %(objecttype)' |
+    awk '$2 == "blob" {print $1}')"
+  if (( $? != 0 )); then
+    printf 'public-exposure: history blob enumeration failed\n' >&2
+    return 1
+  fi
+  if [[ -z "$blob_ids" ]]; then
+    return 0
+  fi
+
+  # Keep one Git process per worker invocation rather than materializing blob
+  # contents on disk. grep -a consumes binary data as bytes and the full pipe
+  # avoids SIGPIPE false negatives from grep -q under pipefail.
+  matches="$(printf '%s\n' "$blob_ids" |
+    env PUBLIC_EXPOSURE_REPO_ROOT="$repo_root" \
+      PUBLIC_EXPOSURE_NETWORK_REGEX="$NETWORK_LITERAL_REGEX" \
+      xargs -P "$scan_jobs" -n 1 bash -c '
+        set -o pipefail
+        git -C "$PUBLIC_EXPOSURE_REPO_ROOT" cat-file blob "$1" |
+          grep -a -E "$PUBLIC_EXPOSURE_NETWORK_REGEX" >/dev/null
+        status=$?
+        if (( status == 0 )); then
+          printf "%s\\n" "$1"
+          exit 0
+        fi
+        if (( status == 1 )); then
+          exit 0
+        fi
+        exit "$status"
+      ' _)"
+  xargs_status=$?
+  if (( xargs_status != 0 )); then
+    printf 'public-exposure: history blob content scan failed (xargs exit %s)\n' \
+      "$xargs_status" >&2
+    failed=1
+  fi
+
+  while IFS= read -r blob_id; do
+    [[ -z "$blob_id" ]] && continue
+    report_finding 'history content' "$blob_id"
+    failed=1
+  done <<< "$matches"
 
   return "$failed"
 }

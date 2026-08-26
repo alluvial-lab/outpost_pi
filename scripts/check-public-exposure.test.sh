@@ -82,6 +82,58 @@ expect_pass 'redacted current tree' "$SCANNER" --tree "$history_repo"
 expect_bounded_failure 'history-only network literal' "$tailnet_value" \
   'history content:' "$SCANNER" --history HEAD "$history_repo"
 
+merge_repo="$TMP_ROOT/merge-history"
+init_repo "$merge_repo"
+printf 'base fixture\n' > "$merge_repo/incident.txt"
+git -C "$merge_repo" add incident.txt
+git -C "$merge_repo" commit -q -m 'add merge fixture'
+merge_base_branch="$(git -C "$merge_repo" branch --show-current)"
+git -C "$merge_repo" switch -q -c merge-side
+printf 'side clean\n' > "$merge_repo/incident.txt"
+git -C "$merge_repo" add incident.txt
+git -C "$merge_repo" commit -q -m 'side clean edit'
+git -C "$merge_repo" switch -q "$merge_base_branch"
+printf 'main clean\n' > "$merge_repo/incident.txt"
+git -C "$merge_repo" add incident.txt
+git -C "$merge_repo" commit -q -m 'main clean edit'
+git -C "$merge_repo" merge --no-ff merge-side >/dev/null 2>&1 || true
+merge_value="100.$(printf '106').7.$(printf '52')"
+printf 'resolved=%s\n' "$merge_value" > "$merge_repo/incident.txt"
+git -C "$merge_repo" add incident.txt
+git -C "$merge_repo" commit -q -m 'resolve merge with fixture'
+merge_commit="$(git -C "$merge_repo" rev-parse HEAD)"
+test "$(git -C "$merge_repo" rev-list --parents -n 1 HEAD | awk '{print NF}')" = 3
+git -C "$merge_repo" switch -q -c merge-remove "$merge_commit^1"
+git -C "$merge_repo" rm -q incident.txt
+git -C "$merge_repo" commit -q -m 'prepare merge removal'
+git -C "$merge_repo" switch -q "$merge_base_branch"
+git -C "$merge_repo" merge --no-ff merge-remove >/dev/null 2>&1 || true
+git -C "$merge_repo" rm -q incident.txt
+git -C "$merge_repo" commit -q -m 'merge remove fixture'
+test "$(git -C "$merge_repo" rev-list --parents -n 1 HEAD | awk '{print NF}')" = 3
+expect_bounded_failure 'merge-only history network literal' "$merge_value" \
+  'history content:' "$SCANNER" --history HEAD "$merge_repo"
+
+binary_repo="$TMP_ROOT/binary-history"
+init_repo "$binary_repo"
+binary_value="192.$(printf '168').50.$(printf '24')"
+printf 'prefix\0relay=%s\0suffix\n' "$binary_value" > "$binary_repo/incident.bin"
+git -C "$binary_repo" add incident.bin
+git -C "$binary_repo" commit -q -m 'introduce binary fixture'
+printf 'redacted binary fixture\n' > "$binary_repo/incident.bin"
+git -C "$binary_repo" add incident.bin
+git -C "$binary_repo" commit -q -m 'redact binary fixture'
+expect_bounded_failure 'binary-blob history network literal' "$binary_value" \
+  'history content:' "$SCANNER" --history HEAD "$binary_repo"
+
+filename_repo="$TMP_ROOT/filename"
+init_repo "$filename_repo"
+filename_value="100.$(printf '106').7.$(printf '53')"
+printf 'relay=%s\n' "$filename_value" > "$filename_repo/incident-$filename_value.txt"
+git -C "$filename_repo" add -- incident-"$filename_value".txt
+expect_bounded_failure 'network literal in filename' "$filename_value" \
+  'tree content: incident-' "$SCANNER" --tree "$filename_repo"
+
 mirror_repo="$TMP_ROOT/history.git"
 git clone -q --mirror "$history_repo" "$mirror_repo"
 expect_bounded_failure 'public mirror history' "$tailnet_value" \
