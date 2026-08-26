@@ -117,6 +117,12 @@ keystore and env file together. If either is lost, already-published sideloaded
 builds cannot be upgraded under the same signature: uninstall/reinstall and
 re-pair the app.
 
+The same release certificate is the Android pairing App Link trust anchor in
+`site/public/.well-known/assetlinks.json`. On key rotation, replace that public
+SHA-256 fingerprint and deploy the site association before shipping the newly
+signed APK. Never add the shared Android debug certificate to the production
+association; debug builds intentionally cannot claim production pairing links.
+
 ## App architecture
 
 Outpost-Pi's app is the mobile iOS/Android client for pairing, session lists, streaming chat, and tool approval cards. [remote-pi-app-guidance]{1}

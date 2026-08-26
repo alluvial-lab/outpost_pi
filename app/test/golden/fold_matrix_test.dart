@@ -52,7 +52,8 @@ const _expectedTwoPaneGeometrySuffixes = <String>{
 };
 
 const _typedPairingUri =
-    'outpostpi://pair?t=AAAAAAAAAAAAAAAAAAAAAA&'
+    'https://outpost-pi.kevoun.com/pair#'
+    't=AAAAAAAAAAAAAAAAAAAAAA&'
     'epk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&'
     'rm=outpost-app&n=Studio%20MacBook%20Pro';
 

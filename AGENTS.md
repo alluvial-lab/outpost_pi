@@ -102,10 +102,17 @@ Version-paired changes that break across mixed versions:
   restart fence returns `delivery_retry` without SDK delivery, and the app
   retries the original id only after fresh room/session confirmation. This is
   durable at-least-once recovery, not exactly-once delivery. Relay untouched.
+- **Verified Android pairing links** (`extension ↔ app ↔ site`, v0.9.0): the
+  extension emits `https://outpost-pi.kevoun.com/pair#…`; the Android app
+  accepts that exact origin/path through an `autoVerify` App Link, and the site
+  serves `/.well-known/assetlinks.json` for package `dev.kevoun.outpostpi` and
+  the release signing certificate. The enrollment fields stay in the fragment,
+  so browser fallback requests do not disclose them to the site. Deploy the
+  site association before the paired extension/app release.
 - **Storage/keyring/launchd identifiers** (v0.1.0, destructive): Hive boxes
   `dev.outpostpi.*`, keyring `dev.outpostpi.pi`, launchd `dev.outpostpi.supervisord`,
-  QR scheme `outpostpi://`, env `OUTPOST_PI_*`/`OUTPOSTPI_*`. Old-label daemon
-  cleanup: `launchctl bootout gui/$(id -u)/dev.remotepi.supervisord`.
+  env `OUTPOST_PI_*`/`OUTPOSTPI_*`. Old-label daemon cleanup:
+  `launchctl bootout gui/$(id -u)/dev.remotepi.supervisord`.
 
 Safe deploy order: **relay → full Pi restart → app sideload → cockpit**.
 

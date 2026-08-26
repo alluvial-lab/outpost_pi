@@ -71,19 +71,19 @@ class PairingViewModel extends ViewModel<PairingState> {
     final qr = QrPairPayload.tryParse(rawUri);
     if (qr == null) {
       // A camera scan of a non-Outpost-Pi barcode is silently ignored.
-      // But a pasted/typed code that looks like a pairing attempt (contains
-      // the outpostpi scheme or pair? query) but failed to parse deserves
-      // explicit feedback — otherwise the paste sheet closes and the user
-      // sees no indication their code was rejected.
-      final looksIntentional =
-          rawUri.contains('outpostpi://') || rawUri.contains('pair?');
+      // But a pasted/typed code that looks like the verified pairing link and
+      // failed to parse deserves explicit feedback — otherwise the paste sheet
+      // closes and the user sees no indication their code was rejected.
+      final looksIntentional = rawUri.contains(
+        '$kPairLinkOrigin$kPairLinkPath',
+      );
       if (looksIntentional) {
         _emitIfCurrent(
           generation,
           const PairingError(
             message:
                 'That pairing code could not be read. Make sure it '
-                'starts with outpostpi://pair? and was copied whole.',
+                'starts with $kPairLinkPrefix and was copied whole.',
             canRetry: true,
           ),
         );

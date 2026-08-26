@@ -161,9 +161,9 @@ describe("PairingCoordinator.showPairQr", () => {
 
     await coordinator.showPairQr(ctx);
 
-    const uri = rendered.match(/outpostpi:\/\/pair\?\S+/)?.[0];
+    const uri = rendered.match(/https:\/\/outpost-pi\.kevoun\.com\/pair#\S+/)?.[0];
     expect(uri).toBeDefined();
-    const token = new URL(uri!).searchParams.get("t");
+    const token = new URLSearchParams(new URL(uri!).hash.slice(1)).get("t");
     expect(token).toBeTruthy();
 
     expect(sendPiMessage).not.toHaveBeenCalled();
@@ -253,10 +253,10 @@ describe("PairingCoordinator.showPairQr", () => {
 
     await coordinator.showPairQr(ctx);
 
-    // The QR is hidden, but the outpostpi:// URI is still present (wrapped
-    // across lines) so a camera-less device can copy it.
-    const uri = renderedNarrow.match(/outpostpi:\/\/pair\?[^\s"]+/)?.[0]
-      ?? renderedNarrow.split("\n").find((line) => line.includes("outpostpi://"));
+    // The QR is hidden, but the verified HTTPS pairing link is still present
+    // (wrapped across lines) so a camera-less device can copy it.
+    const uri = renderedNarrow.match(/https:\/\/outpost-pi\.kevoun\.com\/pair#[^\s"]+/)?.[0]
+      ?? renderedNarrow.split("\n").find((line) => line.includes("https://outpost-pi.kevoun.com"));
     expect(uri).toBeDefined();
     expect(renderedNarrow).not.toContain("widen to");
     expect(sendPiMessage).not.toHaveBeenCalled();
@@ -332,9 +332,10 @@ describe("PairingCoordinator.showPairQr", () => {
       const payload = JSON.parse(await readFile(pairCodeFile, "utf8")) as Record<string, unknown>;
       const uri = payload["uri"];
       const token = payload["token"];
-      expect(uri).toEqual(expect.stringMatching(/^outpostpi:\/\/pair\?/));
+      expect(uri).toEqual(expect.stringMatching(/^https:\/\/outpost-pi\.kevoun\.com\/pair#/));
       expect(token).toEqual(expect.any(String));
-      expect(new URL(uri as string).searchParams.get("t")).toBe(token);
+      const params = new URLSearchParams(new URL(uri as string).hash.slice(1));
+      expect(params.get("t")).toBe(token);
       expect(payload).toMatchObject({
         roomId: "headless-room",
         name: "Headless Pi",
