@@ -52,9 +52,8 @@ dependencies:
   # Plan 37 — folder selection (NSOpenPanel on macOS) to open a project.
   file_picker: ^8.1.2
 
-  # Legacy persistence reader retained for the one-shot JSON migration.
+  # Legacy persistence reader retained only for the one-shot JSON migration.
   hive: ^2.2.3
-  hive_flutter: ^1.1.0
 
   # Cross-platform state-file path construction and platform state roots.
   path: ^1.9.1

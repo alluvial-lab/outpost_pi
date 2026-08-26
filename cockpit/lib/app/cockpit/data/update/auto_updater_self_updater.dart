@@ -104,7 +104,7 @@ class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
     // The adapter does not await this callback during a silent restart, so it
     // cannot block quit or gracefully stop agents here. Child `pi` agents
     // become orphans and `PiProcessRegistry.cleanOrphans` reaps their registry
-    // PIDs with SIGKILL on the next boot. Hive state restores the workspace,
+    // PIDs with SIGKILL on the next boot. Persisted state restores the workspace,
     // including panes and tabs.
     debugPrint(
       '[self-update] before quit for update — agents reaped on next boot',

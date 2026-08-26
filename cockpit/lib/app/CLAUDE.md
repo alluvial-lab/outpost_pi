@@ -37,7 +37,7 @@ Module buildFooModule(/* async deps resolved in main */) => createModule(
     c
       // feature binds: contract → impl. addInstance (ready instance),
       // addLazySingleton/add (constructor tear-off, auto-injected).
-      ..addInstance<FooRepository>(FooRepositoryImpl(box))
+      ..addInstance<FooRepository>(FooRepositoryImpl(store))
       ..route(
         '/',                            // resolves to /foo
         transition: TransitionType.fade,
@@ -64,8 +64,10 @@ Module buildFooModule(/* async deps resolved in main */) => createModule(
     + `ConnectivityViewModel`.
   - **multiple ambiguous primitives** (`String`...): an injectable **value object**
     (e.g. `UpdateTarget`).
-- **Async values** (Hive boxes, `PiSpawnConfig`, version) are resolved in `main`
-  and passed to `buildXModule(...)` factories — `register` is synchronous.
+- **Async values** (opened state stores, `PiSpawnConfig`, version) are resolved
+  before module registration and passed to `buildXModule(...)` factories —
+  `register` is synchronous. Persistence opens only through the one
+  `StateStoreFactory` owned by `main`.
 - Register the feature in `app_module.dart` with `c.module(fooModule)`.
 
 ## ViewModels

@@ -40,7 +40,7 @@ export PUB_CACHE=~/projects/outpost_pi/.pub-cache
 - `AGENTS.md` (repo root) — build/test commands, deployment, paired-wire cutover.
 - `cockpit/CLAUDE.md` — cockpit-specific workflow and module layout.
 - `.agents/skills/flutter-desktop-cockpit/SKILL.md` — Flutter desktop lifecycle,
-  shadcn/modular/Hive patterns, terminal/PTY, plugin surfaces, and the full
+  shadcn/modular/atomic-state patterns, terminal/PTY, plugin surfaces, and the full
   dev-VM build/test command set.
 
 This README is operator orientation. For agent routing, workflow, and
