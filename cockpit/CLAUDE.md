@@ -91,7 +91,7 @@ cross-cutting (used by 2+ features). **Read [`lib/app/CLAUDE.md`](lib/app/CLAUDE
 
 ```
 lib/
-├── main.dart                 # async bootstrap (Hive/boxes/config/notifier) + runApp(ModularApp)
+├── main.dart                 # migration + atomic JSON/config/notifier bootstrap + runApp(ModularApp)
 └── app/
     ├── app_module.dart       # root: composes core + features (composition only)
     ├── app_widget.dart       # AppRoot: ShadcnApp.router + watch<SettingsController>

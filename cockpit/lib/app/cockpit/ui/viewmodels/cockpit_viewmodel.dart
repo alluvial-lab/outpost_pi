@@ -114,7 +114,7 @@ class CockpitViewModel extends ChangeNotifier {
   final Map<String, WorkspaceDocument> _documents =
       <String, WorkspaceDocument>{};
 
-  /// Cache layouts loaded from Hive until each project is activated lazily.
+  /// Cache persisted layouts until each project is activated lazily.
   ///
   /// A `null` value means the project has no saved layout.
   final Map<String, Map<String, dynamic>?> _savedLayouts =
@@ -145,7 +145,7 @@ class CockpitViewModel extends ChangeNotifier {
 
   /// Cache each root workspace's worktrees in `git worktree list` order.
   ///
-  /// Git, not Hive, owns their existence. Reconciliation also adds the same
+  /// Git, not local persistence, owns their existence. Reconciliation also adds the same
   /// [Project] values to [_projectList] for lookup and the `IndexedStack`.
   final Map<String, List<Project>> _worktrees = <String, List<Project>>{};
 

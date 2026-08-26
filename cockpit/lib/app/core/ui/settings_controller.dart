@@ -5,7 +5,8 @@ import 'package:flutter/foundation.dart';
 /// Manage app-wide preferences above `ShadcnApp`.
 ///
 /// Enables runtime theme and font changes and exposes them to the Settings
-/// screen. Each change notifies listeners immediately and persists to Hive.
+/// screen. Each change notifies listeners immediately and persists through the
+/// injected settings contract.
 class SettingsController extends ChangeNotifier {
   SettingsController(this._store);
 

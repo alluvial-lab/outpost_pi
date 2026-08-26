@@ -9,11 +9,10 @@ import 'package:cockpit/app/cockpit/data/filesystem/folder_lister_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/git_status_reader_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/session_history_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/worktree_manager_impl.dart';
-import 'package:cockpit/app/core/data/hive_box_opener.dart';
 import 'package:cockpit/app/cockpit/data/notifications/local_notifier.dart';
-import 'package:cockpit/app/cockpit/data/repositories/hive_dismissed_update_store.dart';
-import 'package:cockpit/app/cockpit/data/repositories/hive_project_repository.dart';
-import 'package:cockpit/app/cockpit/data/repositories/hive_workspace_layout_store.dart';
+import 'package:cockpit/app/cockpit/data/repositories/json_dismissed_update_store.dart';
+import 'package:cockpit/app/cockpit/data/repositories/json_project_repository.dart';
+import 'package:cockpit/app/cockpit/data/repositories/json_workspace_layout_store.dart';
 import 'package:cockpit/app/cockpit/data/rpc/pi_rpc_process_factory.dart';
 import 'package:cockpit/app/cockpit/data/setup/environment_installer_impl.dart';
 import 'package:cockpit/app/cockpit/data/terminal/pty_terminal_gateway_factory.dart';
@@ -45,7 +44,8 @@ import 'package:cockpit/app/cockpit/ui/cockpit_page.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/setup_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/update_viewmodel.dart';
-import 'package:cockpit/app/core/data/repositories/hive_settings_store.dart';
+import 'package:cockpit/app/core/data/repositories/json_settings_store.dart';
+import 'package:cockpit/app/core/domain/contracts/state_store.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -54,35 +54,24 @@ import 'package:package_info_plus/package_info_plus.dart';
 /// infra binds (filesystem, RPC, terminal, repos, setup, update) and declares
 /// the `/` route with the 3 page-scoped ViewModels.
 ///
-/// **Async bootstrap (flutter_modular idiom):** the builder is a `Future` and
-/// opens its OWN async dependencies — Hive boxes, app version, notifier —
-/// capturing them in the closure (private box → `addInstance(HiveX(box))`).
-/// So `main` doesn't thread these values: call ONCE and compose the returned
-/// module (dedup is by identity).
+/// **Async bootstrap (flutter_modular idiom):** the builder opens named state
+/// stores through the lifecycle-owned [stateStores] boundary, then resolves the
+/// app version and notifier before creating synchronous binds.
 ///
 /// **Cross-module resolution (flutter_modular >= 7.1.0):** binds that depend
 /// on `PiSpawnConfig` use `.new` and resolve the config **upward** from core
-/// (root-owned) — which is why the builder no longer takes `config`. The Hive
-/// boxes, however, still require the async bootstrap above (there is no async
-/// bind).
+/// (root-owned), so the builder receives only persistence composition state.
 ///
 /// Since the shell lives at `/` and Settings is **stacked** on top (not
 /// replacing), the `/` route never leaves the stack during normal navigation →
 /// these feature-scoped binds effectively live for the whole app lifetime.
-Future<Module> buildCockpitModule() async {
-  // Async bootstrap: opens its own boxes (private in the closure), resolves the
-  // version, and starts the notifier. `Hive.initFlutter` already ran in `main`.
-  final projectBox = await openHiveBoxWithRetry<dynamic>(
-    HiveProjectRepository.boxName,
+Future<Module> buildCockpitModule(StateStoreFactory stateStores) async {
+  final projectStore = await stateStores.open(JsonProjectRepository.storeName);
+  final layoutStore = await stateStores.open(
+    JsonWorkspaceLayoutStore.storeName,
   );
-  final layoutBox = await openHiveBoxWithRetry<dynamic>(
-    HiveWorkspaceLayoutStore.boxName,
-  );
-  // Dismissed updates live in the settings box (same as SettingsController);
-  // `openBox` is idempotent → returns the instance already opened by `main`.
-  final settingsBox = await openHiveBoxWithRetry<dynamic>(
-    HiveSettingsStore.boxName,
-  );
+  // Dismissed updates share the same settings state already opened by `main`.
+  final settingsStore = await stateStores.open(JsonSettingsStore.storeName);
   final appVersion = (await PackageInfo.fromPlatform()).version;
 
   // OS notifications — init asks for permission; failure must not crash the boot.
@@ -97,10 +86,12 @@ Future<Module> buildCockpitModule() async {
     path: '/',
     register: (c) {
       c
-        ..addInstance<ProjectRepository>(HiveProjectRepository(projectBox))
-        ..addInstance<WorkspaceLayoutStore>(HiveWorkspaceLayoutStore(layoutBox))
+        ..addInstance<ProjectRepository>(JsonProjectRepository(projectStore))
+        ..addInstance<WorkspaceLayoutStore>(
+          JsonWorkspaceLayoutStore(layoutStore),
+        )
         ..addInstance<DismissedUpdateStore>(
-          HiveDismissedUpdateStore(settingsBox),
+          JsonDismissedUpdateStore(settingsStore),
         )
         // Depend on PiSpawnConfig → `.new` resolves upward from core (>= 7.1.0).
         ..addLazySingleton<RpcGatewayFactory>(PiRpcProcessFactory.new)

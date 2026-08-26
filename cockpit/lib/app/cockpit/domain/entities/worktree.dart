@@ -2,7 +2,7 @@
 ///
 /// It is rendered at runtime as a child [Project] with `parentId`, but Git
 /// (`git worktree list`) is the source of truth for its existence rather than
-/// Hive. See `plan/42-cockpit-worktrees.md` decisions 1, 4, and 5.
+/// local state. See `plan/42-cockpit-worktrees.md` decisions 1, 4, and 5.
 class Worktree {
   const Worktree({
     required this.path,

@@ -18,8 +18,9 @@ against the package files in the relevant subproject before relying on it.
 Key dependencies: Pi SDK (`@earendil-works/pi-coding-agent`) consumed by the
 extension; `ws` (WebSocket) in the extension; `@napi-rs/keyring` for Pi-key
 storage; `ed25519-dalek` and `sha2` in Rust; `cryptography` (dint.dev) for
-Ed25519 in the app; Hive for local cache in Flutter; `flutter_modular` +
-`shadcn_flutter` in cockpit.
+Ed25519 in the app; Hive for the mobile app's local cache; `flutter_modular` +
+`shadcn_flutter` and versioned atomic JSON state in cockpit (with Hive retained
+only as its one-shot installed-state migration reader).
 
 ## Hard constraints
 

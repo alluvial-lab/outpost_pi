@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
-import 'package:cockpit/app/core/data/hive_box_opener.dart';
 import 'package:cockpit/app/core/ui/bootstrap_error_screen.dart';
 import 'package:cockpit/main.dart' as cockpit_main;
 import 'package:cockpit/app/core/utils/spawn_directory.dart';
@@ -25,39 +24,6 @@ void main() {
     expect(session.startupError, contains(requested));
     await session.close();
     await root.delete(recursive: true);
-  });
-
-  test('Hive-style file lock retries before succeeding', () async {
-    var attempts = 0;
-    final result = await withFileSystemRetry<String>(
-      () async {
-        attempts++;
-        if (attempts < 4) throw const FileSystemException('locked');
-        return 'opened';
-      },
-      attempts: 5,
-      delay: Duration.zero,
-    );
-
-    expect(result, 'opened');
-    expect(attempts, 4);
-  });
-
-  test('Hive-style file lock stops at the bounded retry limit', () async {
-    var attempts = 0;
-    await expectLater(
-      withFileSystemRetry<void>(
-        () async {
-          attempts++;
-          throw const FileSystemException('locked');
-        },
-        attempts: 3,
-        delay: Duration.zero,
-      ),
-      throwsA(isA<FileSystemException>()),
-    );
-
-    expect(attempts, 3);
   });
 
   testWidgets('bootstrap failures render an error screen', (tester) async {

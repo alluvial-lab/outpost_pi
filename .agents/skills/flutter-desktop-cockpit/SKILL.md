@@ -1,20 +1,20 @@
 ---
 name: flutter-desktop-cockpit
-description: Outpost-Pi Flutter desktop cockpit reference. Read before editing or reviewing cockpit/ code, Flutter desktop lifecycle, shadcn_flutter UI, flutter_modular modules/routes/binds, Hive persistence, terminal/PTY/file/window/native plugin surfaces, markdown/media rendering, local notifications, or desktop build/test workflows.
-updated: 2026-06-28
+description: Outpost-Pi Flutter desktop cockpit reference. Read before editing or reviewing cockpit/ code, Flutter desktop lifecycle, shadcn_flutter UI, flutter_modular modules/routes/binds, atomic JSON persistence, legacy state migration, terminal/PTY/file/window/native plugin surfaces, markdown/media rendering, local notifications, or desktop build/test workflows.
+updated: 2026-08-26
 provenance: skill-reference
 ---
 
 # Flutter Desktop Cockpit Reference
 
 > Local scope: `cockpit/`
-> Versions/context: Dart SDK `^3.11.5`; `shadcn_flutter 0.0.52`; `flutter_modular 7.1.0`; Hive 2.2.x; `xterm` 4.0.0 git override; `kyroon_pty` git override ref `v1.0.5`; native desktop packages include `file_picker`, `window_manager`, `pasteboard`, `desktop_drop`, `flutter_local_notifications`, `media_kit`, `auto_updater`, `ffi`, and `win32`. [remote-pi-cockpit-pubspec]{1}
+> Versions/context: Dart SDK `^3.11.5`; `shadcn_flutter 0.0.52`; `flutter_modular 7.1.0`; versioned atomic JSON state with Hive 2.2.x retained only as a one-shot legacy reader; `xterm` 4.0.0 git override; `kyroon_pty` git override ref `v1.0.5`; native desktop packages include `file_picker`, `window_manager`, `pasteboard`, `desktop_drop`, `flutter_local_notifications`, `media_kit`, `auto_updater`, `ffi`, and `win32`. [remote-pi-cockpit-pubspec]{1}
 > Canonical local docs: `cockpit/CLAUDE.md`, `cockpit/lib/app/CLAUDE.md`, `cockpit/lib/app/core/CLAUDE.md`.
 
 ## When to load
 
 - Any edit or review under `cockpit/`.
-- Any change involving Flutter desktop windows, native plugins, PTY/process lifecycle, terminal rendering/input, file picking/preview/editing, Hive-backed state, local notifications, app update surfaces, or desktop build packaging.
+- Any change involving Flutter desktop windows, native plugins, PTY/process lifecycle, terminal rendering/input, file picking/preview/editing, JSON state or legacy migration, local notifications, app update surfaces, or desktop build packaging.
 - Any UI work that touches `shadcn_flutter` theme tokens, `flutter_modular` route/bind/provider patterns, or async `BuildContext` usage.
 
 ## Commands
@@ -72,13 +72,14 @@ Rules:
 
 ## Bootstrap and app lifecycle
 
-`main()` is the cockpit composition root. It initializes Flutter bindings, media, orphan process cleanup, Hive, settings, window state, `PiSpawnConfig`, then builds the Modular app and runs `ModularApp`. [remote-pi-cockpit-bootstrap-modules]{1}
+`main()` is the cockpit composition root. It initializes Flutter bindings, media, and orphan cleanup; resolves platform state paths; runs the marker-last legacy migration; constructs one `JsonStateStoreFactory`; loads settings/window state; resolves `PiSpawnConfig`; then builds and runs the Modular app. [remote-pi-cockpit-bootstrap-modules]{1}
 
 Key lifecycle rules:
 
-- Initialize native/plugin globals before first use: `WidgetsFlutterBinding.ensureInitialized()`, `MediaKit.ensureInitialized()`, `Hive.initFlutter(...)`, and `windowManager.ensureInitialized()` where applicable. [remote-pi-cockpit-bootstrap-modules]{1}
-- Open async values such as Hive boxes in `main()` or an async module builder, then inject repositories/stores; do not open boxes from widgets. [remote-pi-cockpit-bootstrap-modules]{1} [hive-2-2-hive-flutter-1-1]{1}
-- Window lifecycle is explicit: register `WindowListener`, debounce resize persistence, remove the listener, and cancel timers on dispose. [remote-pi-cockpit-bootstrap-modules]{1}
+- Initialize native/plugin globals before first use: `WidgetsFlutterBinding.ensureInitialized()`, `MediaKit.ensureInitialized()`, and `windowManager.ensureInitialized()` where applicable. [remote-pi-cockpit-bootstrap-modules]{1}
+- Run `LegacyHiveMigrator` before any JSON store opens. Hive is not a live backend: only the migrator may import it, and source boxes remain recovery evidence.
+- Open named stores through the one `StateStoreFactory` from bootstrap/module composition; repositories and widgets never resolve paths or open files.
+- Window lifecycle is explicit: register `WindowListener`, debounce resize persistence, remove the listener, cancel timers on dispose, and await `flushAll()` through the requested-app-exit observer. [remote-pi-cockpit-bootstrap-modules]{1}
 - Keep orphan-process cleanup paths intact for `pi --mode rpc`, LSP, PTY, and update helpers.
 
 ## `flutter_modular` patterns
@@ -104,7 +105,7 @@ Project rules:
 
 - Pathless `core` binds are root-owned; pathful feature binds are feature-scoped. [flutter-modular-7-1]{1}
 - Use constructor tear-offs (`Foo.new`) for binds/ViewModels when auto-injector can resolve parameters.
-- Use `addInstance` for already-opened boxes, platform-resolved values, or constant adapters.
+- Use `addInstance` for already-opened stores, platform-resolved values, or constant adapters.
 - Put `init()` / `check()` calls in page `initState`, not chained inside bind factories.
 - Prefer named factory interfaces and value objects over raw `Function()` or ambiguous primitive constructor parameters.
 - Consume state with `context.watch<T>()`, `context.select<T, R>()`, or `context.read<T>()` from `flutter_modular`'s provider-like API. [flutter-modular-7-1]{1}
@@ -120,16 +121,17 @@ Rules:
 - `SelectionArea`/Material interop is allowed when a third-party widget needs it, but keep it local and documented. [remote-pi-cockpit-file-media-surface]{1}
 - Check the local shadcn pin before copying examples from the online widget catalog or `llms-full.txt`.
 
-## Hive persistence
+## Atomic JSON persistence
 
-Hive boxes are the local persistence primitive. Hive exposes `openBox`, `box`, `close`, and box watching; `hive_flutter` adds `initFlutter` and `box.listenable()`. [hive-2-2-hive-flutter-1-1]{1}
+Small Cockpit state lives in one versioned JSON envelope per named store under the debug/production state directory. `StateStore`/`StateStoreFactory` are the domain-owned boundary; `JsonStateStore` is the sole live adapter. Writes serialize complete snapshots through a flushed same-directory temp file and bounded atomic rename retry. Reads quarantine empty, malformed, invalid-envelope, and unsupported-version files before opening empty, and diagnostics carry only closed categories.
 
 Project rules:
 
-- `main()` initializes Hive with a debug/prod subdirectory split; feature builders open their own boxes and inject repositories/stores. [remote-pi-cockpit-bootstrap-modules]{1}
-- Do not read/write Hive directly from UI widgets; use repositories/stores and ViewModels.
-- Keep box names centralized in the owning store/repository.
-- Treat local persistence as user state: avoid destructive migrations without explicit versioning and recovery behavior.
+- Windows defaults to Application Support to avoid Documents/OneDrive Known Folder Move; macOS/Linux retain Documents. Build paths only with `package:path`.
+- The factory owns store instance reuse and `flushAll()`; repositories receive `StateStore`, never filesystem paths or a concrete JSON type.
+- Requested app exits await `flushAll()`. Mutation write failures propagate instead of being reported as successful.
+- `LegacyHiveMigrator` is a one-shot compatibility reader. It exports four known boxes independently, preserves source files, writes the marker last, and is the only production file allowed to import `package:hive`.
+- Treat local persistence as user state: keep migrations explicit, idempotent, evidence-preserving, and covered with seeded legacy fixtures.
 
 ## Desktop native/plugin surfaces
 
@@ -188,7 +190,7 @@ Dialogs with custom controllers should own and dispose those controllers at the 
 ## Anti-patterns
 
 - Copying `app/` mobile architecture, provider/go_router assumptions, or mobile reconnect state into `cockpit/`.
-- Opening Hive boxes or spawning processes from widgets.
+- Opening state files/stores or spawning processes from widgets.
 - Hardcoding colors/fonts instead of `context.colors` / `context.typo`.
 - Using latest package docs without checking local pins and overrides.
 - Letting PTYs, Pi RPC processes, LSP servers, stream subscriptions, timers, focus nodes, controllers, or window listeners survive their owner.

@@ -38,7 +38,7 @@ class BootstrapErrorScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'The local workspace database could not be opened. '
+                'The local workspace state could not be opened. '
                 'Close any other Cockpit instance and try again.',
               ),
               const SizedBox(height: 16),

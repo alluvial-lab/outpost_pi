@@ -115,14 +115,15 @@ Rust + axum. One binary, one port: WebSocket upgrade (`GET /`), health
 ### cockpit (`cockpit/lib/`)
 
 Flutter desktop. `flutter_modular` modules/routes/binds, `shadcn_flutter`
-UI, Hive persistence.
+UI, and versioned atomic JSON state behind `StateStoreFactory`. A one-shot
+marker-last Hive reader preserves installed state but is not a live backend.
 
 - `app/cockpit/data/` — `rpc/` (`pi_rpc_process` + factory + registry — the
   structured-control RPC client), `filesystem/` (file reader/searcher/mutator,
   folder lister, git status, worktree manager, session history, app launcher),
   `terminal/` (PTY gateway), `adapters/` (RPC data/event mappers),
-  `repositories/` (Hive project/layout/dismissed-update stores), `update/`,
-  `notifications/`, `setup/`.
+  `repositories/` (state-store-backed project/layout/dismissed-update
+  adapters), `update/`, `notifications/`, `setup/`.
 - `app/cockpit/domain/` — `contracts/` (ports), `entities/` (agent snapshot,
   transcript message, file node, git info, etc.), `validators/`,
   `value_objects/`.

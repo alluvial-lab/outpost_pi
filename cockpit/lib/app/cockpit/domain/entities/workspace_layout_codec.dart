@@ -6,7 +6,7 @@ import 'package:cockpit/app/cockpit/domain/entities/workspace_tab.dart';
 /// Versioned JSON codec for Cockpit workspace layouts.
 ///
 /// The persisted `v: 1` shape is intentionally compatible with the legacy
-/// `CockpitViewModel` serializer. Hive stores an opaque map; this domain codec
+/// `CockpitViewModel` serializer. Persistence stores an opaque document; this domain codec
 /// is the single owner of the map's schema.
 final class WorkspaceLayoutCodec {
   const WorkspaceLayoutCodec._();

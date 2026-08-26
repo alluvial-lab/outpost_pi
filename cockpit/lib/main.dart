@@ -1,28 +1,27 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:cockpit/app/app_module.dart';
 import 'package:cockpit/app/app_widget.dart';
 import 'package:cockpit/app/cockpit/data/rpc/pi_process_registry.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_process_registry.dart';
 import 'package:cockpit/app/core/data/relay/pairing_seam_cleanup.dart';
-import 'package:cockpit/app/core/data/hive_box_opener.dart';
-import 'package:cockpit/app/core/data/repositories/hive_settings_store.dart';
+import 'package:cockpit/app/core/data/repositories/json_settings_store.dart';
+import 'package:cockpit/app/core/data/storage/json_state_store.dart';
+import 'package:cockpit/app/core/data/storage/legacy_hive_migrator.dart';
+import 'package:cockpit/app/core/data/storage/storage_paths.dart';
+import 'package:cockpit/app/core/domain/contracts/state_store.dart';
 import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/core/ui/bootstrap_error_screen.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Root subdirectory for Hive boxes. In debug mode uses `cockpit-debug` to
-/// avoid colliding with the production build's boxes (which is often left open
-/// in parallel during development). All boxes — including `window_state` —
-/// inherit this directory via `Hive.initFlutter`.
-const String hiveSubdir = kDebugMode ? 'cockpit-debug' : 'cockpit';
+/// Number of attempts used by the injectable bootstrap store-open seam.
+const int defaultStoreOpenAttempts = 10;
 
 typedef BootstrapTask = Future<void> Function();
 typedef BootstrapPreflight = Future<void> Function();
@@ -50,51 +49,51 @@ Future<void> runCockpit({BootstrapTask? bootstrap}) async {
 
 /// Initialize Cockpit and compose its production dependency graph.
 ///
-/// [openStore] is the raw persistence boundary. The default adapter opens a
-/// Hive box, while tests can inject any store implementation and exercise the
-/// retry and error-rendering behavior without naming that backend. [preflight]
-/// isolates native startup preparation from that boundary for deterministic
-/// tests.
+/// [openStore] is a storage-neutral test seam retained at the complete
+/// bootstrap boundary. Production resolves platform paths, commits the
+/// marker-last legacy migration, and opens atomic JSON stores. [preflight]
+/// isolates native startup preparation for deterministic tests.
 Future<void> bootstrapCockpit({
   BootstrapPreflight? preflight,
   BootstrapStoreOpener? openStore,
-  int retryAttempts = defaultHiveOpenAttempts,
+  int retryAttempts = defaultStoreOpenAttempts,
   Duration retryDelay = const Duration(milliseconds: 300),
 }) async {
-  final prepare = preflight ?? _prepareBootstrap;
-  final open = openStore ?? _openHiveStore;
-  Future<Object?> openWithRetry(String name) => withFileSystemRetry(
-    () => open(name),
-    attempts: retryAttempts,
-    delay: retryDelay,
-  );
+  await (preflight ?? _prepareBootstrap)();
 
-  await prepare();
+  final StateStoreFactory stateStores;
+  if (openStore != null) {
+    stateStores = _RetryingStateStoreFactory(
+      openStore,
+      attempts: retryAttempts,
+      delay: retryDelay,
+    );
+  } else {
+    final stateDirectory = await CockpitStoragePaths.stateDirectory();
+    await LegacyHiveMigrator(
+      stateDirectory: stateDirectory,
+      legacyDirectories: await CockpitStoragePaths.legacyHiveDirectories(),
+    ).runIfNeeded();
+    stateStores = JsonStateStoreFactory(stateDirectory);
+  }
 
-  // The feature boxes are opened by their own async builders (see
-  // buildCockpitModule); here only the settings box, which SettingsController
-  // needs before the first frame.
-  final settingsBox =
-      await openWithRetry(HiveSettingsStore.boxName) as Box<dynamic>;
-
-  // Preferences loaded BEFORE the first frame → the app opens in the saved
-  // theme (no flash). App-scoped: provided via `ModularApp.provide`, above the
-  // `ShadcnApp` → changing theme/font repaints everything.
-  final settings = SettingsController(HiveSettingsStore(settingsBox));
+  final settingsState = await stateStores.open(JsonSettingsStore.storeName);
+  final settings = SettingsController(JsonSettingsStore(settingsState));
   await settings.load();
 
-  final winBox = await openWithRetry('window_state') as Box<dynamic>;
-  await _setupWindow(winBox);
+  final windowState = await stateStores.open('window_state');
+  await _setupWindow(windowState);
 
-  // The only threaded value: lives in core (root-owned) and the features
-  // resolve it upward. The module is a `Future` because the cockpit opens its
-  // own boxes.
   final config = await PiSpawnConfig.resolve();
-  final appModule = await buildAppModule(config: config);
+  final appModule = await buildAppModule(
+    config: config,
+    stateStores: stateStores,
+  );
 
   runApp(
     _WindowStateKeeper(
-      box: winBox,
+      store: windowState,
+      stateStores: stateStores,
       child: ModularApp(
         module: appModule,
         provide: (s) => s.addChangeNotifier<SettingsController>(() => settings),
@@ -105,33 +104,91 @@ Future<void> bootstrapCockpit({
 }
 
 Future<void> _prepareBootstrap() async {
-  // Plan 46 — initialize media_kit (libmpv) before any Player.
   MediaKit.ensureInitialized();
 
-  // Kills orphaned `pi --mode rpc` processes and language servers (LSP) from
-  // the previous cycle before any new spawn (covers hot restart and cold
-  // restart after a crash).
+  // Clean resources from a prior crash before any new process can start.
   await PiProcessRegistry.cleanOrphans();
   await LspProcessRegistry.cleanOrphans();
   await PairingSeamCleanup.sweep();
-
-  // Own subdirectory; in debug mode separated from the production build.
-  await Hive.initFlutter(hiveSubdir);
 }
 
-Future<Object?> _openHiveStore(String name) => Hive.openBox<dynamic>(name);
+Future<T> _withFileSystemRetry<T>(
+  Future<T> Function() operation, {
+  required int attempts,
+  required Duration delay,
+}) async {
+  if (attempts < 1) {
+    throw ArgumentError.value(attempts, 'attempts', 'Must be positive');
+  }
+  for (var attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await operation();
+    } on FileSystemException {
+      if (attempt == attempts) rethrow;
+      if (delay > Duration.zero) await Future<void>.delayed(delay);
+    }
+  }
+  throw StateError('State-store retry exhausted without a result');
+}
 
-/// Hides the native title bar and restores the last window size.
-Future<void> _setupWindow(Box<dynamic> winBox) async {
+final class _RetryingStateStoreFactory implements StateStoreFactory {
+  _RetryingStateStoreFactory(
+    this._openStore, {
+    required this.attempts,
+    required this.delay,
+  });
+
+  final BootstrapStoreOpener _openStore;
+  final int attempts;
+  final Duration delay;
+  final Map<String, StateStore> _stores = <String, StateStore>{};
+
+  @override
+  Future<StateStore> open(String name) async {
+    final existing = _stores[name];
+    if (existing != null) return existing;
+    final opened = await _withFileSystemRetry<Object?>(
+      () => _openStore(name),
+      attempts: attempts,
+      delay: delay,
+    );
+    if (opened is! StateStore) {
+      throw StateError('Bootstrap store opener returned an invalid store');
+    }
+    _stores[name] = opened;
+    return opened;
+  }
+
+  @override
+  Future<void> flushAll() => Future.wait<void>(
+    _stores.values.map((StateStore store) => store.flush()),
+  );
+}
+
+/// Flush state before Flutter approves a requested desktop application exit.
+final class StateStoreExitObserver extends WidgetsBindingObserver {
+  StateStoreExitObserver(this._stateStores);
+
+  final StateStoreFactory _stateStores;
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    await _stateStores.flushAll();
+    return AppExitResponse.exit;
+  }
+}
+
+/// Hide the native title bar and restore the last window size.
+Future<void> _setupWindow(StateStore store) async {
   if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
   await windowManager.ensureInitialized();
-  final w = (winBox.get('width') as num?)?.toDouble() ?? 1280;
-  final h = (winBox.get('height') as num?)?.toDouble() ?? 720;
+  final width = (store.get('width') as num?)?.toDouble() ?? 1280;
+  final height = (store.get('height') as num?)?.toDouble() ?? 720;
   final options = WindowOptions(
     titleBarStyle: TitleBarStyle.hidden,
     windowButtonVisibility: false,
     minimumSize: const Size(720, 480),
-    size: Size(w, h),
+    size: Size(width, height),
   );
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.show();
@@ -139,29 +196,39 @@ Future<void> _setupWindow(Box<dynamic> winBox) async {
   });
 }
 
-/// Listens for resizes and persists the window size with debounce.
-class _WindowStateKeeper extends StatefulWidget {
-  const _WindowStateKeeper({required this.box, required this.child});
-  final Box<dynamic> box;
+/// Listen for resizes and persist the window size with debounce.
+final class _WindowStateKeeper extends StatefulWidget {
+  const _WindowStateKeeper({
+    required this.store,
+    required this.stateStores,
+    required this.child,
+  });
+
+  final StateStore store;
+  final StateStoreFactory stateStores;
   final Widget child;
 
   @override
   State<_WindowStateKeeper> createState() => _WindowStateKeeperState();
 }
 
-class _WindowStateKeeperState extends State<_WindowStateKeeper>
+final class _WindowStateKeeperState extends State<_WindowStateKeeper>
     with WindowListener {
   Timer? _debounce;
+  late final StateStoreExitObserver _exitObserver;
 
   @override
   void initState() {
     super.initState();
+    _exitObserver = StateStoreExitObserver(widget.stateStores);
+    WidgetsBinding.instance.addObserver(_exitObserver);
     windowManager.addListener(this);
   }
 
   @override
   void dispose() {
     windowManager.removeListener(this);
+    WidgetsBinding.instance.removeObserver(_exitObserver);
     _debounce?.cancel();
     super.dispose();
   }
@@ -171,8 +238,10 @@ class _WindowStateKeeperState extends State<_WindowStateKeeper>
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 400), () async {
       final size = await windowManager.getSize();
-      await widget.box.put('width', size.width);
-      await widget.box.put('height', size.height);
+      await widget.store.putAll(<String, Object?>{
+        'width': size.width,
+        'height': size.height,
+      });
     });
   }
 

@@ -54,7 +54,7 @@ class SelfUpdateState {
 /// background** without a native dialog. Only the app's card is visible, driven
 /// by [state] and [changes]. Applying an update follows silent-restart decision
 /// C: the native engine exits and relaunches the app. On the next startup,
-/// `PiProcessRegistry.cleanOrphans` reaps child `pi` agents and Hive state
+/// `PiProcessRegistry.cleanOrphans` reaps child `pi` agents and persisted state
 /// respawns them.
 abstract class SelfUpdater {
   /// Report whether a native update engine exists on macOS or Windows.
