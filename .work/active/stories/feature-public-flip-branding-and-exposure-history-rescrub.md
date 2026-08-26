@@ -67,3 +67,283 @@ archive refs.
 Run only after both current-tree checkpoints are done. This is the feature's
 last implementation checkpoint because any later commit containing the old
 literal would invalidate the rewritten public history.
+
+## Implementation preparation — 2026-08-26
+
+- Both prerequisites are `done`: brand evidence in `9de903a7` and the guarded
+  current-tree cleanup in `82768060`.
+- Execution capability is `openai-codex/gpt-5.6-sol`, `xhigh`, selected by the
+  caller for the destructive-history risk. Work stayed inline because this
+  harness exposes no implementation subagent adapter.
+- The shared scanner now supplies tree, selected-ancestry, and mirror-head/tag
+  modes with content-free diagnostics. Its fixtures and the current tree pass;
+  the pre-rewrite ancestry probe fails as expected at the incident story path.
+- No mirror was cloned, no replacement rule containing the private value was
+  written, no local/public ref was rewritten, and no push was attempted. The
+  host also lacks `git filter-repo`; operator execution must satisfy the
+  prerequisite check below before proceeding.
+- Effective feature review weight remains `standard` from the caller. Feature
+  integration and review cannot start until this operator gate closes.
+
+## Operator-gated execution runbook
+
+Run this only after reviewing the prepared commits, landing them on `origin/main`
+with a normal operator-owned fast-forward push, freezing repository writes, and
+coordinating open PRs/clones. Use one shell without `set -x`. Never substitute a
+local checkout path for `PUBLIC_URL`, never use `git push --mirror`, and never
+include `refs/remotes/*`, `refs/pull/*`, or private archive refs in a push
+refspec.
+
+### 1. Land the clean tree normally, then freeze writes
+
+```bash
+cd <clean-outpost-pi-checkout>
+git status --porcelain=v1                       # must be empty
+git fetch origin
+git log --oneline origin/main..main             # review every normal commit
+git push origin main                            # operator action; ordinary push
+git fetch origin
+test "$(git rev-parse main)" = "$(git rev-parse origin/main)"
+
+# Freeze writes now. Keep this shell open for the remaining steps.
+set -euo pipefail
+umask 077
+PUBLIC_URL='git@github.com:alluvial-lab/outpost_pi.git'
+CHECKOUT="$(git rev-parse --show-toplevel)"
+command -v git
+command -v git-filter-repo
+git filter-repo --version
+command -v gh
+```
+
+If `git filter-repo --version` fails, stop and install `git-filter-repo` through
+the operator's trusted package manager before restarting this runbook. Do not
+fall back to `filter-branch`.
+
+### 2. Clone only public origin and inventory the rewrite input
+
+```bash
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/outpost-public-rescrub.XXXXXX")"
+MIRROR="$WORKDIR/public-origin.git"
+SCANNER="$WORKDIR/check-public-exposure.sh"
+BEFORE="$WORKDIR/refs-before.tsv"
+REMOTE_BEFORE="$WORKDIR/remote-before.tsv"
+
+git ls-remote --refs --heads --tags "$PUBLIC_URL" \
+  | awk '{print $2 " " $1}' | sort > "$REMOTE_BEFORE"
+git clone --mirror "$PUBLIC_URL" "$MIRROR"
+test "$(git -C "$MIRROR" remote get-url origin)" = "$PUBLIC_URL"
+test "$(git -C "$MIRROR" config --bool --get remote.origin.mirror)" = true
+
+git -C "$MIRROR" for-each-ref \
+  --format='%(refname) %(objectname)' refs/heads refs/tags | sort > "$BEFORE"
+cmp "$REMOTE_BEFORE" "$BEFORE"
+git -C "$MIRROR" show \
+  refs/heads/main:scripts/check-public-exposure.sh > "$SCANNER"
+chmod 700 "$SCANNER"
+
+ROOT_BEFORE="$(git -C "$MIRROR" rev-list --max-parents=0 refs/heads/main)"
+test "$ROOT_BEFORE" = 2226812b27e933921b753fb6f5185743ce1e543e
+test "$(git -C "$MIRROR" show -s --format=%s "$ROOT_BEFORE")" = \
+  'Import from remote_pi at d6be6a4 (MIT) — see LICENSE/NOTICE'
+MAIN_TREE_BEFORE="$(git -C "$MIRROR" rev-parse 'refs/heads/main^{tree}')"
+LICENSE_BEFORE="$(git -C "$MIRROR" show refs/heads/main:LICENSE | git hash-object --stdin)"
+NOTICE_BEFORE="$(git -C "$MIRROR" show refs/heads/main:NOTICE | git hash-object --stdin)"
+BRAND_BEFORE="$(git -C "$MIRROR" show refs/heads/main:branding/logo-full-dark.svg | git hash-object --stdin)"
+
+if "$SCANNER" --all-public-refs "$MIRROR" > "$WORKDIR/precheck.log" 2>&1; then
+  echo 'expected the known pre-rewrite history hit, but mirror scan passed' >&2
+  exit 1
+fi
+printf '%s\n' 'Review precheck.log: every identifier must name only the incident story path.'
+printf '  %s\n' "$WORKDIR/precheck.log"
+```
+
+The `cmp` proves the heads/tags came from public origin. Other advertised
+namespaces, if any, are not part of `BEFORE` and must not enter the push plan.
+Abort if the precheck names any unrelated path.
+
+### 3. Create the private rule and rewrite the disposable mirror once
+
+```bash
+RULES="$WORKDIR/replace-text.rules"
+printf '%s' 'Paste the exposed relay URL exactly (input hidden): ' >&2
+IFS= read -r -s EXPOSED_RELAY_URL
+printf '\n' >&2
+case "$EXPOSED_RELAY_URL" in
+  http://*:*|https://*:*) ;;
+  *) echo 'refusing malformed relay URL' >&2; exit 1 ;;
+esac
+printf 'literal:%s==>http://<tailnet-relay-host>:3300\n' \
+  "$EXPOSED_RELAY_URL" > "$RULES"
+unset EXPOSED_RELAY_URL
+chmod 600 "$RULES"
+
+git -C "$MIRROR" filter-repo --replace-text "$RULES" --force
+# filter-repo removes origin metadata; retain only the validated mirror marker
+# needed by the scanner, not a fetch/push URL.
+git -C "$MIRROR" config remote.origin.mirror true
+```
+
+`git filter-repo` normally removes the mirror's `origin`; that is desirable.
+Do not re-add a public remote until every verification below passes.
+
+### 4. Verify rewritten refs and provenance before remote mutation
+
+```bash
+AFTER_REWRITE="$WORKDIR/refs-after-rewrite.tsv"
+REF_MAP_REWRITE="$WORKDIR/ref-map-rewrite.tsv"
+git -C "$MIRROR" for-each-ref \
+  --format='%(refname) %(objectname)' refs/heads refs/tags | sort > "$AFTER_REWRITE"
+cut -d' ' -f1 "$BEFORE" > "$WORKDIR/names-before"
+cut -d' ' -f1 "$AFTER_REWRITE" > "$WORKDIR/names-after-rewrite"
+cmp "$WORKDIR/names-before" "$WORKDIR/names-after-rewrite"
+join "$BEFORE" "$AFTER_REWRITE" > "$REF_MAP_REWRITE"
+
+test "$(git -C "$MIRROR" rev-parse 'refs/heads/main^{tree}')" = "$MAIN_TREE_BEFORE"
+test "$(git -C "$MIRROR" rev-list --max-parents=0 refs/heads/main)" = "$ROOT_BEFORE"
+test "$(git -C "$MIRROR" show refs/heads/main:LICENSE | git hash-object --stdin)" = "$LICENSE_BEFORE"
+test "$(git -C "$MIRROR" show refs/heads/main:NOTICE | git hash-object --stdin)" = "$NOTICE_BEFORE"
+test "$(git -C "$MIRROR" show refs/heads/main:branding/logo-full-dark.svg | git hash-object --stdin)" = "$BRAND_BEFORE"
+"$SCANNER" --all-public-refs "$MIRROR"
+git -C "$MIRROR" fsck --full
+```
+
+The exact main-tree equality is intentional: the current tree was redacted
+before the rewrite, so replacing the historical literal must not alter its tree.
+
+### 5. Enable ancestry CI only on the rewritten clean tip
+
+```bash
+CI_CHECKOUT="$WORKDIR/ci-main"
+git clone --no-local "$MIRROR" "$CI_CHECKOUT"
+git -C "$CI_CHECKOUT" switch main
+python3 - "$CI_CHECKOUT/.github/workflows/ci.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+old = '''      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test exposure scanner
+        run: scripts/check-public-exposure.test.sh
+      - name: Scan tracked tree
+        run: scripts/check-public-exposure.sh --tree
+'''
+new = '''      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Test exposure scanner
+        run: scripts/check-public-exposure.test.sh
+      - name: Scan tracked tree
+        run: scripts/check-public-exposure.sh --tree
+      - name: Scan branch ancestry
+        run: scripts/check-public-exposure.sh --history HEAD
+'''
+if text.count(old) != 1:
+    raise SystemExit('public-exposure CI block is not unique; stop for review')
+path.write_text(text.replace(old, new))
+PY
+
+git -C "$CI_CHECKOUT" diff --check
+git -C "$CI_CHECKOUT" add .github/workflows/ci.yml
+git -C "$CI_CHECKOUT" commit -m 'ci: scan public branch ancestry after history rescrub'
+git -C "$CI_CHECKOUT" push origin HEAD:refs/heads/main
+"$CI_CHECKOUT/scripts/check-public-exposure.test.sh"
+"$CI_CHECKOUT/scripts/check-public-exposure.sh" --tree "$CI_CHECKOUT"
+"$CI_CHECKOUT/scripts/check-public-exposure.sh" --history HEAD "$CI_CHECKOUT"
+```
+
+This local commit is part of the rewritten push packet. It is deliberately not
+landed on the pre-rewrite branch, where full ancestry is known to fail.
+
+### 6. Build the final ref map and prove the remote has not moved
+
+```bash
+AFTER="$WORKDIR/refs-after.tsv"
+REF_MAP="$WORKDIR/ref-map.tsv"
+REMOTE_NOW="$WORKDIR/remote-now.tsv"
+git -C "$MIRROR" for-each-ref \
+  --format='%(refname) %(objectname)' refs/heads refs/tags | sort > "$AFTER"
+cut -d' ' -f1 "$AFTER" > "$WORKDIR/names-after"
+cmp "$WORKDIR/names-before" "$WORKDIR/names-after"
+join "$BEFORE" "$AFTER" > "$REF_MAP"
+"$SCANNER" --all-public-refs "$MIRROR"
+git -C "$MIRROR" fsck --full
+
+git ls-remote --refs --heads --tags "$PUBLIC_URL" \
+  | awk '{print $2 " " $1}' | sort > "$REMOTE_NOW"
+cmp "$REMOTE_BEFORE" "$REMOTE_NOW"
+sha256sum "$REF_MAP"
+wc -l "$BEFORE" "$AFTER" "$REF_MAP"
+```
+
+Stop if the remote snapshot changed during the freeze or any ref name differs.
+The final map format is `<ref> <old-object> <new-object>` and contains public
+heads/tags only.
+
+### 7. Operator force-push, fresh-clone proof, and cache disposition
+
+After temporarily adjusting branch/tag protection and notifying clone/PR
+owners, run exactly these explicit refspecs. Atomic support is required; do not
+fall back to a partial multi-ref push.
+
+```bash
+git -C "$MIRROR" remote add public "$PUBLIC_URL"
+git -C "$MIRROR" push --dry-run --force --atomic public \
+  'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
+git -C "$MIRROR" push --force --atomic public \
+  'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
+
+POST_MIRROR="$WORKDIR/post-push.git"
+POST_CLONE="$WORKDIR/post-push-clone"
+git clone --mirror "$PUBLIC_URL" "$POST_MIRROR"
+git clone "$PUBLIC_URL" "$POST_CLONE"
+git -C "$POST_MIRROR" for-each-ref \
+  --format='%(refname) %(objectname)' refs/heads refs/tags | sort \
+  > "$WORKDIR/refs-post-push.tsv"
+cmp "$AFTER" "$WORKDIR/refs-post-push.tsv"
+"$POST_CLONE/scripts/check-public-exposure.sh" --all-public-refs "$POST_MIRROR"
+"$POST_CLONE/scripts/check-public-exposure.sh" --tree "$POST_CLONE"
+"$POST_CLONE/scripts/check-public-exposure.sh" --history HEAD "$POST_CLONE"
+git -C "$POST_MIRROR" fsck --full
+git -C "$POST_CLONE" fsck --full
+test "$(git -C "$POST_CLONE" rev-list --max-parents=0 HEAD)" = "$ROOT_BEFORE"
+gh repo view alluvial-lab/outpost_pi --json visibility --jq .visibility \
+  | grep -Fx PUBLIC
+```
+
+Finally, choose either a GitHub cached-object purge request or explicit
+acceptance of the bounded old-object cache risk. Append the execution timestamp,
+pre/post `main` objects, ref count, `sha256sum "$REF_MAP"`, fresh-clone check
+results, visibility result, and cache decision below. Do not paste the rule file
+or exposed value. Securely delete `WORKDIR` only after the record is complete.
+
+## Preparation verification
+
+- `scripts/check-public-exposure.test.sh` and current-tree mode — PASS in the
+  prerequisite child (`82768060`).
+- Pre-rewrite selected-ancestry probe — expected non-zero with bounded
+  commit/path identifiers only.
+- The runbook's unique-block CI transformer was exercised against the current
+  workflow in a temporary file — PASS; it adds full checkout plus ancestry mode
+  without mutating `.github/workflows/ci.yml` now.
+- `scripts/check-public-exposure.sh --tree` and `git diff --check` after adding
+  this runbook — PASS.
+- Mirror clone, filter-repo, ref mutation, remote push, and fresh public clone —
+  NOT RUN; they are the operator gate rather than agent verification.
+
+## Operator execution record
+
+Pending. Required fields: execution timestamp; old/new `main`; public ref count;
+ref-map SHA-256 and operator-local path; mirror and fresh-clone scanner/fsck
+results; preserved root/provenance/tree evidence; visibility; branch-protection
+restoration; clone/PR coordination; cached-object disposition.
+
+## Blocker
+
+This checkpoint is intentionally blocked on operator-controlled public-ref
+mutation and post-push verification. It remains `implementing`, all acceptance
+boxes remain open, and the parent feature remains `implementing`. The agent must
+not clone/rewrite public refs locally, change branch protection, force-push, or
+push any normal commit on the operator's behalf.
