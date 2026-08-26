@@ -182,10 +182,7 @@ final class JsonStateStore implements StateStore {
     _debounce?.cancel();
 
     final revision = _revision;
-    final contents = jsonEncode(<String, Object?>{
-      'version': formatVersion,
-      'data': _data,
-    });
+    final contents = encodeEnvelope(_data);
     _queuedRevision = revision;
     final previous = _writeTail;
     final attempt = () async {
@@ -289,6 +286,10 @@ final class JsonStateStore implements StateStore {
     }
     return false;
   }
+
+  /// Encode [data] in the canonical versioned state envelope.
+  static String encodeEnvelope(Map<String, Object?> data) =>
+      jsonEncode(<String, Object?>{'version': formatVersion, 'data': data});
 
   /// Replace [file] with [contents] through a flushed same-directory temp file.
   ///
