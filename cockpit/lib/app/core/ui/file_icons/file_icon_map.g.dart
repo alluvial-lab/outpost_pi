@@ -6,7 +6,7 @@
 //
 // To regenerate, see the script referenced by plan 37 / the Cockpit commit history.
 // Only the *default* (dark) set is bundled; _light and _highContrast variants
-// are ignored because Cockpit is dark-only.
+// are not included in this generated icon map.
 //
 // ignore_for_file: lines_longer_than_80_chars
 
