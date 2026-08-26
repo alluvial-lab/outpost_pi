@@ -164,6 +164,8 @@ export interface OwnerOuterFrameInput {
   ingress: Extract<DecodedRelayIngress, { kind: "outer" }>;
   roomId?: string;
   turnActive(): boolean;
+  /** Aborted when the relay generation owning this dispatch is replaced. */
+  signal?: AbortSignal;
   isCurrent(): boolean;
   onMessage(message: ClientMessage, sender: PeerChannel): void | Promise<void>;
   onDisconnect(peerId: string): void;
@@ -289,7 +291,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   async handleOuterFrame(input: OwnerOuterFrameInput): Promise<boolean> {
     const decoded = input.ingress;
     const outer = decoded.frame;
-    if (!input.isCurrent()) return false;
+    if (!input.isCurrent() || input.signal?.aborted) return false;
     // NOTE: do NOT re-check `outer.room` against `input.roomId` here. The
     // relay's `dispatch_outer` rewrites the DELIVERED envelope's `room` to the
     // SENDER's authenticated room_id (anti-spoof: "recipient sees sender's
@@ -309,7 +311,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       // A valid plaintext re-pair is allowed even while an older secure channel
       // is attached; successful persistence replaces and detaches that channel.
       await this.handlePairRequest(input, outer.peer, inner);
-      return true;
+      return !input.signal?.aborted;
     }
     if (this.channels.has(outer.peer)) return false;
 
@@ -322,7 +324,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       // settlement too: the gate releases and reattach uses whatever durable
       // high-water remains instead of wedging the owner forever.
       await drainGate;
-      if (!input.isCurrent()) return false;
+      if (!input.isCurrent() || input.signal?.aborted) return false;
       // A valid re-pair may have installed fresh key material while the old
       // same-key generation drained; never replace that channel here.
       if (this.channels.has(outer.peer)) return false;
@@ -331,7 +333,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     }
 
     const known = await this.deps.findKnownPeer(outer.peer);
-    if (!input.isCurrent() || this.channels.has(outer.peer)) return false;
+    if (!input.isCurrent() || input.signal?.aborted || this.channels.has(outer.peer)) return false;
     if (known) {
       if (!known.channel_key) {
         this.deps.auditDrop(outer.peer, "missing_channel_key");
@@ -452,12 +454,12 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       await this.deps.addPeer(record);
       this.deps.onPeerPersisted();
     } catch {
-      if (input.isCurrent()) {
+      if (input.isCurrent() && !input.signal?.aborted) {
         sendError("internal_error", "Pairing could not be completed.");
       }
       return;
     }
-    if (!input.isCurrent()) return;
+    if (!input.isCurrent() || input.signal?.aborted) return;
 
     const session = this.deps.currentPairingSession();
     input.sendToPeer(peerId, {

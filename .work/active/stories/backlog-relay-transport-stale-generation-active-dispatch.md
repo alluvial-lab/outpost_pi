@@ -1,7 +1,7 @@
 ---
 id: backlog-relay-transport-stale-generation-active-dispatch
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, security]
 parent: null
 depends_on: []
@@ -41,3 +41,13 @@ if its handler never resolves.
 Generation-owned cancellation (AbortController-style) or a global bound on
 active stale dispatches; test repeated reconnects while every prior
 generation's handler remains unresolved.
+
+## Implementation notes
+- Execution capability: inline current-session implementation; lifecycle-sensitive relay dispatch cancellation with a repeated-generation regression.
+- Review weight: standard (source: caller default); bounded inline review follows green owning verification.
+- Files changed: `pi-extension/src/extension/relay_transport.ts`, `pi-extension/src/extension/ports.ts`, `pi-extension/src/index.ts`, `pi-extension/src/extension/owner_multiplexer.ts`, `pi-extension/src/extension/relay_transport.test.ts`.
+- Tests added/removed: repeated relay replacement with deliberately unresolved active handlers; every stale generation receives an abort signal and stop aborts the final generation.
+- Simplification: used one per-binding `AbortController` shared by data/control dispatch rather than adding a second stale-work queue or global retry policy.
+- Discrepancies from design: chose cooperative generation-owned cancellation over a global stale-dispatch cap; transport releases retained cells immediately while production owner handling fences side effects at async boundaries.
+- Adjacent issues parked: none.
+- Verification: `corepack pnpm typecheck`; `corepack pnpm test` (60 files, 1102 passed, 3 skipped); `corepack pnpm build`; targeted relay transport suite (22 passed).
