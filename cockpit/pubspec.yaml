@@ -52,9 +52,12 @@ dependencies:
   # Plan 37 — folder selection (NSOpenPanel on macOS) to open a project.
   file_picker: ^8.1.2
 
-  # Wave 2 — local persistence of projects (saved folder = project).
+  # Legacy persistence reader retained for the one-shot JSON migration.
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+
+  # Cross-platform state-file path construction.
+  path: ^1.9.1
 
   # Visual identity — Space Mono for display, body, labels, and code; served
   # at runtime and cached by google_fonts.
