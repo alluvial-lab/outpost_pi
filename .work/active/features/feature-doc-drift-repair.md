@@ -46,3 +46,75 @@ resolved at groom re-check — re-verify before editing.
 Every edited surface re-checked against the code it describes (docs are
 current-state contracts per `.agents/rules/documentation-discipline.md`);
 link/reference sweep over the diff.
+
+## Design decisions
+
+- Re-verified every carried-forward anchor against the current tree before
+  editing. Where source had moved, the current symbol/comment was used as the
+  contract rather than preserving stale line numbers.
+- Qualified the Space Mono claim instead of regenerating assets: the checked-in
+  banner generator intentionally uses the approved Noto Sans Mono fallback on
+  this VM, while the SVG source and product surfaces retain the Space Mono
+  contract.
+- Replaced current-product `Remote Pi` prose in the six named skill reference
+  surfaces with `Outpost-Pi`; preserved `remote-pi-*` citation handles and
+  `remote_pi` provenance/path identifiers.
+- Repointed the UAT automation reference to the checked-in
+  `e2e/run-pairing.sh` surface and the deploy reference to the actual
+  `AGENTS.md#paired-wire-changes-deploy-together` heading.
+
+## Implementation notes
+
+- Execution capability: `openai-codex/gpt-5.6-luna` xhigh (caller-selected);
+  direct-read, bounded multi-surface prose repair with code re-verification.
+- Review weight: `standard` (source: caller note/default).
+- Files changed:
+  - `pi-extension/src/extension/composition_root.ts`
+  - `pi-extension/README.md`
+  - `pi-extension/src/index.ts`
+  - `site/README.md`
+  - `cockpit/lib/app/core/ui/file_icons/file_icon_map.g.dart`
+  - `AGENTS.md`, `README.md`, `CHANGELOG.md`, `branding/README.md`
+  - `docs/DECISIONS.md`, `docs/release-uat.md`
+  - `.agents/skills/pi-extension-typescript/SKILL.md`
+  - `.agents/skills/flutter-mobile/SKILL.md`
+  - `.agents/skills/flutter-desktop-cockpit/SKILL.md`
+  - `.agents/skills/rust-relay/SKILL.md`
+  - `.agents/skills/next-site/SKILL.md`
+  - `.agents/skills/code-design-principles/SKILL.md`
+- Tests added/removed: none; this is a documentation-only repair. No build
+  suites were run per the item brief.
+- Simplification: removed duplicate/stale release and lifecycle wording;
+  no compatibility or runtime behavior changed.
+- Discrepancies from design: finding 5's old `AGENTS.md` no-op claim is absent
+  from the current root file; it was verified already-resolved and not edited.
+  The carried-forward skill-description finding was rechecked and remained
+  stale across all six named skills, so it was edited rather than marked
+  resolved.
+- Adjacent issues parked: none.
+
+## Finding disposition
+
+- **Edited and re-verified:** 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, and 12.
+  Finding 7 updated `AGENTS.md`, `branding/README.md`, and `CHANGELOG.md`;
+  finding 10 updated the six skill files listed above.
+- **Already-resolved:** 5. The current `AGENTS.md` makes no no-op claim for
+  `arm`; the current `scripts/hot-reload.sh` returns status 1 when the toggle
+  is off, so no documentation edit was warranted.
+- **Verified-fixed before authoring:** none.
+
+## Verification evidence
+
+- `git diff --check 32f9ed9a..HEAD` passed.
+- Rechecked lifecycle paths: `registerLifecycleHooks` registers
+  `session_shutdown`; `agent_settled` flushes mesh ingress and gates hot reload;
+  `rpc_child.ts` exports `EXIT_FRESH_SESSION = 42`; restart-managed `session_new`
+  exits with that code and relaunches without `--continue`.
+- Rechecked dual-mode site/Cockpit state in `site/src/app/globals.css` and
+  `cockpit/lib/app/core/ui/themes/app_theme.dart`.
+- Rechecked repository remotes: `origin` is the push target and `upstream`
+  is the configured provenance fetch remote.
+- Rechecked changed local links: `../e2e/run-pairing.sh` and
+  `../AGENTS.md#paired-wire-changes-deploy-together` resolve; all changed
+  Markdown structure and references remain intact.
+
