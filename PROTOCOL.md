@@ -1,7 +1,7 @@
 # Outpost-Pi — Protocol & Security
 
 Canonical documentation for the Outpost-Pi protocol and protection model.
-Updated 2026-07-23.
+Updated 2026-08-26.
 
 `plan/NN-*` citations in this document are historical references: `plan/`
 was retired to git history (see `docs/DECISIONS.md`); recover a retired
@@ -245,15 +245,31 @@ Details in `plan/24-mesh-membership.md`.
 
 ## App actions
 
-A curated vocabulary of typed actions that the mobile app invokes on the paired Pi session. This is **not** a generic slash-command picker — every action has a structured payload and maps to a public SDK API. The pi-extension handles it; the app parses nothing.
+A curated vocabulary of typed actions that the mobile app invokes on the paired Pi
+session. This is **not** a generic slash-command picker — every action has a
+structured payload and maps to a supported Pi SDK or extension lifecycle
+operation. The pi-extension handles it; the app parses nothing.
 
-| Action | ClientMessage | SDK call in pi-extension |
+| Action | ClientMessage | Pi-extension operation |
 |---|---|---|
 | Compact context | `session_compact` | `ctx.compact()` |
-| New session | `session_new` | `ctx.newSession()` |
+| New session | `session_new` | `ctx.newSession()` in-process; managed restart-fresh lifecycle described below |
 | Set model | `model_set {provider, model_id}` | `ModelRegistry.find(...)` + `pi.setModel(model)` |
 | Set thinking | `thinking_set {level}` | `pi.setThinkingLevel(level)` |
 | List models | `list_models` | `ModelRegistry.getAvailable()` |
+
+`session_new` has two execution paths. In an in-process command context,
+`ctx.newSession()` replaces the SDK session and the extension re-captures fresh
+session capabilities before continuing. In daemon/restart-wrapper mode, where
+the command-only SDK capability is unavailable, the extension installs a
+synchronous restart fence, rejects later `user_message` frames with
+`delivery_retry`, and drains deliveries admitted before the fence. On the
+normal drain path it stages the correlated `action_ok` and empty-session reset
+before disposing the active runtime. It exits with `EXIT_FRESH_SESSION` (`42`)
+once teardown settles or the bounded shutdown deadline expires. The supervisor
+or wrapper relaunches the process
+without `--continue`; the deadline is a liveness fallback, not proof that
+delivery completed, so the app's durable outbox remains the recovery boundary.
 
 ### Wire — examples
 
@@ -296,7 +312,11 @@ A curated vocabulary of typed actions that the mobile app invokes on the paired 
 Replies (`action_ok` / `models_list`) only confirm dispatch. Visible effects arrive through the normal channels:
 - Completed compaction → `agent_chunk`/`agent_done` in chat
 - Changed model → `model_select` event broadcast to all connected owners
-- New session → `pair_ok` (or equivalent) with a new `session_started_at`
+- New session → successor room metadata with a new canonical `session_id` is
+  the authoritative convergence signal; the app adopts that room/session and
+  hydrates it. `pair_ok` is pairing-handshake metadata, not the
+  session-replacement convergence signal. `session_started_at` is only
+  same-session ordering/high-water metadata
 
 ### Known `error` codes (app↔Pi)
 
