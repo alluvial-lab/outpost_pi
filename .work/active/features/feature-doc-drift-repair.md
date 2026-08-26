@@ -134,3 +134,13 @@ patterns were searched, and local links were resolved. The delegated worker
 surface did not expose an independent reviewer tool; no code/build suite was
 needed for this prose-only item, and `git diff --check` passed.
 
+## Phase-8 addition (2026-08-26)
+
+`PROTOCOL.md`'s `session_new` contract was rolled forward after the completion
+review finding: it now documents both the in-process `ctx.newSession()` path
+and the managed restart-fresh fence/drain/dispose/exit/relaunch path, and names
+successor room metadata with a new canonical `session_id` as the authoritative
+convergence signal. The existing schema-owned `delivery_retry` entry was
+verified against the schema and generated projections; no protocol-table
+addition was needed.
+
