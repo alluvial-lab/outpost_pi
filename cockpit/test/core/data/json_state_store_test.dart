@@ -45,6 +45,52 @@ void main() {
     expect(reopened.keys.toSet(), <String>{'theme', 'nested'});
   });
 
+  test(
+    'concurrent opens share one store and flushAll flushes the shared instance',
+    () async {
+      final factory = JsonStateStoreFactory(temporary.path);
+      final firstOpening = factory.open('concurrent');
+      final secondOpening = factory.open('concurrent');
+      final first = await firstOpening;
+      final second = await secondOpening;
+
+      expect(identical(first, second), isTrue);
+
+      final pendingWrite = second.put('shared', true);
+      await factory.flushAll();
+
+      expect(stateFile('concurrent').existsSync(), isTrue);
+      expect(readEnvelope('concurrent')['data'], <String, Object?>{
+        'shared': true,
+      });
+      await pendingWrite;
+    },
+  );
+
+  test('a failed open does not poison a later retry', () async {
+    final file = stateFile('retry');
+    await file.writeAsString('{not-json');
+    var diagnosticCalls = 0;
+    final factory = JsonStateStoreFactory(
+      temporary.path,
+      diagnostics: (_) {
+        diagnosticCalls++;
+        if (diagnosticCalls == 1) {
+          throw StateError('diagnostic probe failed');
+        }
+      },
+    );
+
+    await expectLater(factory.open('retry'), throwsA(isA<StateError>()));
+    final store = await factory.open('retry');
+
+    expect(diagnosticCalls, 2);
+    expect(store.keys, isEmpty);
+    await store.put('recovered', true);
+    await factory.flushAll();
+    expect(readEnvelope('retry')['data'], <String, Object?>{'recovered': true});
+  });
+
   test('coalesces a mutation burst into one attempted commit', () async {
     var writes = 0;
     final factory = JsonStateStoreFactory(

@@ -40,32 +40,44 @@ final class JsonStateStoreFactory implements StateStoreFactory {
   final String _rootDirectory;
   final JsonStateStoreAtomicWriter _atomicWriter;
   final JsonStateStoreDiagnosticSink _diagnostics;
-  final Map<String, JsonStateStore> _stores = <String, JsonStateStore>{};
+  final Map<String, Future<StateStore>> _stores =
+      <String, Future<StateStore>>{};
 
   @override
   Future<StateStore> open(String name) async {
     if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(name)) {
       throw ArgumentError.value(name, 'name', 'Must be a simple store name');
     }
-    final path = p.normalize(p.join(_rootDirectory, '$name.json'));
-    final existing = _stores[path];
+    final existing = _stores[name];
     if (existing != null) return existing;
 
+    final path = p.normalize(p.join(_rootDirectory, '$name.json'));
+    final opening = _open(path);
+    _stores[name] = opening;
+    try {
+      return await opening;
+    } catch (_) {
+      if (identical(_stores[name], opening)) _stores.remove(name);
+      rethrow;
+    }
+  }
+
+  Future<StateStore> _open(String path) async {
     final file = File(path);
     final loaded = await JsonStateStore._load(file, _diagnostics);
-    final store = JsonStateStore._(
+    return JsonStateStore._(
       file,
       Map<String, Object?>.of(loaded.data),
       atomicWriter: _atomicWriter,
       writesAllowed: loaded.writesAllowed,
     );
-    _stores[path] = store;
-    return store;
   }
 
   @override
-  Future<void> flushAll() =>
-      Future.wait(_stores.values.map((JsonStateStore store) => store.flush()));
+  Future<void> flushAll() async {
+    final stores = await Future.wait<StateStore>(_stores.values);
+    await Future.wait<void>(stores.map((StateStore store) => store.flush()));
+  }
 
   static void _logDiagnostic(JsonStateStoreDiagnostic diagnostic) {
     developer.log(
