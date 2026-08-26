@@ -1,7 +1,7 @@
 ---
 name: mobile-remote-coding
 description: Cross-cutting Remote Pi mobile remote-coding checklist. Read before changing app/pi-extension/relay behavior for long-lived remote sessions, mobile control surfaces, reconnect hydration, working/idle state, multi-client synchronization, or session replacement.
-updated: 2026-06-28
+updated: 2026-08-26
 ---
 
 # Mobile Remote-Coding Checklist
@@ -16,7 +16,7 @@ A mobile Remote Pi client is not a terminal with perfect continuity. Android can
 Design every remote-coding feature as:
 
 ```text
-authoritative snapshot + idempotent commands + replayable deltas + reconnect hydration
+authoritative snapshot + stable-ID commands + replayable deltas + reconnect hydration
 ```
 
 Never design it as:
@@ -57,11 +57,22 @@ Remote Pi already has the pieces: `ConnectionStatus`, canonical presence/room sn
 
 ## Command semantics
 
-Every app action should be safe under retry and late arrival:
+Remote actions require stable identity and target binding, but retry semantics
+are split by the delivery boundary:
 
 - Include a stable action/message id.
 - ACK only after the receiving side has accepted or explicitly rejected the command.
-- Make retry either idempotent or visibly rejected as duplicate/stale.
+- Use same-session stable-ID idempotency where the receiver supports it (the
+  extension's durable ingress path collapses ordinary duplicates); do not assume
+  exactly-once across session or process replacement.
+- For owner `user_message` delivery, persist the encrypted room-scoped outbox
+  before the first send. On `delivery_retry`, wait for authoritative room/session
+  hydration, durably retarget the entry to the canonical session, and resend the
+  original stable id. Remove it only after confirmation from that target session.
+- Recovery across an ambiguous hard process/session boundary is deliberately
+  at-least-once: if acceptance happened before confirmation was observed, a
+  successor-session stable-ID resend may repeat the intent. Do not require
+  duplicate rejection or claim exactly-once there.
 - Bind actions to `(peer, room/session)` so a delayed response cannot mutate the currently selected session.
 - For `/new` or session replacement, assume old app/extension contexts may still have delayed callbacks; route through fresh session context and clear stale handles. See the pi-extension stale-context guidance. [remote-pi-index-lifecycle]{1}
 

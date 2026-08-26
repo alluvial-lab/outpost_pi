@@ -85,8 +85,13 @@ surfaces at once:
 - `GET /health` — health check (returns `200 OK`)
 - `GET / POST /mesh/<owner_pk_hash>` — signed membership versions
 
-Point your app and `pi-extension` to `ws://<your-server-ip>:3000` (or `wss://`
-if you put it behind a TLS-terminating reverse proxy such as Caddy or nginx).
+Enter the canonical HTTP(S) relay URL in both clients: `http://<your-server-ip>:3000`
+for a direct deployment, or `https://<your-server-ip>:3000` when an external
+TLS-terminating proxy such as Caddy or nginx fronts the relay. The app and
+`pi-extension` convert this value to `ws://` or `wss://` internally when opening
+the WebSocket. Legacy persisted or QR endpoints using `ws://`/`wss://` may be
+tolerated defensively, but those schemes are rejected at the user-configured
+URL boundary.
 
 **`/data` volume**: the relay stores its SQLite database (signed membership
 versions) at `/data/mesh.db` inside the container. Mount a named volume (as in
@@ -153,7 +158,9 @@ relay.yourdomain.com {
 }
 ```
 
-Then set your app and `pi-extension` relay URL to `wss://relay.yourdomain.com`.
+Then set the canonical relay URL in both clients to
+`https://relay.yourdomain.com`; each client converts it to `wss://` when
+opening the socket.
 
 ---
 

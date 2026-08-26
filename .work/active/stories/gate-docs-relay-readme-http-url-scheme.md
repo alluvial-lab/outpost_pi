@@ -1,7 +1,7 @@
 ---
 id: gate-docs-relay-readme-http-url-scheme
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,11 @@ The current app and extension user-configured URL boundaries accept canonical `h
 
 ## Required edit
 Document `http://<your-server-ip>:3000` or `https://...` as the value entered in the app and extension. Explain that the clients convert it to `ws://`/`wss://` when opening the socket, while legacy persisted endpoints may be tolerated defensively.
+
+## Closure (2026-08-26)
+
+Updated `relay/README.md` to use canonical `http://`/`https://` values for
+client configuration, explain the clients' internal WebSocket conversion, and
+correct the reverse-proxy example to `https://`. Verified the app validator at
+`app/lib/data/transport/relay_config.dart:109-130` and the extension
+validator/conversion at `pi-extension/src/config.ts:69-102`.

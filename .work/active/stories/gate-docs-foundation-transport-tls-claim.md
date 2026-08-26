@@ -1,7 +1,7 @@
 ---
 id: gate-docs-foundation-transport-tls-claim
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -30,3 +30,12 @@ The relay binds a plain `TcpListener` and serves HTTP/WebSocket directly; TLS is
 
 ## Required edit
 Replace the transport labels with deployment-dependent WebSocket/TLS wording: the relay serves plain `ws` by default, while `wss` requires an external TLS-terminating proxy. Keep the owner-channel E2E and cross-PC plaintext distinctions explicit.
+
+## Closure (2026-08-26)
+
+Updated `docs/SPEC.md` and `docs/ARCHITECTURE.md` to state that the relay
+serves plain `ws` by default, external TLS termination is required for `wss`,
+post-pairing owner payloads remain E2E-protected, and cross-PC bodies remain
+relay-readable. Verified the transport implementation at
+`relay/src/main.rs:76-84` and the canonical protection contract at
+`PROTOCOL.md:528-534`.

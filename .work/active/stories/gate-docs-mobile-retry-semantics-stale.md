@@ -1,7 +1,7 @@
 ---
 id: gate-docs-mobile-retry-semantics-stale
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,12 @@ The v0.9.0 owner-prompt contract is deliberately at-least-once across a hard ses
 
 ## Required edit
 Replace the blanket retry assertion with the shipped split: require stable IDs and target binding; use same-session idempotency where available; use the encrypted outbox and authoritative room/session hydration for `delivery_retry`; state that hard-boundary recovery is at-least-once and may repeat intent.
+
+## Closure (2026-08-26)
+
+Updated `.agents/skills/mobile-remote-coding/SKILL.md` with stable-ID and
+peer/room/session binding, same-session idempotency, encrypted outbox and
+authoritative hydration for `delivery_retry`, and the at-least-once hard-boundary
+caveat that a successor-session resend may repeat intent. Verified the shipped
+contract at `PROTOCOL.md:338-351` and the outbox port at
+`app/lib/domain/contracts/owner_delivery_outbox.dart:3-20`.
