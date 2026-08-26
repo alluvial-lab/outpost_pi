@@ -743,6 +743,60 @@ describe("peers.json storage permissions", () => {
     expect((await seed.listPeers())[0]?.send_seq).toBe("3");
   });
 
+  test("a third lock generation is not clobbered when quarantine restore collides", async () => {
+    const channelKey = encodePeerChannelKeys({
+      send: new Uint8Array(32).fill(73),
+      recv: new Uint8Array(32).fill(74),
+    });
+    const seed = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    await seed.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+    mkdirSync(PEERS_LOCK_FOR_TEST, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      join(PEERS_LOCK_FOR_TEST, "owner.json"),
+      JSON.stringify({ pid: 2_147_483_647, token: "dead-before-restore" }),
+    );
+    const old = new Date(Date.now() - 1_000);
+    utimesSync(PEERS_LOCK_FOR_TEST, old, old);
+
+    let insertedThirdGeneration = false;
+    const reclaimer = new PeerStorage({
+      directory: PEERS_DIR_FOR_TEST,
+      lockTimeoutMs: 30,
+      lockRetryMs: 1,
+      lockStaleMs: 0,
+      lockHooks: {
+        afterReclaimRenamed: () => {
+          if (insertedThirdGeneration) return;
+          insertedThirdGeneration = true;
+          const quarantineName = readdirSync(PEERS_DIR_FOR_TEST)
+            .find((name) => name.startsWith("peers.lock.quarantine."));
+          expect(quarantineName).toBeDefined();
+          // Force the defensive restoration branch, then race in a live third
+          // acquirer before it can restore the quarantined generation.
+          rmSync(join(PEERS_DIR_FOR_TEST, quarantineName!, "reclaim"), { force: true });
+          mkdirSync(PEERS_LOCK_FOR_TEST, { mode: 0o700 });
+          writeFileSync(
+            join(PEERS_LOCK_FOR_TEST, "owner.json"),
+            JSON.stringify({ pid: process.pid, token: "third-generation" }),
+          );
+        },
+      },
+    });
+
+    await expect(reclaimer.reserveSendSeq(PHONE_PEER.remote_epk, channelKey))
+      .rejects.toBeInstanceOf(storage.PeerStorageLockTimeoutError);
+    expect(readFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), "utf8"))
+      .toBe(JSON.stringify({ pid: process.pid, token: "third-generation" }));
+    expect(JSON.parse(readFileSync(PEERS_FILE_FOR_TEST, "utf8")).peers[0].send_seq).toBe("0");
+
+    rmSync(PEERS_LOCK_FOR_TEST, { recursive: true, force: true });
+    for (const name of readdirSync(PEERS_DIR_FOR_TEST)) {
+      if (name.startsWith("peers.lock.quarantine.")) {
+        rmSync(join(PEERS_DIR_FOR_TEST, name), { recursive: true, force: true });
+      }
+    }
+  });
+
   test("addPeer migrates an existing permissive peers.json on update", async () => {
     mkdirSync(PEERS_DIR_FOR_TEST, { recursive: true, mode: 0o700 });
     writeFileSync(PEERS_FILE_FOR_TEST, JSON.stringify({ peers: [PHONE_PEER] }, null, 2), { mode: 0o644 });

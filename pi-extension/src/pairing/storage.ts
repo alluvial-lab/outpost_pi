@@ -762,14 +762,50 @@ export class PeerStorage {
       : !movedOwner && movedStat.dev === lockStat.dev && movedStat.ino === lockStat.ino;
     if (!movedInspectedGeneration || movedMarker !== markerToken) {
       // The path changed after our pre-rename owner check: this is a successor,
-      // not the dead generation we classified. Restore it; never delete it.
-      await rename(quarantinePath, this.lockPath);
+      // not the dead generation we classified. Restore the quarantined
+      // generation without replacing a lock path that may already belong to a
+      // third acquirer.
+      await this.restoreQuarantinedLock(quarantinePath, markerToken);
       return false;
     }
 
     await rm(quarantinePath, { recursive: true, force: true });
     await this.lockHooks?.onReclaimCommitted?.();
     return true;
+  }
+
+  /**
+   * Requeue a quarantined generation without POSIX `rename` clobber semantics.
+   * `mkdir` reserves an absent lock path atomically; an existing path is a
+   * successor and is left untouched while the quarantined generation remains
+   * available for a later retry.
+   */
+  private async restoreQuarantinedLock(quarantinePath: string, markerToken: string): Promise<void> {
+    try {
+      await mkdir(this.lockPath, { mode: 0o700 });
+    } catch (error) {
+      if (_hasErrorCode(error, "EEXIST")) return;
+      throw error;
+    }
+
+    // Install a reclaim marker before moving the owner file. This fences a
+    // contender that observes the reserved directory while restoration is in
+    // progress, including hosts configured with a zero stale threshold.
+    const markerPath = this.lockReclaimPath;
+    try {
+      await writeFile(markerPath, markerToken, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    } catch (error) {
+      if (!_hasErrorCode(error, "EEXIST")) throw error;
+      return;
+    }
+
+    try {
+      await rename(join(quarantinePath, "owner.json"), join(this.lockPath, "owner.json"));
+    } catch (error) {
+      if (!_hasErrorCode(error, "ENOENT")) throw error;
+    }
+    await this.removeReclaimMarkerIfOwned(markerToken);
+    await rm(quarantinePath, { recursive: true, force: true });
   }
 
   private newLockToken(): string {
