@@ -1,6 +1,6 @@
 ---
 name: rust-relay
-description: Remote Pi Rust relay reference. Read before editing or reviewing relay/ code, WebSocket routing, mesh membership endpoints, presence/rooms state, relay logging/privacy, cross-PC forwarding, or relay tests.
+description: Outpost-Pi Rust relay reference. Read before editing or reviewing relay/ code, WebSocket routing, mesh membership endpoints, presence/rooms state, relay logging/privacy, cross-PC forwarding, or relay tests.
 updated: 2026-08-16
 provenance: skill-reference
 ---
@@ -33,7 +33,7 @@ Use `cargo fmt` to apply formatting. Do not commit `target/`, local databases un
 
 ## Relay responsibility boundaries
 
-Remote Pi's relay is a transport and coordination service, not the owner of Pi session semantics:
+Outpost-Pi's relay is a transport and coordination service, not the owner of Pi session semantics:
 
 - It authenticates peers with Ed25519 challenge-response, derives peer IDs from public keys, and routes WebSocket frames between live peers. [remote-pi-relay-router-handler]{1}
 - It forwards outer-envelope `ct` values opaquely: parse JSON shape, enforce size, rewrite sender peer/room, and never decode or inspect payload content. [remote-pi-relay-outer-envelope]{1} [remote-pi-relay-router-handler]{1}
@@ -70,7 +70,7 @@ Guidance:
 
 ## WebSocket handler pattern
 
-Axum 0.7's `WebSocketUpgrade` establishes a WebSocket and `on_upgrade` transfers control to the async connection owner. [axum-0-7-websocket]{1} In Remote Pi, `handle_peer` owns one socket for its full lifetime. [remote-pi-relay-router-handler]{1}
+Axum 0.7's `WebSocketUpgrade` establishes a WebSocket and `on_upgrade` transfers control to the async connection owner. [axum-0-7-websocket]{1} In Outpost-Pi, `handle_peer` owns one socket for its full lifetime. [remote-pi-relay-router-handler]{1}
 
 Connection flow:
 
@@ -129,7 +129,7 @@ Rules:
 
 ## Logging, metrics, and privacy
 
-Use `tracing` macros, not `println!`. `tracing_subscriber::fmt::init()` installs a subscriber and, with `env-filter`, uses `RUST_LOG` for filtering; Remote Pi enables `env-filter`. [tracing-subscriber-0-3-fmt-init]{1}
+Use `tracing` macros, not `println!`. `tracing_subscriber::fmt::init()` installs a subscriber and, with `env-filter`, uses `RUST_LOG` for filtering; Outpost-Pi enables `env-filter`. [tracing-subscriber-0-3-fmt-init]{1}
 
 Privacy constraints:
 

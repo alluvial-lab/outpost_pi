@@ -1,6 +1,6 @@
 ---
 name: flutter-desktop-cockpit
-description: Remote Pi Flutter desktop cockpit reference. Read before editing or reviewing cockpit/ code, Flutter desktop lifecycle, shadcn_flutter UI, flutter_modular modules/routes/binds, Hive persistence, terminal/PTY/file/window/native plugin surfaces, markdown/media rendering, local notifications, or desktop build/test workflows.
+description: Outpost-Pi Flutter desktop cockpit reference. Read before editing or reviewing cockpit/ code, Flutter desktop lifecycle, shadcn_flutter UI, flutter_modular modules/routes/binds, Hive persistence, terminal/PTY/file/window/native plugin surfaces, markdown/media rendering, local notifications, or desktop build/test workflows.
 updated: 2026-06-28
 provenance: skill-reference
 ---

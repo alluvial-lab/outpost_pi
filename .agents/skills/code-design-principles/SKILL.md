@@ -1,12 +1,12 @@
 ---
 name: code-design-principles
-description: Agent-neutral code design and implementation principles for Remote Pi. Load when designing modules, defining boundaries, implementing features, fixing bugs, reviewing architecture, or applying refactors across pi-extension, app, relay, cockpit, or site.
+description: Agent-neutral code design and implementation principles for Outpost-Pi. Load when designing modules, defining boundaries, implementing features, fixing bugs, reviewing architecture, or applying refactors across pi-extension, app, relay, cockpit, or site.
 updated: 2026-06-28
 ---
 
 # Code Design Principles
 
-These principles are adapted from the SNC/platform design discipline but are intentionally agent-neutral and project-neutral enough for every Remote Pi subproject.
+These principles are adapted from the SNC/platform design discipline but are intentionally agent-neutral and project-neutral enough for every Outpost-Pi subproject.
 
 ## When to load
 
@@ -80,7 +80,7 @@ Checklist:
 
 Variant sets should live in one typed registry/schema, with types, validation, dispatch, display, and tests derived from it.
 
-Good candidates in Remote Pi:
+Good candidates in Outpost-Pi:
 
 - protocol message names;
 - app action names;
@@ -166,7 +166,7 @@ Rules:
 
 ## 6. Convergent State Machines
 
-Remote Pi surfaces remote, asynchronous state. Every state machine needs convergence paths, not only happy-path transitions.
+Outpost-Pi surfaces remote, asynchronous state. Every state machine needs convergence paths, not only happy-path transitions.
 
 For `working`/idle, connection, pairing, and daemon states, ask:
 

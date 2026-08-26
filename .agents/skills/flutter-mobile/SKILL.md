@@ -1,6 +1,6 @@
 ---
 name: flutter-mobile
-description: Remote Pi Flutter mobile app reference. Read before editing or reviewing app/ code, mobile lifecycle, provider/ViewModels, routing, relay WebSocket reconnect, room/session state, secure storage, Hive cache, or UI async safety.
+description: Outpost-Pi Flutter mobile app reference. Read before editing or reviewing app/ code, mobile lifecycle, provider/ViewModels, routing, relay WebSocket reconnect, room/session state, secure storage, Hive cache, or UI async safety.
 updated: 2026-08-16
 ---
 
@@ -119,7 +119,7 @@ re-pair the app.
 
 ## App architecture
 
-Remote Pi's app is the mobile iOS/Android client for pairing, session lists, streaming chat, and tool approval cards. [remote-pi-app-guidance]{1}
+Outpost-Pi's app is the mobile iOS/Android client for pairing, session lists, streaming chat, and tool approval cards. [remote-pi-app-guidance]{1}
 
 Layer direction is load-bearing:
 
@@ -149,7 +149,7 @@ if (!mounted) return; // StatefulWidget State
 ScaffoldMessenger.of(context).showSnackBar(...);
 ```
 
-Remote Pi's app guidance is stricter than the lint because callback chains can hide context use from analysis: do not use `context` inside `.onSuccess`, `.onFailure`, `.flatMap`, `.then`, or `.whenComplete`; turn those paths into `await` plus a mounted guard. [remote-pi-app-guidance]{1}
+Outpost-Pi's app guidance is stricter than the lint because callback chains can hide context use from analysis: do not use `context` inside `.onSuccess`, `.onFailure`, `.flatMap`, `.then`, or `.whenComplete`; turn those paths into `await` plus a mounted guard. [remote-pi-app-guidance]{1}
 
 ## Provider / ViewModel usage
 
@@ -185,7 +185,7 @@ This app pins `go_router ^17.5.0`; check the local generated lock/API before cop
 
 `IOWebSocketChannel.connect` wraps `dart:io` WebSocket connections. Its `pingInterval` closes the socket with a going-away code when pings are not answered, and connection errors surface on the stream before close. [web-socket-channel-io]{1}
 
-Remote Pi app transport rules:
+Outpost-Pi app transport rules:
 
 - `WsTransport` uses `IOWebSocketChannel.connect(..., pingInterval: 45s)` for app↔relay TCP liveness; do not confuse this with protocol-level app↔Pi ping/pong. [web-socket-channel-io]{1} [remote-pi-app-transport-state]{1}
 - `ConnectionManager` is the app-side owner of connection status, retry/backoff, presence, rooms, and liveness snapshots. [remote-pi-app-transport-state]{1}
