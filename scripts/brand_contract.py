@@ -145,7 +145,9 @@ def _parse_css_declarations(body: str, *, selector: str) -> dict[str, str]:
         name = name.strip()
         value = raw_value.strip()
         if not name.startswith("--"):
-            continue
+            raise ContractError(
+                f"Unsupported declaration in {selector}: {declaration!r}"
+            )
         if not re.fullmatch(r"--[a-z0-9-]+", name):
             raise ContractError(f"Unsupported token name in {selector}: {name!r}")
         if name in declarations:
@@ -168,24 +170,67 @@ def _parse_css_mode(body: str, *, selector: str) -> dict[str, str]:
     return result
 
 
+def _reject_css_outside_supported_grammar(
+    css: str, *, accepted_patterns: tuple[tuple[re.Pattern[str], str], ...]
+) -> None:
+    """Reject any CSS syntax outside the explicitly supported contract grammar."""
+    spans: list[tuple[int, int]] = []
+    for pattern, selector in accepted_patterns:
+        matches = list(pattern.finditer(css))
+        if len(matches) != 1:
+            raise ContractError(
+                f"Expected exactly one supported {selector} declaration block; found "
+                f"{len(matches)}"
+            )
+        spans.append(matches[0].span())
+
+    imports = list(re.finditer(r"@import\s+url\([^)]*\)\s*;", css))
+    if len(imports) != 1:
+        raise ContractError(
+            f"Expected exactly one supported @import declaration; found {len(imports)}"
+        )
+    spans.append(imports[0].span())
+
+    masked = list(css)
+    for start, end in spans:
+        masked[start:end] = " " * (end - start)
+    remainder = "".join(masked).strip()
+    if remainder:
+        raise ContractError(
+            "Unsupported CSS grammar outside the canonical contract blocks: "
+            f"{remainder[:120]!r}"
+        )
+
+
 def build_theme_fixture(tokens_css: str) -> dict[str, object]:
     """Build the deterministic cross-surface theme fixture from canonical CSS."""
     css = _remove_css_comments(tokens_css)
-    dark_body = _selector_block(
+    dark_pattern = re.compile(
+        r"(?P<selector>:root\s*,\s*:root\[data-theme\s*=\s*['\"]dark['\"]\])"
+        r"\s*\{(?P<body>[^{}]*)\}"
+    )
+    light_pattern = re.compile(
+        r"(?P<selector>:root\[data-theme\s*=\s*['\"]light['\"]\])"
+        r"\s*\{(?P<body>[^{}]*)\}"
+    )
+    media_pattern = re.compile(
+        r"@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*"
+        r":root:not\(\[data-theme\s*=\s*['\"]light['\"]\]\)\s*\{"
+        r"(?P<body>[^{}]*)\}\s*\}"
+    )
+    _reject_css_outside_supported_grammar(
         css,
-        re.compile(
-            r"(?P<selector>:root\s*,\s*:root\[data-theme\s*=\s*['\"]dark['\"]\])"
-            r"\s*\{(?P<body>[^{}]*)\}"
+        accepted_patterns=(
+            (dark_pattern, ':root, :root[data-theme="dark"]'),
+            (light_pattern, ':root[data-theme="light"]'),
+            (media_pattern, '@media dark :root:not([data-theme="light"])'),
         ),
-        ":root, :root[data-theme=\"dark\"]",
+    )
+    dark_body = _selector_block(
+        css, dark_pattern, ':root, :root[data-theme="dark"]'
     )
     light_body = _selector_block(
-        css,
-        re.compile(
-            r"(?P<selector>:root\[data-theme\s*=\s*['\"]light['\"]\])"
-            r"\s*\{(?P<body>[^{}]*)\}"
-        ),
-        ":root[data-theme=\"light\"]",
+        css, light_pattern, ':root[data-theme="light"]'
     )
     dark = _parse_css_mode(
         dark_body, selector=":root, :root[data-theme=\"dark\"]"
@@ -255,6 +300,18 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _assert_allowed_attributes(
+    element: ET.Element, allowed: set[str], *, label: str
+) -> None:
+    """Reject semantic SVG attributes outside the canonical element grammar."""
+    unexpected = sorted(set(element.attrib) - allowed)
+    if unexpected:
+        raise ContractError(
+            f"Canonical SVG {label} has unsupported attribute(s): "
+            f"{', '.join(unexpected)}"
+        )
+
+
 def _inside_view_box(
     x: float,
     y: float,
@@ -279,6 +336,9 @@ def load_mark_geometry(path: Path) -> MarkGeometry:
         raise ContractError(f"Unable to parse canonical SVG {path}: {error}") from error
     if _local_name(root.tag) != "svg":
         raise ContractError(f"Canonical SVG {path} must have an svg root")
+    _assert_allowed_attributes(
+        root, {"viewBox", "width", "height"}, label="root"
+    )
 
     raw_view_box = _required_attribute(root, "viewBox", label="root")
     view_values = raw_view_box.split()
@@ -313,6 +373,11 @@ def load_mark_geometry(path: Path) -> MarkGeometry:
         )
 
     path_element = paths[0]
+    _assert_allowed_attributes(
+        path_element,
+        {"d", "stroke", "stroke-width", "stroke-linecap"},
+        label="edge path",
+    )
     edge_path = _required_attribute(path_element, "d", label="edge path")
     edge_match = _EDGE_RE.fullmatch(edge_path)
     if edge_match is None:
@@ -353,6 +418,11 @@ def load_mark_geometry(path: Path) -> MarkGeometry:
     )
 
     rect = rects[0]
+    _assert_allowed_attributes(
+        rect,
+        {"x", "y", "width", "height", "rx", "ry", "fill"},
+        label="hub",
+    )
     rect_x = _float(_required_attribute(rect, "x", label="hub"), attribute="x", element="hub")
     rect_y = _float(_required_attribute(rect, "y", label="hub"), attribute="y", element="hub")
     rect_width = _float(
@@ -382,6 +452,9 @@ def load_mark_geometry(path: Path) -> MarkGeometry:
 
     peers: list[Circle] = []
     for index, circle in enumerate(circles, start=1):
+        _assert_allowed_attributes(
+            circle, {"cx", "cy", "r", "fill"}, label=f"peer {index}"
+        )
         cx = _float(
             _required_attribute(circle, "cx", label=f"peer {index}"),
             attribute="cx",
@@ -434,6 +507,144 @@ def load_mark_geometry(path: Path) -> MarkGeometry:
         accent=accent,
         edge_segments=edge_segments,
     )
+
+
+def _same_number(left: float, right: float) -> bool:
+    return math.isclose(left, right, rel_tol=0.0, abs_tol=1e-9)
+
+
+def validate_mark_projection(
+    path: Path,
+    canonical: MarkGeometry,
+    *,
+    expected_view_box: tuple[float, float, float, float],
+    expected_transform: str | None = None,
+) -> None:
+    """Validate one branding SVG's mark primitives against the canonical geometry."""
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError) as error:
+        raise ContractError(f"Unable to parse brand projection {path}: {error}") from error
+    if _local_name(root.tag) != "svg":
+        raise ContractError(f"Brand projection {path} must have an svg root")
+    _assert_allowed_attributes(root, {"viewBox", "width", "height"}, label=str(path))
+    raw_view_box = _required_attribute(root, "viewBox", label=str(path))
+    view_values = raw_view_box.split()
+    if len(view_values) != 4:
+        raise ContractError(f"Brand projection {path} viewBox must contain four numbers")
+    view_box = tuple(
+        _float(value, attribute="viewBox", element=str(path)) for value in view_values
+    )
+    if any(not _same_number(actual, expected) for actual, expected in zip(view_box, expected_view_box)):
+        raise ContractError(
+            f"Brand projection {path} has viewBox {raw_view_box!r}; "
+            f"expected {' '.join(_number(value) for value in expected_view_box)}"
+        )
+
+    elements = [element for element in root.iter() if element is not root]
+    paths = [element for element in elements if _local_name(element.tag) == "path"]
+    circles = [element for element in elements if _local_name(element.tag) == "circle"]
+    rounded_rects = [
+        element
+        for element in elements
+        if _local_name(element.tag) == "rect" and "rx" in element.attrib
+    ]
+    if len(paths) != 1 or len(circles) != 2 or len(rounded_rects) != 1:
+        raise ContractError(
+            f"Brand projection {path} must contain one mark path, one rounded "
+            f"hub, and two peer circles (got path={len(paths)}, "
+            f"hub={len(rounded_rects)}, circle={len(circles)})"
+        )
+
+    mark_groups = [
+        element
+        for element in elements
+        if _local_name(element.tag) == "g"
+        and any(
+            descendant is not element
+            and _local_name(descendant.tag) in {"path", "circle", "rect"}
+            and (
+                _local_name(descendant.tag) != "rect"
+                or "rx" in descendant.attrib
+            )
+            for descendant in element.iter()
+        )
+    ]
+    if expected_transform is None:
+        if mark_groups:
+            raise ContractError(f"Brand projection {path} wraps the mark unexpectedly")
+    else:
+        if len(mark_groups) != 1:
+            raise ContractError(f"Brand projection {path} must have one mark group")
+        group = mark_groups[0]
+        _assert_allowed_attributes(group, {"transform"}, label=f"{path} mark group")
+        transform = _required_attribute(group, "transform", label=f"{path} mark group")
+        if transform != expected_transform:
+            raise ContractError(
+                f"Brand projection {path} has unsupported mark transform {transform!r}"
+            )
+
+    path_element = paths[0]
+    _assert_allowed_attributes(
+        path_element,
+        {"d", "stroke", "stroke-width", "stroke-linecap"},
+        label=f"{path} edge path",
+    )
+    if _required_attribute(path_element, "d", label=f"{path} edge path") != canonical.edge_path:
+        raise ContractError(f"Brand projection {path} edge path drifted from canonical geometry")
+    projection_stroke = _float(
+        _required_attribute(path_element, "stroke-width", label=f"{path} edge path"),
+        attribute="stroke-width",
+        element=f"{path} edge path",
+    )
+    if not _same_number(projection_stroke, canonical.stroke_width):
+        raise ContractError(f"Brand projection {path} stroke width drifted from canonical geometry")
+    if _required_attribute(path_element, "stroke-linecap", label=f"{path} edge path") != canonical.stroke_linecap:
+        raise ContractError(f"Brand projection {path} stroke linecap drifted from canonical geometry")
+
+    hub = rounded_rects[0]
+    _assert_allowed_attributes(
+        hub,
+        {"x", "y", "width", "height", "rx", "ry", "fill"},
+        label=f"{path} hub",
+    )
+    hub_values = (
+        _float(_required_attribute(hub, "x", label=f"{path} hub"), attribute="x", element=str(path)),
+        _float(_required_attribute(hub, "y", label=f"{path} hub"), attribute="y", element=str(path)),
+        _float(_required_attribute(hub, "width", label=f"{path} hub"), attribute="width", element=str(path)),
+        _float(_required_attribute(hub, "height", label=f"{path} hub"), attribute="height", element=str(path)),
+        _float(_required_attribute(hub, "rx", label=f"{path} hub"), attribute="rx", element=str(path)),
+    )
+    canonical_hub = (
+        canonical.hub.x,
+        canonical.hub.y,
+        canonical.hub.width,
+        canonical.hub.height,
+        canonical.hub.radius,
+    )
+    if any(not _same_number(actual, expected) for actual, expected in zip(hub_values, canonical_hub)):
+        raise ContractError(f"Brand projection {path} hub geometry drifted from canonical geometry")
+    if "ry" in hub.attrib and not _same_number(
+        _float(hub.attrib["ry"], attribute="ry", element=str(path)), canonical.hub.radius
+    ):
+        raise ContractError(f"Brand projection {path} hub ry drifted from canonical geometry")
+
+    for index, (circle, peer) in enumerate(zip(circles, canonical.peers), start=1):
+        _assert_allowed_attributes(
+            circle,
+            {"cx", "cy", "r", "fill"},
+            label=f"{path} peer {index}",
+        )
+        actual = (
+            _float(_required_attribute(circle, "cx", label=f"{path} peer {index}"), attribute="cx", element=str(path)),
+            _float(_required_attribute(circle, "cy", label=f"{path} peer {index}"), attribute="cy", element=str(path)),
+            _float(_required_attribute(circle, "r", label=f"{path} peer {index}"), attribute="r", element=str(path)),
+        )
+        expected = (peer.cx, peer.cy, peer.radius)
+        if any(not _same_number(left, right) for left, right in zip(actual, expected)):
+            raise ContractError(
+                f"Brand projection {path} peer {index} geometry drifted from canonical geometry"
+            )
 
 
 def _number(value: float) -> str:
