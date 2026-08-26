@@ -1,7 +1,7 @@
 ---
 id: feature-public-flip-branding-and-exposure
 kind: feature
-stage: implementing
+stage: review
 tags: [branding, security, ops, release]
 parent: null
 depends_on: []

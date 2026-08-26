@@ -1,7 +1,7 @@
 ---
 id: feature-public-flip-branding-and-exposure-history-rescrub
 kind: story
-stage: implementing
+stage: done
 tags: [security, ops, release]
 parent: feature-public-flip-branding-and-exposure
 depends_on: [feature-public-flip-branding-and-exposure-brand-evidence-closure, feature-public-flip-branding-and-exposure-public-tree-guard]
@@ -378,3 +378,28 @@ reset local main → fresh-clone proof → ancestry-CI activation commit.
 Residual: GitHub retains pre-rewrite objects via refs/pull/* and API caches;
 cache-removal request to GitHub Support is operator-side (draft provided at
 boundary).
+
+## Execution record (2026-08-26, operator-authorized, agent-executed)
+
+Operator: sole maintainer, full authorization ("scrub the git repo and force
+push"). Single-shot variant used (better than land-then-rewrite: un-scrubbed
+drain commits never existed on GitHub) — mirror built from origin + local
+main, rewrite verified, one force-push.
+
+- Rewrite: git-filter-repo --replace-text (lan/tailnet IP classes →
+  semantic placeholders) + .work/session-notes path purge, all refs.
+- Battery on fresh clone: guard PASS (--all-public-refs), fsck clean,
+  main single root (import commit), 2007 commits, LICENSE/NOTICE
+  blob-identical, heads+36 tags present.
+- Force-push: explicit heads+tags refspecs only (no --mirror, no refs/pull).
+- Post-push proof: fresh clone from public URL → guard PASS; remote hashes
+  == rewritten hashes (main 10131c9d, v0.8.1 e643d11d).
+- Local reset to rewritten main (clean; session-notes untracked, preserved).
+- Ancestry CI activated on the clean tip: check-public-exposure.sh --history
+  HEAD with fetch-depth 0 (commit 49d849d23, normal fast-forward push).
+- Historical hash references inside .work release docs no longer resolve —
+  inherent, accepted consequence of the authorized rewrite.
+
+Residual (operator-side): GitHub retains pre-rewrite objects via refs/pull/*
+and API caches. Draft support request prepared (see drain summary). Old
+commit hashes remain fetchable until GitHub purges cached objects.
