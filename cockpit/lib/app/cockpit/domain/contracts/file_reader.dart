@@ -17,7 +17,7 @@ abstract class FileReader {
   /// Emit `void` whenever [path] is modified or deleted on disk.
   ///
   /// The viewer uses this long-lived stream to reload content live and must
-  /// cancel it when the tab closes. A watch failure returns an empty stream,
-  /// disabling live reload without crashing.
+  /// cancel it when the tab closes. Watch failures are emitted as stream errors
+  /// so the owner can surface them instead of silently disabling live reload.
   Stream<void> watch(String path);
 }

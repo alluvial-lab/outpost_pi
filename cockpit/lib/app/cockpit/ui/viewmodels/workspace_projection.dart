@@ -17,6 +17,7 @@ import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
 import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_server_pool.dart';
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:flutter/foundation.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -25,6 +26,10 @@ typedef WorkspaceProjectionTurnEnd = void Function(AgentSession session);
 
 /// Handle a live tab descriptor change that requires workspace persistence.
 typedef WorkspaceProjectionDescriptorChanged = void Function(String projectId);
+
+/// Surface a file-watch failure to the projection owner.
+typedef WorkspaceProjectionFileWatchError =
+    void Function(String path, Object error, StackTrace stackTrace);
 
 /// Live projection of a persisted [WorkspaceDocument] into disposable UI tabs.
 ///
@@ -39,6 +44,7 @@ final class WorkspaceProjection {
     required SessionHistory history,
     required Notifier notifier,
     required this.lsp,
+    required WorkspaceProjectionFileWatchError onFileWatchError,
     VoidCallback? onChanged,
     WorkspaceProjectionTurnEnd? onAgentTurnEnd,
     WorkspaceProjectionDescriptorChanged? onDescriptorChanged,
@@ -47,6 +53,7 @@ final class WorkspaceProjection {
        _fileReader = fileReader,
        _history = history,
        _notifier = notifier,
+       _onFileWatchError = onFileWatchError,
        _onChanged = onChanged ?? _noop,
        _onAgentTurnEnd = onAgentTurnEnd,
        _onDescriptorChanged = onDescriptorChanged;
@@ -56,6 +63,7 @@ final class WorkspaceProjection {
   final FileReader _fileReader;
   final SessionHistory _history;
   final Notifier _notifier;
+  final WorkspaceProjectionFileWatchError _onFileWatchError;
 
   /// Kept as part of the projection boundary for file-viewer/LSP coordination.
   final LspServerPool lsp;
@@ -437,24 +445,45 @@ final class WorkspaceProjection {
     // A/V live reload is disabled: refreshing would recreate the player mid-play.
     if (viewer.view is FileViewAudio || viewer.view is FileViewVideo) return;
     final id = viewer.id;
+    final path = viewer.path;
     _fileWatchers.remove(id)?.cancel();
-    _fileWatchers[id] = _fileReader.watch(viewer.path).listen((_) {
-      _fileWatchDebounce[id]?.cancel();
-      _fileWatchDebounce[id] = Timer(
-        const Duration(milliseconds: 120),
-        () async {
-          _fileWatchDebounce.remove(id);
-          if (_items[id] is! FileViewerSession) return;
-          final fresh = await _fileReader.read(viewer.path);
-          if (fresh is FileViewUnsupported) return;
-          final current = _items[id];
-          if (current is! FileViewerSession) return;
-          current.view = fresh;
-          current.notifyItemChanged();
-          _onChanged();
-        },
-      );
-    }, onError: (_) {});
+    _fileWatchDebounce.remove(id)?.cancel();
+    try {
+      _fileWatchers[id] = _fileReader
+          .watch(path)
+          .listen(
+            (_) {
+              _fileWatchDebounce[id]?.cancel();
+              _fileWatchDebounce[id] = Timer(
+                const Duration(milliseconds: 120),
+                () {
+                  _fileWatchDebounce.remove(id);
+                  ownAsync(_reloadFileViewer(id, path));
+                },
+              );
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _onFileWatchError(path, error, stackTrace);
+            },
+          );
+    } catch (error, stackTrace) {
+      _onFileWatchError(path, error, stackTrace);
+    }
+  }
+
+  Future<void> _reloadFileViewer(String id, String path) async {
+    if (_items[id] is! FileViewerSession) return;
+    try {
+      final fresh = await _fileReader.read(path);
+      if (fresh is FileViewUnsupported) return;
+      final current = _items[id];
+      if (current is! FileViewerSession || current.path != path) return;
+      current.view = fresh;
+      current.notifyItemChanged();
+      _onChanged();
+    } catch (error, stackTrace) {
+      _onFileWatchError(path, error, stackTrace);
+    }
   }
 
   bool _isUnder(String path, String root) =>
