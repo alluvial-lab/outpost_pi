@@ -2,34 +2,130 @@ import 'package:cockpit/app/core/ui/themes/terminal_theme.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
+
+import 'theme_contract_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('dark palette mirrors the Phosphor Beacon contract', () {
-    expect(AppColors.dark.bg, const Color(0xFF0D1210));
-    expect(AppColors.dark.panel, const Color(0xFF131A16));
-    expect(AppColors.dark.border, const Color(0xFF1E2620));
-    expect(AppColors.dark.text, const Color(0xFFE4EFE8));
-    expect(AppColors.dark.text2, const Color(0xFF89978D));
-    expect(AppColors.dark.accent, const Color(0xFF74CC9C));
-    expect(AppColors.dark.onAccent, const Color(0xFF0A2418));
-    expect(AppColors.dark.ok, const Color(0xFF7FD99A));
-    expect(AppColors.dark.warn, const Color(0xFFE6C86E));
-    expect(AppColors.dark.error, const Color(0xFFFF8B7D));
+  test('native palettes match the shared Phosphor Beacon contract', () {
+    final fixture = ThemeContractFixture.load();
+    for (final mode in _themeModes) {
+      final actual = cockpitContractRoles(mode.colors);
+      for (final entry in actual.entries) {
+        expect(
+          entry.value,
+          fixture.color(mode.brightness, entry.key),
+          reason:
+              '${mode.name} role ${entry.key} drifted from the shared fixture',
+        );
+      }
+    }
   });
 
-  test('light palette mirrors the Phosphor Beacon contract', () {
-    expect(AppColors.light.bg, const Color(0xFFF3F6F3));
-    expect(AppColors.light.panel, const Color(0xFFF8FAF8));
-    expect(AppColors.light.border, const Color(0xFFDFE6DF));
-    expect(AppColors.light.text, const Color(0xFF182019));
-    expect(AppColors.light.text2, const Color(0xFF57635A));
-    expect(AppColors.light.accent, const Color(0xFF256E47));
-    expect(AppColors.light.onAccent, const Color(0xFFFFFFFF));
-    expect(AppColors.light.ok, const Color(0xFF3E7A4E));
-    expect(AppColors.light.warn, const Color(0xFF8A6A1F));
-    expect(AppColors.light.error, const Color(0xFFB34234));
+  test('public token and theme builders resolve the same semantic theme', () {
+    for (final mode in _themeModes) {
+      final tokens = buildTokens(brightness: mode.brightness);
+      final theme = buildTheme(brightness: mode.brightness);
+      expect(
+        tokens.colors,
+        same(mode.colors),
+        reason: '${mode.name} token colors',
+      );
+      expect(theme.colorScheme.brightness, mode.brightness, reason: mode.name);
+
+      final scheme = theme.colorScheme;
+      expect(
+        scheme.background,
+        mode.colors.bg,
+        reason: '${mode.name} background',
+      );
+      expect(
+        scheme.foreground,
+        mode.colors.text,
+        reason: '${mode.name} foreground',
+      );
+      expect(scheme.card, mode.colors.panel, reason: '${mode.name} card');
+      expect(
+        scheme.cardForeground,
+        mode.colors.text,
+        reason: '${mode.name} card foreground',
+      );
+      expect(
+        scheme.primary,
+        mode.colors.accent,
+        reason: '${mode.name} primary',
+      );
+      expect(
+        scheme.primaryForeground,
+        mode.colors.onAccent,
+        reason: '${mode.name} primary foreground',
+      );
+      expect(
+        scheme.secondary,
+        mode.colors.panel3,
+        reason: '${mode.name} secondary',
+      );
+      expect(
+        scheme.secondaryForeground,
+        mode.colors.text2,
+        reason: '${mode.name} secondary foreground',
+      );
+      expect(scheme.muted, mode.colors.panel2, reason: '${mode.name} muted');
+      expect(
+        scheme.mutedForeground,
+        mode.colors.text2,
+        reason: '${mode.name} muted foreground',
+      );
+      // Shadcn's accent is a neutral hover surface; brand green is primary.
+      expect(
+        scheme.accent,
+        mode.colors.panel3,
+        reason: '${mode.name} neutral accent',
+      );
+      expect(
+        scheme.accentForeground,
+        mode.colors.text,
+        reason: '${mode.name} accent foreground',
+      );
+      expect(
+        scheme.destructive,
+        mode.colors.error,
+        reason: '${mode.name} destructive',
+      );
+      // shadcn_flutter marks this legacy slot deprecated but still exposes it.
+      expect(
+        // ignore: deprecated_member_use
+        scheme.destructiveForeground,
+        mode.colors.onAccent,
+        reason: '${mode.name} destructive foreground',
+      );
+      expect(scheme.border, mode.colors.border, reason: '${mode.name} border');
+      expect(scheme.input, mode.colors.border, reason: '${mode.name} input');
+      expect(scheme.ring, mode.colors.accent, reason: '${mode.name} ring');
+    }
+  });
+
+  test('built token colors meet the shared WCAG AA threshold', () {
+    final fixture = ThemeContractFixture.load();
+    for (final mode in _themeModes) {
+      final colors = buildTokens(brightness: mode.brightness).colors;
+      final pairs = <String, (Color foreground, Color background)>{
+        'primary text/background': (colors.text, colors.bg),
+        'muted text/background': (colors.text2, colors.bg),
+        'accent/background': (colors.accent, colors.bg),
+        'on-accent/accent': (colors.onAccent, colors.accent),
+      };
+      for (final pair in pairs.entries) {
+        final ratio = wcagContrast(pair.value.$1, pair.value.$2);
+        expect(
+          ratio,
+          greaterThanOrEqualTo(fixture.wcagAaNormalText),
+          reason: '${mode.name} ${pair.key} ratio was $ratio',
+        );
+      }
+    }
   });
 
   test('display body mono terminal and syntax roles use the beacon family', () {
@@ -43,3 +139,8 @@ void main() {
     expect(SyntaxColors.oneLight.string, const Color(0xFF3E7A4E));
   });
 }
+
+final _themeModes = <({String name, Brightness brightness, AppColors colors})>[
+  (name: 'dark', brightness: Brightness.dark, colors: AppColors.dark),
+  (name: 'light', brightness: Brightness.light, colors: AppColors.light),
+];
