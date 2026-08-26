@@ -318,6 +318,9 @@ void main() {
     _dir = Directory.systemTemp.createTempSync('rp_v2_chatvm_');
     await LocalBoxes.initForTest(_dir.path);
   });
+  setUp(() async {
+    await LocalBoxes().ownerDeliveryOutboxBox().clear();
+  });
   tearDownAll(() async {
     await Hive.close();
     await _dir.delete(recursive: true);

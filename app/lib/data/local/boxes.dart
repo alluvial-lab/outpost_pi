@@ -2,6 +2,7 @@
 //
 // Durable transcript-bearing data is encrypted with one platform-secured key:
 //   sessions_index_v3                         -> SessionIndexRecord
+//   owner_delivery_outbox_v1                   -> PendingOwnerDeliveryRecord
 //   transcript_events_v3_<sha256 tuple>       -> TranscriptEventRecord
 //   msgs_v3_<sha256 tuple>                    -> MessageRecord projection
 // Runtime reachability remains plaintext and is wiped on every boot.
@@ -21,6 +22,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 const String _kNamespace = 'rp_v2';
 const String _kSessionsIndex = 'sessions_index_v3';
+const String _kOwnerDeliveryOutbox = 'owner_delivery_outbox_v1';
 const String _kRuntime = 'runtime';
 const String _kSecurityMeta = TranscriptStorageMigrator.metadataBoxName;
 const String _kKeyProvisioned = 'key_provisioned_v3';
@@ -152,6 +154,7 @@ class LocalBoxes {
 
   static Future<void> _openCommonUnchecked() async {
     await _openEncryptedUnchecked(_kSessionsIndex);
+    await _openEncryptedUnchecked(_kOwnerDeliveryOutbox);
     final runtime = await Hive.openBox<dynamic>(_kRuntime);
     await runtime.clear();
   }
@@ -217,7 +220,7 @@ class LocalBoxes {
   static Future<Set<String>> _recoveryTranscriptBoxNames(
     Box<dynamic> metadata,
   ) async {
-    final names = <String>{_kSessionsIndex, _kRuntime};
+    final names = <String>{_kSessionsIndex, _kOwnerDeliveryOutbox, _kRuntime};
     final metadataPath = metadata.path;
     if (metadataPath == null) return names;
     final home = File(metadataPath).parent;
@@ -262,6 +265,7 @@ class LocalBoxes {
     await beforeOwnerTransitionCommonClearForTesting?.call();
 
     final index = await _openEncryptedUnchecked(_kSessionsIndex);
+    final outbox = await _openEncryptedUnchecked(_kOwnerDeliveryOutbox);
     final runtime = await Hive.openBox<dynamic>(_kRuntime);
     final transcriptBoxes = <String>{};
     for (final value in index.values) {
@@ -312,6 +316,8 @@ class LocalBoxes {
 
     await index.clear();
     await index.close();
+    await outbox.clear();
+    await outbox.close();
     await runtime.clear();
     await runtime.close();
 
@@ -440,6 +446,10 @@ class LocalBoxes {
 
   /// Return the encrypted durable cross-session index used by Home projections.
   Box<dynamic> sessionsIndexBox() => Hive.box<dynamic>(_kSessionsIndex);
+
+  /// Return the encrypted common owner-delivery outbox.
+  Box<dynamic> ownerDeliveryOutboxBox() =>
+      Hive.box<dynamic>(_kOwnerDeliveryOutbox);
 
   /// Return the volatile connection and presence snapshot box.
   Box<dynamic> runtimeBox() => Hive.box<dynamic>(_kRuntime);

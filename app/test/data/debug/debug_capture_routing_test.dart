@@ -296,6 +296,10 @@ void main() {
     await LocalBoxes.initForTest(_boxesDir.path);
   });
 
+  setUp(() async {
+    await LocalBoxes().ownerDeliveryOutboxBox().clear();
+  });
+
   tearDownAll(() async {
     await Hive.close();
     await _boxesDir.delete(recursive: true);
