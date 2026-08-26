@@ -1,6 +1,6 @@
 ---
 name: next-site
-description: Remote Pi Next/React/Tailwind site reference. Read before editing or reviewing site/ code, Next App Router routes/layouts/metadata, React Server/Client Components, Tailwind 4/PostCSS styling, next/image usage, static/presentational site content, Docker standalone build/deploy, or site lint/build workflows.
+description: Outpost-Pi Next/React/Tailwind site reference. Read before editing or reviewing site/ code, Next App Router routes/layouts/metadata, React Server/Client Components, Tailwind 4/PostCSS styling, next/image usage, static/presentational site content, Docker standalone build/deploy, or site lint/build workflows.
 updated: 2026-08-16
 provenance: skill-reference
 ---
@@ -37,7 +37,7 @@ Do not commit `.next/`, `out/`, `node_modules/`, local env files, generated buil
 
 ## Site responsibility boundary
 
-`site/` is the institutional landing/docs site for Remote Pi, not a product surface. It should present the project, docs, install/download content, GitHub links, and legal pages; chat, pairing, relay controls, account logic, or backend APIs belong elsewhere unless a plan explicitly changes the site scope. [remote-pi-site-guidance]{1}
+`site/` is the institutional landing/docs site for Outpost-Pi, not a product surface. It should present the project, docs, install/download content, GitHub links, and legal pages; chat, pairing, relay controls, account logic, or backend APIs belong elsewhere unless a plan explicitly changes the site scope. [remote-pi-site-guidance]{1}
 
 Rules:
 
