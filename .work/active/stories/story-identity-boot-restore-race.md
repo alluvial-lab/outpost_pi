@@ -1,7 +1,7 @@
 ---
 id: story-identity-boot-restore-race
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, security, bug]
 parent: null
 depends_on: []
