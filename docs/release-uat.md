@@ -15,7 +15,7 @@ before tag creation (its "mapping requires user action → pause and prompt"
 path), and the operator runs this runbook at that pause.
 
 The durable automation that catches integration regressions going forward is
-`feature-cross-component-e2e-pairing-suite`; this manual runbook is the
+the checked-in `e2e/run-pairing.sh` harness; this manual runbook is the
 independent, sooner backstop.
 
 ## Verification posture
@@ -71,5 +71,5 @@ The operator records the ack (a checked item / a recorded `--accept` on the
 ## See also
 
 - [`.work/CONVENTIONS.md`](../.work/CONVENTIONS.md) — `release_uat` convention.
-- [`feature-cross-component-e2e-pairing-suite`](../.work/active/features/feature-cross-component-e2e-pairing-suite.md) — the durable automated form of this smoke.
-- [AGENTS.md — Deployment and running](../AGENTS.md) — component locations and the paired wire-change deploy order.
+- [`e2e/run-pairing.sh`](../e2e/run-pairing.sh) — the checked-in automated form of this smoke.
+- [AGENTS.md — Paired wire changes (deploy together)](../AGENTS.md#paired-wire-changes-deploy-together) — component locations and the paired wire-change deploy order.
