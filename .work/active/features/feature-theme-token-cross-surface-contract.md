@@ -1,7 +1,7 @@
 ---
 id: feature-theme-token-cross-surface-contract
 kind: feature
-stage: implementing
+stage: review
 tags: [app, cockpit, branding, testing]
 parent: null
 depends_on: []
@@ -253,3 +253,36 @@ double wcagContrast(Color foreground, Color background);
 - **Checked-in projection drift**: generated JSON/TypeScript only protects the contract when `--check` is unavoidable. CI path filters therefore include canonical inputs and all projections; local verification documents the same command.
 - **SVG rendering equivalence**: Pillow's round-cap emulation and Satori SVG rendering can differ at anti-aliased pixels even with identical geometry. This feature guarantees geometry identity, not byte-identical rasterization across engines; existing platform raster generation remains the visual output path.
 - **Where confidence is lowest**: Next `ImageResponse` support for mapped generated SVG primitives under the pinned version. The fallback is to generate a complete SVG data URI from the same canonical model, still checked by the synchronizer, without restoring hand-authored geometry.
+
+## Implementation summary
+
+Completed the serial checkpoints in dependency order:
+
+1. `feature-theme-token-cross-surface-contract-contract-tooling` — added the
+   deterministic CSS/SVG synchronizer, checked-in JSON and TypeScript
+   projections, canonical SVG-backed Pillow rendering, OG projection use, and
+   CI routing.
+2. `feature-theme-token-cross-surface-contract-app-theme-properties` — added
+   fixture-backed mobile direct-role assertions and public dual-mode builder,
+   Material wiring, and WCAG checks.
+3. `feature-theme-token-cross-surface-contract-cockpit-theme-properties` —
+   added the same fixture-backed vocabulary for Cockpit and asserted both
+   token/theme builders, shadcn semantic slots, and WCAG checks.
+
+Each child advanced directly to `done` with its own implementation commit:
+`152cd56d`, `c5337b4a`, and `88dbef69` respectively. No implementation
+blockers or design deviations were recorded.
+
+## Integrated verification
+
+- `python3 scripts/sync-brand-contracts.py --check` — PASS.
+- `python3 -m py_compile scripts/brand_contract.py scripts/sync-brand-contracts.py scripts/generate-brand-assets.py` — PASS.
+- `cd app && flutter analyze` — PASS.
+- `cd app && flutter test --exclude-tags e2e --concurrency=2` — PASS (960 tests).
+- `cd cockpit && flutter analyze` — PASS.
+- `cd cockpit && flutter test` — PASS (286 tests).
+- `cd site && corepack pnpm lint` — PASS.
+- `cd site && corepack pnpm build` — PASS.
+
+The feature is now review-ready; effective review weight is `standard` from
+the autopilot caller/default policy.
