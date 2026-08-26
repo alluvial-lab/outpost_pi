@@ -287,8 +287,7 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
     use ed25519_dalek::SigningKey;
     use serde_json::json;
-
-    use crate::test_support::bounded_mpsc as mpsc;
+    use tokio::sync::mpsc;
 
     use super::{ControlFrameError, bounded_peer_list};
     use crate::handlers::connection_actor::{
@@ -299,6 +298,7 @@ mod tests {
     use crate::peers::registry::PeerRegistry;
     use crate::presence::PresenceManager;
     use crate::protocol::generated::control::{RelayControlFrame, RoomMetaUpdateFrame};
+    use crate::resource_limits::OUTBOUND_QUEUE_CAPACITY;
     use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
 
     fn canonical_peer_id(seed: u8) -> String {
@@ -490,13 +490,13 @@ mod tests {
     #[tokio::test]
     async fn subscribe_presence_backfills_online_peers_from_handler() {
         let fixture = Fixture::new();
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         let target_peer = canonical_peer_id(1);
-        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi, _rx_pi) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register(
@@ -530,12 +530,12 @@ mod tests {
     #[tokio::test]
     async fn room_meta_update_dispatches_through_typed_actor_handler() {
         let fixture = Fixture::new();
-        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi, _rx_pi) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
@@ -580,12 +580,12 @@ mod tests {
         // so `apply_patch` needs a room entry to exist for `(pi, other)`.
         // Register a second connection for the same peer in `other` to
         // create that entry — modeling two Pi processes sharing one epk.
-        let (tx_main, _rx_main) = mpsc::unbounded_channel::<Message>();
+        let (tx_main, _rx_main) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_main)
             .await;
-        let (tx_other, rx_other) = mpsc::unbounded_channel::<Message>();
+        let (tx_other, rx_other) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register(
@@ -595,7 +595,7 @@ mod tests {
                 tx_other,
             )
             .await;
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
@@ -646,12 +646,12 @@ mod tests {
     #[tokio::test]
     async fn room_meta_update_empty_patch_does_not_broadcast() {
         let fixture = Fixture::new();
-        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi, _rx_pi) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
@@ -702,7 +702,7 @@ mod tests {
     async fn rooms_check_dedup_and_metrics_live_in_actor() {
         let fixture = Fixture::new();
         let target_peer = canonical_peer_id(1);
-        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi, _rx_pi) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         fixture
             .registry
             .register(

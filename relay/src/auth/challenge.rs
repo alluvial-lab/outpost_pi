@@ -55,19 +55,6 @@ pub fn gen_nonce() -> ([u8; 32], String) {
     (nonce, b64)
 }
 
-/// Parse the `hello` line and return the peer's Ed25519 verifying key.
-///
-/// # Errors
-///
-/// Returns [`AuthError::Json`] if the line is malformed JSON,
-/// [`AuthError::NoHello`] if the line is not a hello message,
-/// [`AuthError::InvalidPubkey`] if the pubkey is not a valid 32-byte Ed25519
-/// key, [`AuthError::InvalidDeviceId`] if `device_id` is empty, or
-/// [`AuthError::Base64`] if the pubkey fails base64 decoding.
-pub fn parse_hello(line: &str) -> Result<VerifyingKey, AuthError> {
-    Ok(parse_hello_bootstrap(line, 0)?.verifying_key)
-}
-
 /// Parse the initial `hello` frame into an authenticated peer bootstrap record.
 ///
 /// # Errors

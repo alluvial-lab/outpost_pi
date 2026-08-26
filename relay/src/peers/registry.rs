@@ -4,8 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::extract::ws::Message;
 use tokio::sync::mpsc;
 
-use super::connections::{ConnectionInsert, ConnectionRegistry, ConnectionRemove};
-use super::presence_state::{PresenceState, PresenceTransition};
+use super::connections::{ConnectionRegistry, ConnectionRemove};
+use super::presence_state::PresenceState;
 use super::registry_event_publisher::RegistryEventPublisher;
 use super::rooms::RoomStateStore;
 use crate::metrics::FirehoseMetrics;
@@ -68,31 +68,7 @@ pub struct PeerRegistration {
 pub struct PeerRegistry {
     connections: Arc<ConnectionRegistry>,
     rooms: Arc<RoomStateStore>,
-    presence: Arc<PresenceState>,
     events: Arc<RegistryEventPublisher>,
-}
-
-trait PresenceTransitions {
-    fn on_connection_inserted(&self, insert: &ConnectionInsert) -> PresenceTransition;
-    fn on_connection_removed(
-        &self,
-        remove: &ConnectionRemove,
-        now_ms: i64,
-    ) -> Option<PresenceTransition>;
-}
-
-impl PresenceTransitions for PresenceState {
-    fn on_connection_inserted(&self, insert: &ConnectionInsert) -> PresenceTransition {
-        PresenceState::on_connection_inserted(insert)
-    }
-
-    fn on_connection_removed(
-        &self,
-        remove: &ConnectionRemove,
-        now_ms: i64,
-    ) -> Option<PresenceTransition> {
-        PresenceState::on_connection_removed(remove, now_ms)
-    }
 }
 
 impl PeerRegistry {
@@ -104,7 +80,6 @@ impl PeerRegistry {
     ) -> Self {
         let connections = Arc::new(ConnectionRegistry::new(metrics.clone()));
         let rooms_state = Arc::new(RoomStateStore::new());
-        let presence_state = Arc::new(PresenceState);
         let events = Arc::new(RegistryEventPublisher::new(
             connections.clone(),
             presence,
@@ -114,7 +89,6 @@ impl PeerRegistry {
         Self {
             connections,
             rooms: rooms_state,
-            presence: presence_state,
             events,
         }
     }
@@ -167,7 +141,7 @@ impl PeerRegistry {
         // peer_online fires only on a real offline → online transition.
         // Re-registers from a peer that already had a live conn produce no
         // new push to subscribers — they already think it's online.
-        let presence_transition = self.presence.on_connection_inserted(&insert);
+        let presence_transition = PresenceState::on_connection_inserted(&insert);
         self.events
             .publish_presence_transition(presence_transition)
             .await;
@@ -201,7 +175,7 @@ impl PeerRegistry {
             self.events.publish_room_ended(peer_id, ended).await;
         }
 
-        if let Some(presence_transition) = self.presence.on_connection_removed(&remove, now_ms) {
+        if let Some(presence_transition) = PresenceState::on_connection_removed(&remove, now_ms) {
             self.events
                 .publish_presence_transition(presence_transition)
                 .await;
@@ -266,8 +240,9 @@ impl PeerRegistry {
 mod tests {
     use super::*;
     use crate::presence::PresenceManager;
+    use crate::resource_limits::OUTBOUND_QUEUE_CAPACITY;
     use crate::rooms::{RoomManager, RoomMeta};
-    use crate::test_support::bounded_mpsc as mpsc;
+    use tokio::sync::mpsc;
 
     fn make_meta(room_id: &str) -> RoomMeta {
         RoomMeta {
@@ -310,8 +285,8 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx_main, mut rx_main) = mpsc::unbounded_channel::<Message>();
-        let (tx_work, mut rx_work) = mpsc::unbounded_channel::<Message>();
+        let (tx_main, mut rx_main) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (tx_work, mut rx_work) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
 
         let conn_main = reg
             .register(
@@ -373,8 +348,8 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx_main, mut rx_main) = mpsc::unbounded_channel::<Message>();
-        let (tx_work, mut rx_work) = mpsc::unbounded_channel::<Message>();
+        let (tx_main, mut rx_main) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (tx_work, mut rx_work) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
 
         let _ = reg
             .register(
@@ -414,8 +389,8 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
-        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        let (tx1, mut rx1) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (tx2, mut rx2) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
 
         let conn1 = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1)
@@ -461,7 +436,7 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx_first, _rx_first) = mpsc::unbounded_channel::<Message>();
+        let (tx_first, _rx_first) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let first = reg
             .register(
                 peer.clone(),
@@ -472,7 +447,7 @@ mod tests {
             .await;
         assert!(!first.superseded_existing);
 
-        let (tx_other_room, _rx_other_room) = mpsc::unbounded_channel::<Message>();
+        let (tx_other_room, _rx_other_room) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let other_room = reg
             .register(
                 peer.clone(),
@@ -486,7 +461,7 @@ mod tests {
             "same peer in a different room is not duplicate auth at the same key"
         );
 
-        let (tx_duplicate, _rx_duplicate) = mpsc::unbounded_channel::<Message>();
+        let (tx_duplicate, _rx_duplicate) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let duplicate = reg
             .register(peer, make_meta("main"), "dev-a".to_string(), tx_duplicate)
             .await;
@@ -513,14 +488,14 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
+        let (tx1, mut rx1) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn1 = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1)
             .await;
         assert!(conn1.superseded_same_device_conn_ids.is_empty());
 
         // Same device reconnects at the same key → closes conn1.
-        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        let (tx2, mut rx2) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn2 = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx2)
             .await;
@@ -560,14 +535,14 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
+        let (tx1, mut rx1) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn1 = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1)
             .await;
         assert!(conn1.superseded_same_device_conn_ids.is_empty());
 
         // Different device at the same key → genuine second device, NOT a reconnect.
-        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        let (tx2, mut rx2) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn2 = reg
             .register(peer.clone(), make_meta("main"), "dev-b".to_string(), tx2)
             .await;
@@ -602,7 +577,7 @@ mod tests {
         let pi = "pi".to_string();
         let app = "app".to_string();
 
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(
                 app.clone(),
@@ -614,7 +589,7 @@ mod tests {
         presence.subscribe(app.clone(), vec![pi.clone()]).await;
 
         // First Pi conn → peer_online.
-        let (tx_pi_1, _rx_pi_1) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_1, _rx_pi_1) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn1 = reg
             .register(pi.clone(), make_meta("main"), "pi-dev".to_string(), tx_pi_1)
             .await;
@@ -623,7 +598,7 @@ mod tests {
         assert_eq!(online["type"], "peer_online");
 
         // Same-device reconnect → closes conn1, no new peer_online (still online).
-        let (tx_pi_2, _rx_pi_2) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_2, _rx_pi_2) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn2 = reg
             .register(pi.clone(), make_meta("main"), "pi-dev".to_string(), tx_pi_2)
             .await;
@@ -663,7 +638,7 @@ mod tests {
         let pi = "pi".to_string();
         let app = "app".to_string();
 
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
@@ -672,7 +647,7 @@ mod tests {
         let mut first_meta = make_meta("main");
         first_meta.model = Some("old-model".to_string());
         first_meta.working = false;
-        let (tx_pi_1, _rx_pi_1) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_1, _rx_pi_1) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn1 = reg
             .register(pi.clone(), first_meta, "dev-a".to_string(), tx_pi_1)
             .await;
@@ -690,7 +665,7 @@ mod tests {
         refreshed_meta.model = Some("new-model".to_string());
         refreshed_meta.session_id = Some("sess-2".to_string());
         refreshed_meta.working = true;
-        let (tx_pi_2, _rx_pi_2) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_2, _rx_pi_2) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn2 = reg
             .register(pi.clone(), refreshed_meta, "dev-b".to_string(), tx_pi_2)
             .await;
@@ -729,9 +704,9 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
-        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
-        let (tx3, mut rx3) = mpsc::unbounded_channel::<Message>();
+        let (tx1, mut rx1) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (tx2, mut rx2) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (tx3, mut rx3) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
 
         let _conn1 = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1)
@@ -767,8 +742,8 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
-        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        let (tx1, mut rx1) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (tx2, mut rx2) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
 
         let _ = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1)
@@ -795,7 +770,7 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+        let (tx, mut rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx)
             .await;
@@ -826,8 +801,8 @@ mod tests {
         let reg = make_registry();
         let peer = "peer_a".to_string();
 
-        let (tx_a, _) = mpsc::unbounded_channel::<Message>();
-        let (tx_b, mut rx_b) = mpsc::unbounded_channel::<Message>();
+        let (tx_a, _) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (tx_b, mut rx_b) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
 
         let conn_a = reg
             .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx_a)
@@ -874,14 +849,14 @@ mod tests {
         let app = "app".to_string();
 
         // App is online and subscribes to Pi's presence.
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         presence.subscribe(app.clone(), vec![pi.clone()]).await;
 
         // First Pi conn → real offline→online → app receives peer_online.
-        let (tx_pi_1, _) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_1, _) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(pi.clone(), make_meta("main"), "dev-a".to_string(), tx_pi_1)
             .await;
@@ -891,7 +866,7 @@ mod tests {
         assert_eq!(v1["peer"], pi.clone());
 
         // Second conn from the same Pi (no transition) → no extra peer_online.
-        let (tx_pi_2, _) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_2, _) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(pi.clone(), make_meta("work"), "dev-a".to_string(), tx_pi_2)
             .await;
@@ -919,13 +894,13 @@ mod tests {
         let pi = "pi".to_string();
         let app = "app".to_string();
 
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         presence.subscribe(app.clone(), vec![pi.clone()]).await;
 
-        let (tx_pi_main, _) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_main, _) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn_main = reg
             .register(
                 pi.clone(),
@@ -939,7 +914,7 @@ mod tests {
             serde_json::from_str(first_online.to_text().unwrap()).unwrap();
         assert_eq!(first_online["type"], "peer_online");
 
-        let (tx_pi_work, _) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi_work, _) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let conn_work = reg
             .register(
                 pi.clone(),
@@ -972,7 +947,7 @@ mod tests {
     /// Helper: a Pi with one `main` room plus an `app` subscribed to that
     /// peer's room events. Returns the registry, the shared `rooms` handle,
     /// the peer ids, and the app's receiver (drained of any backfill).
-    async fn meta_fixture() -> (PeerRegistry, String, mpsc::UnboundedReceiver<Message>) {
+    async fn meta_fixture() -> (PeerRegistry, String, mpsc::Receiver<Message>) {
         let presence = Arc::new(PresenceManager::new());
         let rooms = Arc::new(RoomManager::new());
         let metrics = Arc::new(FirehoseMetrics::new());
@@ -984,12 +959,12 @@ mod tests {
         // Pi registers first, *before* the app subscribes — so the app gets no
         // `room_announced` backfill and its channel only carries the
         // `room_meta_updated` pushes the tests assert on.
-        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi, _rx_pi) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(pi.clone(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
 
-        let (tx_app, rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
@@ -998,7 +973,7 @@ mod tests {
         (reg, pi, rx_app)
     }
 
-    fn recv_meta(rx: &mut mpsc::UnboundedReceiver<Message>) -> serde_json::Value {
+    fn recv_meta(rx: &mut mpsc::Receiver<Message>) -> serde_json::Value {
         let msg = rx
             .try_recv()
             .expect("subscriber must receive room_meta_updated");
@@ -1223,7 +1198,7 @@ mod tests {
     async fn rooms_of_returns_latest_working_projection() {
         let reg = make_registry();
         let pi = "pi".to_string();
-        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi, _rx_pi) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(pi.clone(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
@@ -1277,13 +1252,13 @@ mod tests {
         let pi = "pi".to_string();
         let app = "app".to_string();
 
-        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let (tx_app, mut rx_app) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _ = reg
             .register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         rooms.subscribe(app.clone(), vec![pi.clone()]).await;
 
-        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        let (tx_pi, _rx_pi) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let mut meta = make_meta("main");
         meta.working = true;
         let conn = reg

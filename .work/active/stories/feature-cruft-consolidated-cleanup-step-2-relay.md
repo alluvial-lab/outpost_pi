@@ -1,7 +1,7 @@
 ---
 id: feature-cruft-consolidated-cleanup-step-2-relay
 kind: story
-stage: implementing
+stage: done
 tags: [refactor, cleanup, relay]
 parent: feature-cruft-consolidated-cleanup
 depends_on: [feature-cruft-consolidated-cleanup-step-1-app]
@@ -79,20 +79,39 @@ pass-through; its only remaining in-repository caller is
 
 ## Acceptance criteria
 
-- [ ] No relay test uses the `unbounded_channel` name or
+- [x] No relay test uses the `unbounded_channel` name or
       `UnboundedReceiver` alias; every fixture channel uses the shared bounded
       capacity constant.
-- [ ] Presence behavior tests remain unchanged in meaning and continue to
+- [x] Presence behavior tests remain unchanged in meaning and continue to
       cover online/offline transitions.
-- [ ] The module comment describes room-targeted forwarding and opaque payloads;
+- [x] The module comment describes room-targeted forwarding and opaque payloads;
       it does not claim peer-wide delivery.
-- [ ] `parse_hello` has no declaration or import and auth tests still assert the
+- [x] `parse_hello` has no declaration or import and auth tests still assert the
       same `AuthError::NoHello` result through `parse_hello_bootstrap`.
-- [ ] `cargo fmt --check` passes.
-- [ ] `cargo clippy -- -D warnings` passes.
-- [ ] `cargo test` passes.
-- [ ] No relay production mailbox capacity, routing, or wire frame changes are
+- [x] `cargo fmt --check` passes.
+- [x] `cargo clippy -- -D warnings` passes.
+- [x] `cargo test` passes.
+- [x] No relay production mailbox capacity, routing, or wire frame changes are
       included.
+
+## Implementation
+
+Removed the test-only bounded-channel compatibility facade and migrated all
+relay fixtures to `tokio::sync::mpsc::channel` with the shared
+`OUTBOUND_QUEUE_CAPACITY` (16-frame) limit. This preserves the bounded mailbox
+model while making fixture types and names accurate. Removed the one-implementation
+`PresenceTransitions` pass-through and call the unit `PresenceState` transition
+functions directly; the `PeerRegistry` keeps the same transition ordering and
+publication behavior. Corrected the Pi-forward module contract to describe
+room-targeted delivery, sender skipping, and opaque endpoint data. Removed the
+internal `parse_hello` test wrapper and migrated its sole test caller to
+`parse_hello_bootstrap(line, 0)` without changing the `AuthError::NoHello`
+assertion. `ActorDispatch::Close`, boolean assertions, and the current mesh-auth
+comment were intentionally left untouched.
+
+Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo
+test` passed. The relay suite reported 170 unit tests plus all integration,
+mesh, Pi-forward, presence, protocol-parity, and rooms tests green.
 
 ## Risk
 

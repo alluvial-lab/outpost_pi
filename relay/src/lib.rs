@@ -11,18 +11,6 @@ pub mod resource_limits;
 pub mod rooms;
 mod subscriptions;
 
-#[cfg(test)]
-pub(crate) mod test_support {
-    pub(crate) mod bounded_mpsc {
-        pub(crate) use tokio::sync::mpsc::Receiver as UnboundedReceiver;
-
-        pub(crate) fn unbounded_channel<T>()
-        -> (tokio::sync::mpsc::Sender<T>, tokio::sync::mpsc::Receiver<T>) {
-            tokio::sync::mpsc::channel(crate::resource_limits::OUTBOUND_QUEUE_CAPACITY)
-        }
-    }
-}
-
 use std::sync::Arc;
 
 use axum::{

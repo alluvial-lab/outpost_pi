@@ -9,16 +9,16 @@
 //! The relay authenticates Pi-A via the existing challenge-response (so we
 //! already trust `sender_peer_id` here), looks up the `mesh_versions` blob
 //! that lists Pi-A and confirms Pi-B is in the same Owner's member list, then
-//! forwards to all live Pi-B connections as:
+//! forwards to the one destination room selected by `to_room` as:
 //!
 //! ```jsonc
-//! { "type": "pi_envelope_in", "from_pc": "<Pi-A-pubkey>", "envelope": <verbatim> }
+//! { "type": "pi_envelope_in", "from_pc": "<Pi-A-pubkey>", "to_room": "main", "envelope": <verbatim> }
 //! ```
 //!
-//! Cross-PC data-plane forwarding is peer-wide in this slice. Any `session_id`
-//! inside `ct`, room metadata, or the generic `AgentEnvelope.body` is
-//! endpoint-owned opaque data: this module does not parse it, derive targets
-//! from it, log it, or use it as a metric key.
+//! The sender's own connection is skipped. Any `session_id` inside `ct`, room
+//! metadata, or the generic `AgentEnvelope.body` is endpoint-owned opaque data:
+//! this module does not parse it, derive targets from it, log it, or use it as
+//! a metric key.
 //!
 //! Failures don't use a custom error frame — the relay synthesizes an envelope
 //! with `body.type = "transport_error"`,
