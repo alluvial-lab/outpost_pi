@@ -68,6 +68,33 @@ real nonce; do not bypass nonce validation with a fabricated process identity.
 - [ ] `corepack pnpm test` passes.
 - [ ] `corepack pnpm build` passes.
 
+## Implementation
+
+Added one deterministic Vitest integration test around the existing armed-request
+expiry guard. It arms through the production command, accepts a request one
+millisecond below five minutes, rejects and removes one millisecond above five
+minutes, and then proves a fresh valid request can claim afterward. Fake timers
+and isolated `OUTPOST_PI_HOME` directories keep the boundary test independent;
+production expiry code was not changed.
+
+Targeted verification passed:
+
+- `corepack pnpm exec vitest run src/extension.test.ts -t "armed request expiry keeps the strict five-minute boundary"`
+- `corepack pnpm typecheck`
+- `corepack pnpm build`
+
+## Blocker
+
+The required full `corepack pnpm test` run is blocked by unrelated concurrent
+fresh-session work in the same working tree (`src/index.ts` and the adjacent
+fresh-session assertions in `src/extension.test.ts`). The run reached 1,096
+passing tests and failed only the two fresh-session ordering tests at
+`extension.test.ts:2483` and `2594`; an earlier run also exposed the concurrent
+worker's in-flight `delivery_retry` expectation update. The new expiry test
+passes in isolation, and no production expiry code is part of this story. Do
+not waive the full-suite failures or alter the concurrent fresh-session work;
+re-run this story's owning suite after that work is complete.
+
 ## Risk
 
 Low to medium. The test exercises process-state files and a mocked signal in a

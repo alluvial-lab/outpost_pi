@@ -7053,6 +7053,70 @@ describe("model meta", () => {
     }
   });
 
+  test("hot-reload: armed request expiry keeps the strict five-minute boundary", async () => {
+    vi.useFakeTimers();
+    const baseTime = Date.parse("2026-08-26T12:00:00.000Z");
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    const previousDaemon = process.env["OUTPOST_PI_DAEMON"];
+    let fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-expiry-boundary-"));
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    const ctx = { isIdle: () => true };
+    const arm = captureHandler("outpost-pi hot-reload");
+    const onSettled = captureEventHandler("agent_settled");
+
+    try {
+      process.env["OUTPOST_PI_DAEMON"] = "";
+      process.env["OUTPOST_PI_HOME"] = fakeHome;
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      vi.setSystemTime(baseTime);
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      await arm("arm", makeMockCtx());
+
+      vi.setSystemTime(baseTime + 5 * 60_000 - 1);
+      onSettled({ type: "agent_settled" }, ctx);
+      expect(killSpy).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(fakeHome, `.claimed-${process.pid}`))).toBe(true);
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(false);
+      expect(readFileSync(join(fakeHome, `.restart-marker-${process.pid}`), "utf8")).toBe(String(process.pid));
+
+      killSpy.mockClear();
+      _setHotReloadingForTest(false);
+      rmSync(fakeHome, { recursive: true, force: true });
+      fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-expiry-expired-"));
+      process.env["OUTPOST_PI_HOME"] = fakeHome;
+      vi.setSystemTime(baseTime);
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      await arm("arm", makeMockCtx());
+
+      vi.setSystemTime(baseTime + 5 * 60_000 + 1);
+      onSettled({ type: "agent_settled" }, ctx);
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(false);
+      expect(existsSync(join(fakeHome, `.claimed-${process.pid}`))).toBe(false);
+      expect(existsSync(join(fakeHome, `.restart-marker-${process.pid}`))).toBe(false);
+
+      // A new valid request must still claim after the expired request was removed.
+      vi.setSystemTime(baseTime + 5 * 60_000 + 2);
+      await arm("arm", makeMockCtx());
+      onSettled({ type: "agent_settled" }, ctx);
+      expect(killSpy).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(fakeHome, `.claimed-${process.pid}`))).toBe(true);
+      expect(existsSync(join(fakeHome, `.restart-marker-${process.pid}`))).toBe(true);
+    } finally {
+      killSpy.mockRestore();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      if (previousDaemon === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemon;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
   test("hot-reload: non-idle settlement defers and resets the quiescing gate", async () => {
     const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-defer-"));
     const previousHome = process.env["OUTPOST_PI_HOME"];
