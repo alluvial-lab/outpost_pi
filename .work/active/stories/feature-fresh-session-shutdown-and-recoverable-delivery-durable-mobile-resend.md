@@ -1,7 +1,7 @@
 ---
 id: feature-fresh-session-shutdown-and-recoverable-delivery-durable-mobile-resend
 kind: story
-stage: implementing
+stage: done
 tags: [app, lifecycle]
 parent: feature-fresh-session-shutdown-and-recoverable-delivery
 depends_on: [feature-fresh-session-shutdown-and-recoverable-delivery-retry-contract]
@@ -44,24 +44,24 @@ its durable recovery authority.
 
 ## Acceptance evidence
 
-- [ ] An entry is encrypted and durable before its first channel write; a cold
+- [x] An entry is encrypted and durable before its first channel write; a cold
       SyncService/box reopen retains it.
-- [ ] No recovery send occurs while the room is stale/offline or before a
+- [x] No recovery send occurs while the room is stale/offline or before a
       canonical session id exists.
-- [ ] Same-session reconnect and fresh-session rotation each resend once with
+- [x] Same-session reconnect and fresh-session rotation each resend once with
       the original id; session rotation retargets durably before send.
-- [ ] A late confirmation from the old session cannot delete an entry already
+- [x] A late confirmation from the old session cannot delete an entry already
       retargeted to the successor session.
-- [ ] Matching live echo or `session_history` confirmation deletes the outbox
+- [x] Matching live echo or `session_history` confirmation deletes the outbox
       entry only after transcript confirmation is durable.
-- [ ] `delivery_retry` keeps the bubble recoverable instead of appending a
+- [x] `delivery_retry` keeps the bubble recoverable instead of appending a
       terminal failure; permanent protocol rejection still fails visibly and
       removes the entry.
-- [ ] Send failure, app restart, and a second reconnect leave an unconfirmed
+- [x] Send failure, app restart, and a second reconnect leave an unconfirmed
       entry retryable without an in-memory suppression leak.
-- [ ] Owner-transition/transcript-discard recovery wipes the encrypted outbox
+- [x] Owner-transition/transcript-discard recovery wipes the encrypted outbox
       with the other owner-bound transcript data.
-- [ ] Flutter analyze and the full non-e2e test suite pass.
+- [x] Flutter analyze and the full non-e2e test suite pass.
 
 ## Ordering
 
@@ -130,6 +130,7 @@ against the pre-fix production path and passes after the repair.
 
 Final evidence on the combined tree: `sync_service_test.dart` passed 115/115
 twice at `--concurrency=2`, the full non-e2e suite passed 976/976 at
-`--concurrency=2`, and `flutter analyze --no-pub` reported no issues. This note
-records the outbox regression repair; the parent autopilot owner retains control
-of this child story's stage transition.
+`--concurrency=2`, and `flutter analyze --no-pub` reported no issues. The
+production-backed recovery scenario and the full 17-scenario pairing harness
+subsequently passed during boundary adjudication, so this child is closed as
+`done`.
