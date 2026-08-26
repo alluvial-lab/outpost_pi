@@ -1,7 +1,7 @@
 ---
 id: feature-fresh-session-shutdown-and-recoverable-delivery
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, lifecycle]
 parent: null
 depends_on: []
@@ -462,3 +462,18 @@ final class PiHostDeliveryControlStatus {
   `standard` one-pass fresh-context review.
 - Fixed/active blockers: none from an independent pass at design time.
 - Parked/rejected: none.
+
+## Implementation summary
+
+The paired app/extension contract is implemented end to end: schema-owned
+`delivery_retry` distinguishes fence rejection from extension-local pending
+delivery; managed fresh-session shutdown synchronously fences new prompts,
+drains admitted SDK work, disposes the active runtime under a bounded deadline,
+and exits through the existing process-manager code; the app persists every
+unconfirmed prompt in an encrypted room-scoped outbox and retargets the stable
+id only after authoritative successor hydration. Focused protocol, lifecycle,
+outbox, timeout, and replacement-order tests are green, the app follow-up
+records 976/976 non-E2E tests plus clean analysis, the extension passes
+1,103 tests / 3 skipped plus typecheck/build, and the production-backed pairing
+harness passes all 17 current scenarios including quiesce-to-reconnect recovery
+and pre-settlement replacement confirmation.
