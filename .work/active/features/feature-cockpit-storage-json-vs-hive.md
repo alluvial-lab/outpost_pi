@@ -1,7 +1,7 @@
 ---
 id: feature-cockpit-storage-json-vs-hive
 kind: feature
-stage: implementing
+stage: review
 tags: [cockpit]
 parent: null
 depends_on: []
@@ -438,3 +438,70 @@ Future<Module> buildCockpitModule(StateStoreFactory stateStores);
 - **Legacy Hive package lingers**: confine it to one migration file and document
   the revisit condition (remove only after the installed migration window is
   deliberately closed).
+
+## Implementation summary
+
+Implemented as one coherent Cockpit ownership bundle with child stories serving
+as dependency and acceptance checkpoints. The caller-selected capability was
+`openai-codex/gpt-5.6-sol` at `xhigh` because persistence migration and
+corruption recovery carry durable-state risk. The harness exposed no subagent
+tool, so the feature owner executed inline without weakening story boundaries,
+per-item commits, or independent verification. Effective review weight is
+`standard` from the caller's default note.
+
+Dependency waves completed in the required order:
+
+1. `feature-cockpit-storage-json-vs-hive-storage-port-json-store` → `done`
+   (`55897edd`): domain port, factory-owned atomic JSON adapter, closed
+   diagnostics, non-destructive corrupt-file quarantine, explicit write-failure
+   propagation, and deterministic interleaving coverage.
+2. `feature-cockpit-storage-json-vs-hive-legacy-migration` → `done`
+   (`e2b2d27e`): Windows/Application Support path selection, deterministic
+   legacy search, seeded-box export, marker-last commit, per-store isolation,
+   source preservation, and fresh-install behavior.
+3. `feature-cockpit-storage-json-vs-hive-repository-adapters` → `done`
+   (`9340ff7f`): four state-store-backed adapters preserving domain contracts,
+   keys, primitive shapes, ordering/defaults, and corruption recovery.
+4. `feature-cockpit-storage-json-vs-hive-remove-hive-runtime` → `done`
+   (`a4873ac8`): single-factory bootstrap/composition, requested-exit flush,
+   live Hive deletion, `hive_flutter` removal, and durable-doc roll-forward.
+
+The implementation adapted the upstream architecture rather than copying its
+process-global cache or silent write-error behavior. Factories own instance and
+flush lifecycle; corrupt or unsupported JSON is preserved as `.corrupt[.N]`
+before an empty writable store opens; inability to quarantine fails later
+writes closed. Atomic commits explicitly flush a same-directory temp file,
+serialize store snapshots, and apply bounded rename retry. Production startup
+runs the legacy reader before the first JSON open and does not use the retained
+storage-neutral retry seam, which exists only for the unchanged bootstrap
+wiring regression.
+
+Migration idempotency is executable evidence: after a first seeded-Hive export,
+the test replaces `projects.json` with a probe; the marker-present second run
+returns `ran == false` and leaves the probe byte-for-byte unchanged. A separate
+marker-deleted interruption test replays safely from preserved source files.
+One unencodable layouts box yields only an empty layouts envelope and a recorded
+fixed-category failure while projects remain intact. No source `.hive` file is
+deleted.
+
+## Integrated verification
+
+An exact staged-state detached worktree (excluding all concurrent/unrelated
+working-tree edits) passed from `cockpit/` with the repository SDK/cache:
+
+- `flutter analyze` — zero issues.
+- `flutter test` — all 313 tests passed.
+- The independent storage-neutral bootstrap wiring test body/assertions were
+  unchanged and passed, proving `main.dart` still catches exhausted store opens
+  and renders `BootstrapErrorApp` without an unhandled throw.
+- Composition and lifecycle additions prove every Cockpit repository opens
+  through one supplied `StateStoreFactory` and requested exit awaits
+  `flushAll()`.
+- Sweeps find no `hive_flutter`, no live `hive_*` adapters, and exactly one
+  `package:hive` production import: `legacy_hive_migrator.dart`.
+
+The combined shared working tree also passed all 314 Cockpit tests. Unrelated
+concurrent theme-contract tests, generated plugin registrants, and other
+subproject work were preserved and excluded from all Cockpit storage commits.
+Identity storage was not touched; the mobile owner-identity work remains a
+separate surface. No blockers or implementation-discovery bounces occurred.
