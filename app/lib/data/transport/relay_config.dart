@@ -1,8 +1,9 @@
 // Relay endpoint resolution.
 //
-// The app always connects to a SINGLE relay at a time, regardless of
-// how many peers it's paired with. A stored `prefs.relayUrl` resolves to a
-// relay; its absence is an explicit recoverable configuration state.
+// The app uses one configured relay as its primary endpoint, with a retained
+// pairing-record endpoint available as an ordered reconnect alternate. A
+// stored `prefs.relayUrl` resolves to the primary relay; its absence is an
+// explicit recoverable configuration state.
 //
 // Canonical scheme on storage is `http://` or `https://` — this is
 // the form the user types and what we keep in Preferences. The WebSocket
@@ -12,9 +13,9 @@
 // historical persisted values get re-set by the user during the
 // onboarding gate.
 //
-// `peer.relayUrl` is kept on PeerRecord for legacy QR code payloads but
-// is no longer consulted when opening a connection — the resolution is
-// global, not per-peer.
+// `peer.relayUrl` remains legacy QR metadata and is used only as a reconnect
+// alternate after the configured primary fails; pairing still resolves against
+// the global configured relay.
 
 import 'package:app/data/preferences/preferences.dart';
 
@@ -81,6 +82,23 @@ const String kRelayUrlInvalidGeneric =
 RelayResolution resolveRelayUrl(Preferences prefs) {
   final url = prefs.relayUrl;
   return url == null ? const UnconfiguredRelay() : ConfiguredRelay(url);
+}
+
+/// Return relay endpoints in preference order without duplicate wire URLs.
+///
+/// The configured relay is the primary endpoint. Legacy QR metadata retained on
+/// a paired [PeerRecord] is supplied as an alternate so a tailnet/LAN path can
+/// recover without changing the user's global setting.
+List<String> orderedRelayUrls(String primary, Iterable<String> alternates) {
+  final result = <String>[];
+  final seen = <String>{};
+  for (final candidate in <String>[primary, ...alternates]) {
+    final value = candidate.trim();
+    if (value.isEmpty) continue;
+    final wireValue = toWsRelayUrl(value);
+    if (seen.add(wireValue)) result.add(value);
+  }
+  return List<String>.unmodifiable(result);
 }
 
 /// Translates the canonical HTTP-form relay URL into the WebSocket

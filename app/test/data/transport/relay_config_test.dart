@@ -94,6 +94,22 @@ void main() {
     });
   });
 
+  group('relay_config — orderedRelayUrls', () {
+    test('keeps the configured endpoint first and removes wire duplicates', () {
+      expect(
+        orderedRelayUrls(
+          'https://tailnet.example',
+          ['http://lan.example', 'wss://tailnet.example', 'http://lan.example'],
+        ),
+        ['https://tailnet.example', 'http://lan.example'],
+      );
+    });
+
+    test('ignores blank alternates without changing the primary', () {
+      expect(orderedRelayUrls('http://primary', [' ', '']), ['http://primary']);
+    });
+  });
+
   group('relay_config — toWsRelayUrl', () {
     test('translates http(s) to ws(s)', () {
       expect(
