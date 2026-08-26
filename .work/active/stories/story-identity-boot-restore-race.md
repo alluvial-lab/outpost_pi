@@ -34,3 +34,16 @@ never triggers a generation-then-transition cycle. Investigate
 timing first. Related: `feature-owner-identity-transition`,
 `gate-security-identity-store-fatal-read-rotates-owner-key` (shipped),
 `gate-security-stopped-app-owner-replacement-undetected` (shipped).
+
+## Implementation notes
+- Execution capability: inline current-session implementation; app identity boot race with platform-specific restore behavior and deterministic unit coverage.
+- Review weight: standard (source: caller default); bounded inline code review completed, but closure is held by the documented full-suite blocker below.
+- Files changed: `app/lib/pairing/owner_identity_bridge.dart`, `app/test/pairing/owner_identity_bridge_test.dart`, `app/test/ui/pairing/pairing_viewmodel_test.dart` (test helper uses zero grace for already-local in-memory identities).
+- Tests added/removed: late event restore and silent polling restore tests; existing first-run test uses zero grace to remain deterministic.
+- Simplification: no plugin API or native change was invented; the bridge uses the existing `watch()` surface plus bounded `load()` polling. Android Block Store has no restore-complete/live-change signal, while iOS exposes foreground/event polling behavior.
+- Discrepancies from design: the platform cannot distinguish genuine first run from a late Android restore, so boot now waits up to 3 seconds (200 ms polling) before generation, then retains the existing final read-before-save race fence.
+- Adjacent issues parked: none.
+- Verification: `flutter analyze` passed; targeted owner-identity suite passed (15 tests, `--concurrency=2`); targeted sync regressions passed serially after the full-suite collision.
+
+## Blocker
+- The required full command `flutter test --exclude-tags e2e --concurrency=2` did not complete green in the concurrent working tree. It reported two behavior failures in `app/test/data/sync/sync_service_test.dart` while another app worker had dirty edits in the same sync/transcript surface; each reproduced green when rerun serially. The two PairingPage widget tests also failed to start with Flutter harness errors (`Bad state: Cannot close sink while adding stream`) and timed out before assertions. This is an environment/concurrent-worker verification blocker, not waived as a product pass; rerun the required full suite after the app worker settles and the Flutter test harness is healthy.

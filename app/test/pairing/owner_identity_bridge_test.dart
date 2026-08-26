@@ -131,6 +131,32 @@ final class _WatchStore implements OwnerIdentityStore {
   Future<void> delete() async {}
 }
 
+final class _PollingRestoreStore implements OwnerIdentityStore {
+  _PollingRestoreStore(this.restored);
+
+  final OwnerIdentity restored;
+  int loads = 0;
+  int saveCalls = 0;
+
+  @override
+  Future<bool> isSyncAvailable() async => true;
+
+  @override
+  Future<OwnerIdentity?> load() async {
+    loads++;
+    return loads >= 3 ? restored : null;
+  }
+
+  @override
+  Future<void> save(OwnerIdentity identity) async => saveCalls++;
+
+  @override
+  Stream<OwnerIdentity> watch() => const Stream.empty();
+
+  @override
+  Future<void> delete() async {}
+}
+
 class _FakeSecureStorage implements FlutterSecureStorage {
   final Map<String, String> _store = {};
   int failDeletesRemaining = 0;
@@ -539,6 +565,7 @@ void main() {
         final bridge = OwnerIdentityBridge(
           store,
           PairingStorage(_FakeSecureStorage()),
+          restoreGracePeriod: Duration.zero,
         );
 
         final result = await bridge.boot();
@@ -620,6 +647,57 @@ void main() {
         expect(ready.generated, isFalse);
         expect(store.saveCalls, 0);
         expect(bridge.currentIdentity, same(restored));
+
+        bridge.dispose();
+      },
+    );
+
+    test(
+      'waits for a late restore event before generating a fresh identity',
+      () async {
+        final restored = await _freshIdentity();
+        final store = _WatchStore();
+        final bridge = OwnerIdentityBridge(
+          store,
+          PairingStorage(_FakeSecureStorage()),
+          restoreGracePeriod: const Duration(milliseconds: 100),
+          restorePollInterval: const Duration(milliseconds: 10),
+        );
+
+        final boot = bridge.boot();
+        await Future<void>.delayed(Duration.zero);
+        store.emit(restored);
+        final result = await boot;
+
+        expect(result, isA<IdentityReady>());
+        expect((result as IdentityReady).identity, same(restored));
+        expect(result.generated, isFalse);
+        expect(bridge.currentIdentity, same(restored));
+
+        bridge.dispose();
+        await store.close();
+      },
+    );
+
+    test(
+      'polls a silent Block Store restore before generating a fresh identity',
+      () async {
+        final restored = await _freshIdentity();
+        final store = _PollingRestoreStore(restored);
+        final bridge = OwnerIdentityBridge(
+          store,
+          PairingStorage(_FakeSecureStorage()),
+          restoreGracePeriod: const Duration(milliseconds: 100),
+          restorePollInterval: const Duration(milliseconds: 1),
+        );
+
+        final result = await bridge.boot();
+
+        expect(result, isA<IdentityReady>());
+        expect((result as IdentityReady).identity, same(restored));
+        expect(result.generated, isFalse);
+        expect(store.loads, greaterThanOrEqualTo(3));
+        expect(store.saveCalls, 0);
 
         bridge.dispose();
       },

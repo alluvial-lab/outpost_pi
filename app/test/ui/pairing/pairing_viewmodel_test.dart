@@ -206,7 +206,14 @@ class _DeferredPairingStorage extends _FakeStorage {
 /// PairingViewModel runs in production.
 Future<OwnerIdentityBridge> _bootedBridge(PairingStorage storage) async {
   final store = InMemoryOwnerIdentityStore();
-  final bridge = OwnerIdentityBridge(store, storage);
+  // This helper models an already-local test identity, not a fresh install
+  // waiting for platform restore. Keep widget tests independent of the
+  // production Block Store grace period.
+  final bridge = OwnerIdentityBridge(
+    store,
+    storage,
+    restoreGracePeriod: Duration.zero,
+  );
   await bridge.boot();
   return bridge;
 }
