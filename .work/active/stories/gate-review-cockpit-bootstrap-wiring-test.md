@@ -1,7 +1,7 @@
 ---
 id: gate-review-cockpit-bootstrap-wiring-test
 kind: story
-stage: review
+stage: done
 tags: [cockpit, testing]
 parent: null
 depends_on: []
@@ -45,3 +45,15 @@ unhandled throw, exercising the actual wiring in `cockpit/lib/main.dart`.
   actual bootstrap/open/retry/error wiring. Production keeps the existing
   preflight by default.
 - Adjacent issues parked: none.
+
+## Review
+
+- Verdict: pass — bounded inline standalone-story review.
+- The test calls `runCockpit`, the production error boundary, with
+  `bootstrapCockpit` and an injected raw opener; it is not an isolated helper
+  or widget test.
+- Three injected `FileSystemException`s reach the production retry exhaustion
+  path, and the completed future renders `BootstrapErrorApp` with the expected
+  error text.
+- Verification: `flutter analyze` and full `flutter test` passed from
+  `cockpit/` (287 tests).
