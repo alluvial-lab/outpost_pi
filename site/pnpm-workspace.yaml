@@ -11,6 +11,6 @@ overrides:
   # Legacy ESLint consumers use the compatible Minimatch class API; move them
   # off brace-expansion 1.x, which has no patched release for this advisory.
   minimatch@3: 10.2.5
-  postcss: 8.5.18
+  postcss: 8.5.23
   sharp: 0.35.3
   "@babel/core": ^7.29.6
