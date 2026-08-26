@@ -1,4 +1,5 @@
 import {
+  CLIENT_MESSAGE_DISCRIMINATORS,
   SERVER_MESSAGE_DISCRIMINATORS,
 } from "../protocol/generated/protocol.generated.js";
 import {
@@ -64,6 +65,7 @@ export interface OwnerDisconnectResult {
 type PairTokenStatus = "ok" | "expired" | "consumed" | "unknown";
 
 type PairOkMessage = Extract<ServerMessage, { type: "pair_ok" }>;
+type PairRequestMessage = Extract<ClientMessage, { type: typeof CLIENT_MESSAGE_DISCRIMINATORS.pair_request }>;
 
 type UnknownPeerErrorMessage = Extract<ServerMessage, { type: "error" }>;
 
@@ -172,8 +174,8 @@ export interface OwnerOuterFrameInput {
   sendToPeer(peerId: string, message: ServerMessage): void;
 }
 
-function isPairRequestMessage(message: ClientMessage): message is Extract<ClientMessage, { type: "pair_request" }> {
-  if (message.type !== "pair_request") return false;
+function isPairRequestMessage(message: ClientMessage): message is PairRequestMessage {
+  if (message.type !== CLIENT_MESSAGE_DISCRIMINATORS.pair_request) return false;
   const record = message as unknown as Record<string, unknown>;
   return typeof record.id === "string" && typeof record.device_name === "string";
 }
@@ -306,7 +308,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     // sender's identity is established by Ed25519 auth at the relay, not by
     // this rewritten field, so there is no spoofing surface to re-defend.
     const inner = decodeRelayClientPayload(decoded.payloadUtf8);
-    if (inner?.type === "pair_request") {
+    if (inner?.type === CLIENT_MESSAGE_DISCRIMINATORS.pair_request) {
       if (!isPairRequestMessage(inner)) return false;
       // A valid plaintext re-pair is allowed even while an older secure channel
       // is attached; successful persistence replaces and detaches that channel.
@@ -362,7 +364,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   async handlePairRequest(
     input: OwnerOuterFrameInput,
     peerId: string,
-    inner: Extract<ClientMessage, { type: "pair_request" }>,
+    inner: PairRequestMessage,
   ): Promise<void> {
     const sendError = (code: PairErrorCode, message: string) => {
       input.sendToPeer(peerId, { type: SERVER_MESSAGE_DISCRIMINATORS.pair_error, in_reply_to: inner.id, code, message });
@@ -703,7 +705,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   }
 
   private rememberFlushedCompaction(peerId: string, message: ServerMessage): void {
-    if (message.type !== "compaction" || message.ts === undefined) return;
+    if (message.type !== SERVER_MESSAGE_DISCRIMINATORS.compaction || message.ts === undefined) return;
     let keys = this.flushedCompactionKeysByPeer.get(peerId);
     if (!keys) {
       keys = new Set<string>();
@@ -737,7 +739,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     if (!flushedKeys || flushedKeys.size === 0) return history;
 
     const events = history.events.filter((event) =>
-      event.type !== "compaction" || !flushedKeys.has(`${history.session_id ?? ""}:${event.ts}`)
+      event.type !== SERVER_MESSAGE_DISCRIMINATORS.compaction || !flushedKeys.has(`${history.session_id ?? ""}:${event.ts}`)
     );
     return events.length === history.events.length ? history : { ...history, events };
   }
