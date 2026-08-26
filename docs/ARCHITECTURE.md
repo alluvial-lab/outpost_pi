@@ -13,7 +13,8 @@ detail see `PROTOCOL.md`; for locked decisions see `docs/DECISIONS.md`.
                 │  PeerRegistry · PresenceManager · RoomManager │
                 │  MeshAuthCache (60s) · FirehoseMetrics        │
                 └───┬───────────────────────────────────┬───────┘
-        TLS WS (pi_envelope)              TLS WS (ClientMessage/ServerMessage)
+        WS (plain by default; wss via proxy)  WS (plain by default; wss via proxy)
+        cross-PC body relay-readable           owner payload E2E after pairing
                     │                                       │
    ┌────────────────┴──────────────┐         ┌─────────────────┴────────────┐
    │      pi-extension (Node/TS)   │         │        app (Flutter mobile)    │

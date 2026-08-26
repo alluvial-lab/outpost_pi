@@ -88,12 +88,14 @@ wire island must document its durable reason for remaining outside the schema.
 
 ### Transports
 
-1. **App ↔ pi-extension** — WebSocket over TLS (relay-mediated) carrying
-   newline-delimited JSON `ClientMessage` / `ServerMessage`. After signed-DH
-   pairing, `outer.ct` is an E2E-encrypted and authenticated sealed frame;
-   only the pre-key pairing exchange remains plaintext inside TLS. Chat-bearing
-   `ServerMessage`s (`user_message`, `agent_chunk`, `agent_done`,
-   `session_history`, tool surfaces) carry a canonical `session_id`
+1. **App ↔ pi-extension** — WebSocket (relay-mediated). The relay serves plain
+   `ws://` by default; `wss://` requires an external TLS-terminating proxy. It
+   carries newline-delimited JSON `ClientMessage` / `ServerMessage`. After
+   signed-DH pairing, `outer.ct` is an E2E-encrypted and authenticated sealed
+   frame, so owner payloads remain protected even on plain `ws`; the pre-key
+   pairing exchange is not E2E-protected. Chat-bearing `ServerMessage`s
+   (`user_message`, `agent_chunk`, `agent_done`, `session_history`,
+   tool surfaces) carry a canonical `session_id`
    (endpoint-owned, opaque to the relay); the app's `session_gate.dart`
    rejects missing/foreign session IDs before mutation.
 2. **Cross-PC pi-to-pi** — relay `pi_envelope` / `pi_envelope_in` frames
