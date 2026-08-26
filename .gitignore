@@ -112,6 +112,10 @@ pnpm-workspace.yaml
 # Test artifacts — pi-extension model-persist test writes a real settings.json
 pi-extension/test/.pi/
 
+# Playwright reports and per-test output
+playwright-report/
+test-results/
+
 # Per-cwd outpost-pi runtime config (agent_name, auto_start_relay) — machine-local
 # state written by `outpost-pi claude` / the wizard, never repo content. Matches
 # any `.pi/` dir at any depth (root, pi-extension/, subprojects).
