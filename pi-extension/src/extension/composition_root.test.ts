@@ -188,7 +188,7 @@ describe("composition root runtime", () => {
     expect(stopOrder).toBeLessThan(closeMeshOrder);
   });
 
-  test("owner session_shutdown awaits relay drain before closing mesh", async () => {
+  test("owner session_shutdown starts every cleanup attempt and awaits relay drain", async () => {
     const p = ports();
     let release!: () => void;
     const drain = new Promise<void>((resolve) => { release = resolve; });
@@ -201,10 +201,37 @@ describe("composition root runtime", () => {
     const shutdown = handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }) as Promise<void>;
     await Promise.resolve();
     expect(p.relay.stop).toHaveBeenCalledOnce();
-    expect(p.commands.closeMesh).not.toHaveBeenCalled();
+    expect(p.commands.closeMesh).toHaveBeenCalledOnce();
+    let settled = false;
+    void shutdown.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
 
     release();
     await shutdown;
+  });
+
+  test("relay stop failure still attempts mesh and cwd-lock cleanup", async () => {
+    const p = ports();
+    p.relay.stop = vi.fn(async () => { throw new Error("relay stop failed"); });
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createOutpostPiExtensionRuntime(
+      pi,
+      p,
+      new OutpostPiRuntimeCoordinator(),
+    );
+    runtime.register();
+    handlers.get("session_start")?.(
+      { type: "session_start", reason: "startup" },
+      context("parent"),
+    );
+
+    await expect(
+      handlers.get("session_shutdown")?.({
+        type: "session_shutdown",
+        reason: "new",
+      }),
+    ).rejects.toThrow("relay stop failed");
     expect(p.commands.closeMesh).toHaveBeenCalledOnce();
   });
 

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { OutpostPiRuntimePorts, RuntimeEpoch } from "./ports.js";
+import type { OutpostPiRuntime, OutpostPiRuntimePorts, RuntimeEpoch } from "./ports.js";
 import {
   getOutpostPiRuntimeCoordinator,
   type FactoryLease,
@@ -8,17 +8,6 @@ import {
 } from "./runtime_coordinator.js";
 
 let nextEpochId = 1;
-
-/** Own one extension runtime epoch and its registration and disposal lifecycle. */
-export interface OutpostPiRuntime {
-  readonly epoch: RuntimeEpoch;
-  readonly ports: OutpostPiRuntimePorts;
-  readonly lease: FactoryLease;
-  register(): void;
-  registerLifecycle(): void;
-  isOwner(): boolean;
-  dispose(): Promise<void>;
-}
 
 /** Create an independently disposable epoch that guards stale asynchronous runtime work. */
 export function createRuntimeEpoch(): RuntimeEpoch {
@@ -68,14 +57,16 @@ export function createOutpostPiExtensionRuntime(
       ports.commands.register(pi, runtime);
     },
     registerLifecycle() {
-      registerLifecycleHooks(pi, ports, epoch, coordinator, lease);
+      registerLifecycleHooks(pi, ports, epoch, coordinator, lease, runtime);
     },
     isOwner() {
       return isolatedTestHarness || coordinator.isOwner(lease);
     },
-    async dispose() {
-      if (!coordinator.beginShutdown(lease, "quit")) return;
-      await disposeRuntimePorts(ports, epoch, "quit");
+    async dispose(reason: SessionLifecycleReason = "quit") {
+      if (!coordinator.beginShutdown(lease, reason)) return false;
+      ports.session.onSessionLifecycle?.(reason, "");
+      await disposeRuntimePorts(ports, epoch, reason);
+      return true;
     },
   };
   return runtime;
@@ -88,6 +79,7 @@ export function registerLifecycleHooks(
   epoch: RuntimeEpoch,
   coordinator: OutpostPiRuntimeCoordinator,
   lease: FactoryLease,
+  runtime: OutpostPiRuntime,
 ): void {
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
     const reason = sessionReason(_event, "startup");
@@ -95,6 +87,7 @@ export function registerLifecycleHooks(
     const activation = coordinator.activate(lease, sessionId, pi);
     if (activation.status !== "activated") return;
 
+    ports.commands.activateRuntime?.(runtime);
     // Publish the factory-local API only after the ownership claim succeeds.
     // bindApi drains process-scoped pending ingress after the fresh API is live.
     ports.session.bindApi(pi);
@@ -153,8 +146,24 @@ async function disposeRuntimePorts(
   ports.session.resetTurnSnapshot();
   ports.session.clearStaleContexts(reason);
   ports.relay.detachCrossPcBridge();
-  await ports.relay.stop();
-  await ports.commands.closeMesh?.();
+  let relayStop: Promise<void>;
+  try {
+    relayStop = ports.relay.stop();
+  } catch (error) {
+    relayStop = Promise.reject(error);
+  }
+  let meshClose: Promise<void>;
+  try {
+    meshClose = ports.commands.closeMesh?.() ?? Promise.resolve();
+  } catch (error) {
+    meshClose = Promise.reject(error);
+  }
+  const [relayResult, meshResult] = await Promise.allSettled([
+    relayStop,
+    meshClose,
+  ]);
+  if (relayResult.status === "rejected") throw relayResult.reason;
+  if (meshResult.status === "rejected") throw meshResult.reason;
 }
 
 /** Create the SDK factory that supplies a fresh port graph for each extension instance. */

@@ -85,8 +85,14 @@ export { probeListPeers } from "./extension/probe_list_peers.js";
 export { restartSupervisorCommand as _restartSupervisorCommand } from "./extension/command_surface/supervisor_restart.js";
 export type { RestartStep } from "./extension/command_surface/supervisor_restart.js";
 import { createOutpostPiExtensionRuntime } from "./extension/composition_root.js";
+import { FreshSessionShutdownCoordinator } from "./extension/fresh_session_shutdown.js";
 import { getOutpostPiRuntimeCoordinator } from "./extension/runtime_coordinator.js";
-import type { CommandSurfacePort, OutpostPiRuntimePorts, WakeAgentResult } from "./extension/ports.js";
+import type {
+  CommandSurfacePort,
+  OutpostPiRuntime,
+  OutpostPiRuntimePorts,
+  WakeAgentResult,
+} from "./extension/ports.js";
 import { SdkSessionProjection } from "./session/sdk_session_projection.js";
 import { createDeliveryDebugLog, idTail } from "./session/delivery_debug_log.js";
 import type { DeliveryDebugLog } from "./session/delivery_debug_log.js";
@@ -1268,6 +1274,7 @@ type AgentMessageApi = {
   sendUserMessage: (...args: Parameters<ExtensionAPI["sendUserMessage"]>) => void | Promise<void>;
 };
 let _messageApi: AgentMessageApi | null = null;
+let _activeOutpostPiRuntime: OutpostPiRuntime | null = null;
 
 function _isAgentMessageApi(value: unknown): value is AgentMessageApi {
   if (!value || typeof value !== "object") return false;
@@ -1742,7 +1749,15 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
       },
     } as OutpostPiRuntimePorts["session"],
     commands: {
-      register: (boundPi, runtime) => { createRuntimeCommandSurface().register(boundPi, runtime); },
+      register: (boundPi, runtime) => {
+        if ((boundPi as ExtensionAPI & { __outpostPiTestHarness?: boolean })
+              .__outpostPiTestHarness === true) {
+          _freshSessionShutdown.resetForTest();
+        }
+        if (runtime.isOwner()) _activeOutpostPiRuntime = runtime;
+        createRuntimeCommandSurface().register(boundPi, runtime);
+      },
+      activateRuntime: (runtime) => { _activeOutpostPiRuntime = runtime; },
       ensureStarted: (ctx) => {
         // Auto-start when the relay is not yet connected on this process —
         // covers both a fresh process (_state="idle", _disposed=false) and a
@@ -2404,6 +2419,24 @@ let _nextPendingDeliveryQueueId = 1;
  *  entry is released so a replay-queue re-attempt can retry. */
 const _inflightUserDeliveries = new Map<string, Promise<WakeAgentResult>>();
 
+const kFreshSessionShutdownDeadlineMs = 10_000;
+function _isFreshSessionRestartManaged(): boolean {
+  return process.env["OUTPOST_PI_DAEMON"] === "1"
+    || process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] === "1";
+}
+
+const _freshSessionShutdown = new FreshSessionShutdownCoordinator({
+  isRestartManaged: _isFreshSessionRestartManaged,
+  drainAcceptedDeliveries: async () => {
+    while (_inflightUserDeliveries.size > 0) {
+      await Promise.allSettled([..._inflightUserDeliveries.values()]);
+    }
+  },
+  terminate: (exitCode) => { process.exit(exitCode); },
+  shutdownDeadlineMs: kFreshSessionShutdownDeadlineMs,
+  exitCode: EXIT_FRESH_SESSION,
+});
+
 /** @internal test override for the pending-delivery TTL. */
 export function _setPendingDeliveryTtlForTest(ms: number): () => void {
   _pendingDeliveryTtlMs = ms;
@@ -2434,6 +2467,23 @@ function _sendDeliveryPending(sender: PlainPeerChannel | null, inReplyTo: string
   });
   if (sender) sender.send(pending);
   else _owners.broadcast(pending);
+}
+
+function _sendDeliveryRetry(
+  sender: PlainPeerChannel | null,
+  inReplyTo: string,
+  reason: "hot_reload" | "fresh_session",
+): void {
+  const retry: ServerMessage = _withCurrentSession({
+    type: "error",
+    code: "delivery_retry",
+    in_reply_to: inReplyTo,
+    message: reason === "fresh_session"
+      ? "fresh session shutdown is in progress; retry after room recovery"
+      : "extension hot-reload is in progress; retry after room recovery",
+  });
+  if (sender) sender.send(retry);
+  else _owners.broadcast(retry);
 }
 
 function _prepareUserDelivery(
@@ -2721,17 +2771,9 @@ async function _deliverUserMessage(
   sender: PlainPeerChannel | null,
   mode: "auto" | "normal" = "auto",
 ): Promise<void> {
-  // Hot-reload owns the next settled boundary. Reject rather than enqueueing a
-  // prompt that could begin after graceful shutdown has been requested. This is
-  // a delivery-error response, not delivery_pending: the exiting process cannot
-  // replay the input, and the app does not yet resend it automatically. The
-  // reconnect/session_sync path only rehydrates output after the restart.
-  if (_hotReloading) {
-    // Do NOT send delivery_pending, which promises replay the extension cannot
-    // honor. _sendDeliveryError currently reports a failed send; the operator
-    // must resend the input after reconnect until the recoverable resend contract
-    // is implemented.
-    _sendDeliveryError(sender, msg.id, "agent is restarting for extension hot-reload; resend after reconnect");
+  const fenceReason = _freshSessionShutdown.fenceReason;
+  if (fenceReason !== null) {
+    _sendDeliveryRetry(sender, msg.id, fenceReason);
     return;
   }
   const prepared = _prepareUserDelivery(msg, sender, mode);
@@ -2860,17 +2902,16 @@ function _restartMarkerPath(): string {
 }
 
 const _hotReloadNonce = randomUUID();
-let _hotReloading = false;
 
-/** Test-only override for resetting the synchronous ingress fence between cases. */
+/** Test-only override for resetting the shared synchronous ingress fence. */
 export function _setHotReloadingForTest(value: boolean): void {
-  _hotReloading = value;
+  if (value) _freshSessionShutdown.beginHotReloadFence();
+  else _freshSessionShutdown.resetForTest();
 }
 
 /** Publish this process's nonce so an external arming command can target it. */
 function _writeRuntimeIdentity(): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
-  _hotReloading = false;
   try {
     const dir = _ensureHotReloadRemoteDir();
     _sweepStaleRuntimeIdentities(dir);
@@ -2984,7 +3025,7 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
  */
 function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1" || _disposed) return;
-  if (_hotReloading) return;
+  if (_freshSessionShutdown.fenceReason !== null) return;
 
   const dir = _secureHotReloadRemoteDir();
   if (!dir) return;
@@ -3013,22 +3054,16 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
     return;
   }
 
-  _hotReloading = true;
-  if (_disposed || !ctx.isIdle()) {
-    _hotReloading = false;
-    return;
-  }
+  if (_disposed || !ctx.isIdle()) return;
 
   const claimedPath = join(dir, `.claimed-${process.pid}`);
   try {
     writeFileSync(claimedPath, "", { mode: 0o600, flag: "wx" });
   } catch {
-    _hotReloading = false;
     return;
   }
   if (_disposed) {
     _removeIfOwnerOnlyRegularFile(claimedPath);
-    _hotReloading = false;
     return;
   }
 
@@ -3036,7 +3071,6 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
   if (existsSync(markerPath)) {
     if (!_isOwnerOnlyRegularFile(markerPath)) {
       _removeIfOwnerOnlyRegularFile(claimedPath);
-      _hotReloading = false;
       return;
     }
     _removeIfOwnerOnlyRegularFile(markerPath);
@@ -3047,13 +3081,16 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
     // A missing marker deliberately makes the wrapper stop instead of
     // relaunching a process whose restart intent was not durably recorded.
     _removeIfOwnerOnlyRegularFile(claimedPath);
-    _hotReloading = false;
     return;
   }
   _removeIfOwnerOnlyRegularFile(armedPath);
   if (_disposed) {
     _removeIfOwnerOnlyRegularFile(claimedPath);
-    _hotReloading = false;
+    return;
+  }
+  if (!_freshSessionShutdown.beginHotReloadFence()) {
+    _removeIfOwnerOnlyRegularFile(claimedPath);
+    _removeIfOwnerOnlyRegularFile(markerPath);
     return;
   }
   process.kill(process.pid, "SIGTERM");
@@ -3106,6 +3143,13 @@ export function _routeClientMessageFrom(
     }
     return;
   }
+  if (msg.type === "user_message") {
+    const fenceReason = _freshSessionShutdown.fenceReason;
+    if (fenceReason !== null) {
+      _sendDeliveryRetry(sender, msg.id, fenceReason);
+      return;
+    }
+  }
   if (_disposed) {
     _sessionUnavailable(sender, msg.id);
     return;
@@ -3154,9 +3198,7 @@ export function _routeClientMessageFrom(
       const actionCtx = _sdkSessionProjection.freshCommandActionCtx();
       const newSession = actionCtx?.newSession;
       if (!newSession) {
-        const restartManaged = process.env["OUTPOST_PI_DAEMON"] === "1"
-          || process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] === "1";
-        if (!restartManaged) {
+        if (!_isFreshSessionRestartManaged()) {
           sender.send({
             type: "action_error",
             session_id: msg.session_id,
@@ -3166,14 +3208,50 @@ export function _routeClientMessageFrom(
           });
           break;
         }
-        // Neither the headless daemon nor a pre-command interactive extension
-        // has ExtensionCommandContext. Ack and rotate session-scoped replay
-        // state before the owning supervisor/wrapper restarts exactly once
-        // without --continue. The wrapper env gate prevents a bare interactive
-        // process (including herdr-managed agents) from being killed.
-        sender.send({ type: "action_ok", session_id: msg.session_id, in_reply_to: msg.id, action: "session_new" });
-        _resetSessionForNew(msg.id);
-        setTimeout(() => process.exit(EXIT_FRESH_SESSION), 100);
+        const runtime = _activeOutpostPiRuntime;
+        if (!runtime?.isOwner()) {
+          sender.send({
+            type: "action_error",
+            session_id: msg.session_id,
+            in_reply_to: msg.id,
+            action: "session_new",
+            error: "fresh_session_runtime_stale: active lifecycle runtime is unavailable",
+          });
+          break;
+        }
+
+        // Managed processes cannot use the command-only SDK newSession API.
+        // Fence new prompts synchronously, finish admitted SDK deliveries, then
+        // stage the ACK/reset tail before normal runtime disposal and exit 42.
+        void _freshSessionShutdown.request({
+          stageAcknowledgementAndReset: () => {
+            sender.send({
+              type: "action_ok",
+              session_id: msg.session_id,
+              in_reply_to: msg.id,
+              action: "session_new",
+            });
+            _resetSessionForNew(msg.id);
+          },
+          shutdownRuntime: (reason) => runtime.dispose(reason),
+        }).then((result) => {
+          if (result.status !== "already_quiescing"
+              && result.status !== "stale_runtime") return;
+          try {
+            sender.send({
+              type: "action_error",
+              session_id: msg.session_id,
+              in_reply_to: msg.id,
+              action: "session_new",
+              error: result.status === "already_quiescing"
+                ? "fresh_session_already_quiescing: another request owns shutdown"
+                : "fresh_session_runtime_stale: lifecycle ownership changed",
+            });
+          } catch { /* owner channel may already be detached by the winning request */ }
+        }).catch(() => {
+          // Deadline/process-manager recovery owns terminal failure. Do not emit
+          // a second action result after the staged ACK/reset tail.
+        });
         break;
       }
       void handleSessionNew(

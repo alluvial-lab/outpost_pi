@@ -2452,6 +2452,15 @@ describe("multi-channel broadcast (W2D)", () => {
     const status = captureHandler("outpost-pi status");
     await status("", makeMockCtx("/tmp/outpost-pi-wrapper-session-new"));
     _clearSdkContextsForTest();
+    let markAcceptedStarted!: () => void;
+    let releaseAccepted!: () => void;
+    const acceptedStarted = new Promise<void>((resolve) => { markAcceptedStarted = resolve; });
+    const acceptedGate = new Promise<void>((resolve) => { releaseAccepted = resolve; });
+    const sendUserMessage = vi.fn(async () => {
+      markAcceptedStarted();
+      await acceptedGate;
+    });
+    _setPiForTest({ sendUserMessage, sendMessage: vi.fn(async () => undefined) });
     _setMessageBufferForTest([
       { role: "user", content: "old wrapper history", timestamp: 1_700_001_000_100 },
     ]);
@@ -2463,7 +2472,6 @@ describe("multi-channel broadcast (W2D)", () => {
       exitCodes.push(code ?? 0);
       return undefined as never;
     });
-    vi.useFakeTimers();
     try {
       delete process.env["OUTPOST_PI_DAEMON"];
       process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] = "1";
@@ -2472,24 +2480,50 @@ describe("multi-channel broadcast (W2D)", () => {
         const type = decodeSentCt(raw).inner.type;
         if (type === "action_ok" || type === "session_history") order.push(type);
       });
+      const sendsBefore = relayRef.current!.send.mock.calls.length;
 
+      emitClientMessage(peer, {
+        type: "user_message",
+        id: "accepted-before-fence",
+        session_id: oldSessionId,
+        text: "accepted before fence",
+      });
+      await acceptedStarted;
       emitClientMessage(peer, {
         type: "session_new",
         id: "wrapper-new-1",
         session_id: oldSessionId,
       });
-      await vi.advanceTimersByTimeAsync(0);
+      emitClientMessage(peer, {
+        type: "user_message",
+        id: "rejected-after-fence",
+        session_id: oldSessionId,
+        text: "rejected after fence",
+      });
 
-      expect(order.indexOf("action_ok")).toBeGreaterThanOrEqual(0);
-      expect(order.indexOf("session_history")).toBeGreaterThan(order.indexOf("action_ok"));
-      expect(_getTranscriptEventsForTest()).toEqual([]);
+      await vi.waitFor(() => {
+        expect(sentToPeerSince(sendsBefore, peer).map(({ inner }) => inner))
+          .toContainEqual(expect.objectContaining({
+            type: "error",
+            code: "delivery_retry",
+            in_reply_to: "rejected-after-fence",
+          }));
+      });
+      expect(sendUserMessage).toHaveBeenCalledTimes(1);
+      expect(order).toEqual([]);
       expect(exitCodes).toEqual([]);
 
-      vi.advanceTimersByTime(100);
-      expect(exitCodes).toEqual([EXIT_FRESH_SESSION]);
+      releaseAccepted();
+      await vi.waitFor(() => {
+        expect(order.indexOf("action_ok")).toBeGreaterThanOrEqual(0);
+        expect(order.indexOf("session_history")).toBeGreaterThan(order.indexOf("action_ok"));
+      });
+      expect(_getTranscriptEventsForTest()).toEqual([]);
+      await vi.waitFor(() => expect(exitCodes).toEqual([EXIT_FRESH_SESSION]));
     } finally {
-      vi.clearAllTimers();
-      vi.useRealTimers();
+      releaseAccepted();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
       exit.mockRestore();
       if (previousDaemonMode === undefined) delete process.env["OUTPOST_PI_DAEMON"];
       else process.env["OUTPOST_PI_DAEMON"] = previousDaemonMode;
@@ -2550,7 +2584,7 @@ describe("multi-channel broadcast (W2D)", () => {
     }
   });
 
-  test("daemon session_new ACKs and resets before the shared fresh-session exit; successor keeps room identity and publishes a fresh session", async () => {
+  test("daemon session_new ACKs and resets before managed teardown exits", async () => {
     await _pairForTest("owner-daemon-session-new");
     const relay = relayRef.current!;
     const initialConnect = relay.connect.mock.calls[0]![0] as {
@@ -2573,7 +2607,6 @@ describe("multi-channel broadcast (W2D)", () => {
       exitCodes.push(code ?? 0);
       return undefined as never;
     });
-    vi.useFakeTimers();
     try {
       process.env["OUTPOST_PI_DAEMON"] = "1";
       const order: string[] = [];
@@ -2587,51 +2620,27 @@ describe("multi-channel broadcast (W2D)", () => {
         id: "daemon-new-1",
         session_id: oldSessionId,
       });
-      await vi.advanceTimersByTimeAsync(0);
 
-      const actionOkAt = order.indexOf("action_ok");
-      const resetHistoryAt = order.indexOf("session_history");
-      expect(actionOkAt).toBeGreaterThanOrEqual(0);
-      expect(resetHistoryAt).toBeGreaterThan(actionOkAt);
+      await vi.waitFor(() => {
+        const actionOkAt = order.indexOf("action_ok");
+        const resetHistoryAt = order.indexOf("session_history");
+        expect(actionOkAt).toBeGreaterThanOrEqual(0);
+        expect(resetHistoryAt).toBeGreaterThan(actionOkAt);
+      });
       expect(_getTranscriptEventsForTest()).toEqual([]);
       expect(_getTurnProjectionForTest()).toMatchObject({ working: false, activeTurnId: null });
-      expect(exitCodes).toEqual([]);
+      await vi.waitFor(() => expect(exitCodes).toEqual([EXIT_FRESH_SESSION]));
 
-      vi.advanceTimersByTime(99);
-      expect(exitCodes).toEqual([]);
-      vi.advanceTimersByTime(1);
-      expect(exitCodes).toEqual([EXIT_FRESH_SESSION]);
-
-      // The successor is a fresh Pi session in the same daemon room. The
-      // room id/config are held by the relay transport; session_start only
-      // rotates the session identity through a room_meta_update.
-      const onSessionStart = captureEventHandler("session_start");
-      const controlsBefore = relay.sendControl.mock.calls.length;
-      onSessionStart(
-        { type: "session_start", reason: "startup" },
-        {
-          ...makeMockCtx(initialConnect.roomMeta.cwd),
-          sessionManager: { getSessionId: () => "successor-session-id" },
-        },
-      );
-      const roomUpdates = relay.sendControl.mock.calls
-        .slice(controlsBefore)
-        .map((call) => call[0] as { type?: string; room_id?: string; meta?: { session_id?: string } })
-        .filter((frame) => frame.type === "room_meta_update");
-      expect(roomUpdates).toContainEqual({
-        type: "room_meta_update",
-        room_id: initialConnect.roomId,
-        meta: { session_id: "successor-session-id" },
-      });
+      // A real successor is a new process. The daemon/wrapper process-manager
+      // suites separately prove exit 42 relaunches once without --continue.
       expect(initialConnect.roomMeta).toMatchObject({
         name: expect.any(String),
         cwd: initialConnect.roomMeta.cwd,
         session_id: oldSessionId,
       });
-      expect(_getRemoteSessionIdForTest()).toBe("successor-session-id");
     } finally {
-      vi.clearAllTimers();
-      vi.useRealTimers();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
       exit.mockRestore();
       if (previousDaemonMode === undefined) delete process.env["OUTPOST_PI_DAEMON"];
       else process.env["OUTPOST_PI_DAEMON"] = previousDaemonMode;
@@ -7144,10 +7153,9 @@ describe("model meta", () => {
     }
   });
 
-  test("hot-reload: quiescing rejects user messages as recoverable delivery_error (not delivery_pending)", async () => {
-    // The quiescing gate must NOT send delivery_pending (which promises replay
-    // the extension cannot honor — the process is exiting). It sends a
-    // recoverable delivery_error so the app knows to resend after reconnect.
+  test("hot-reload: quiescing rejects user messages with delivery_retry", async () => {
+    // The exiting extension cannot promise local replay. The shared fence emits
+    // the schema-owned sender-retry signal before any SDK delivery attempt.
     const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-gate-"));
     const previousHome = process.env["OUTPOST_PI_HOME"];
     process.env["OUTPOST_PI_HOME"] = fakeHome;
@@ -7165,7 +7173,7 @@ describe("model meta", () => {
       await Promise.resolve();
       expect(sender.send).toHaveBeenCalledWith(expect.objectContaining({
         type: "error",
-        code: "internal_error",
+        code: "delivery_retry",
         in_reply_to: "during-restart",
       }));
       expect(killSpy).not.toHaveBeenCalled();

@@ -15,6 +15,7 @@ import type { PeerChannel } from "../transport/peer_channel.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import type { PeerRecord } from "../pairing/storage.js";
 import type { RelayConnectivity } from "./types.js";
+import type { FactoryLease, SessionLifecycleReason } from "./runtime_coordinator.js";
 
 /** Guard asynchronous runtime work so a disposed session epoch cannot publish or reconnect. */
 export interface RuntimeEpoch {
@@ -159,15 +160,22 @@ export interface SdkSessionProjectionPort {
   onSessionLifecycle?(reason: string, sessionIdTail: string): void;
 }
 
-/** Represent the composed runtime epoch and port graph visible to command registration. */
+/** Represent the composed, lease-scoped runtime visible to command registration. */
 export interface OutpostPiRuntime {
   readonly epoch: RuntimeEpoch;
   readonly ports: OutpostPiRuntimePorts;
+  readonly lease: FactoryLease;
+  register(): void;
+  registerLifecycle(): void;
+  isOwner(): boolean;
+  dispose(reason?: SessionLifecycleReason): Promise<boolean>;
 }
 
 /** Register command adapters and coordinate their session-start and shutdown hooks. */
 export interface CommandSurfacePort {
   register(pi: ExtensionAPI, runtime: OutpostPiRuntime): void;
+  /** Publish the coordinator-approved runtime capability after session activation. */
+  activateRuntime?(runtime: OutpostPiRuntime): void;
   /** Synchronously trigger startup; implementations own and observe background failures. */
   ensureStarted?(ctx: ExtensionContext): void;
   prepareSessionShutdown?(): void;
