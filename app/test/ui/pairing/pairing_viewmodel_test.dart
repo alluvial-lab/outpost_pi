@@ -205,7 +205,15 @@ class _DeferredPairingStorage extends _FakeStorage {
 /// Mirrors what `dependencies.dart` + the router's _BootState do before
 /// PairingViewModel runs in production.
 Future<OwnerIdentityBridge> _bootedBridge(PairingStorage storage) async {
-  final store = InMemoryOwnerIdentityStore();
+  final keyPair = await Ed25519().newKeyPair();
+  final ownerPk = await keyPair.extractPublicKey();
+  final ownerSk = await keyPair.extractPrivateKeyBytes();
+  final store = InMemoryOwnerIdentityStore(
+    initial: OwnerIdentity(
+      ownerPk: Uint8List.fromList(ownerPk.bytes),
+      ownerSk: Uint8List.fromList(ownerSk),
+    ),
+  );
   // This helper models an already-local test identity, not a fresh install
   // waiting for platform restore. Keep widget tests independent of the
   // production Block Store grace period.

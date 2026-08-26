@@ -40,18 +40,26 @@ final class _FalsePreflightStore implements OwnerIdentityStore {
   _FalsePreflightStore(this.inner);
 
   final InMemoryOwnerIdentityStore inner;
+  int loadCalls = 0;
+  int watchCalls = 0;
 
   @override
   Future<bool> isSyncAvailable() async => false;
 
   @override
-  Future<OwnerIdentity?> load() => inner.load();
+  Future<OwnerIdentity?> load() {
+    loadCalls++;
+    return inner.load();
+  }
 
   @override
   Future<void> save(OwnerIdentity identity) => inner.save(identity);
 
   @override
-  Stream<OwnerIdentity> watch() => inner.watch();
+  Stream<OwnerIdentity> watch() {
+    watchCalls++;
+    return inner.watch();
+  }
 
   @override
   Future<void> delete() => inner.delete();
@@ -573,6 +581,8 @@ void main() {
         expect(result, isA<IdentityReady>());
         expect((result as IdentityReady).generated, isTrue);
         expect(bridge.currentIdentity, isNotNull);
+        expect(store.watchCalls, 0);
+        expect(store.loadCalls, 2);
 
         bridge.dispose();
       },

@@ -117,17 +117,19 @@ class OwnerIdentityBridge extends ChangeNotifier {
     // bounded grace period before minting a new Owner key. The final re-read
     // below remains necessary because a restore can race the eventual save.
     OwnerIdentity? restored;
-    try {
-      restored = await _awaitLateRestore();
-    } on SyncUnavailable {
-      return const SyncUnavailableResult();
-    }
-    if (restored != null) {
-      return _acceptBootCandidate(
-        restored,
-        generated: false,
-        transitionPending: false,
-      );
+    if (_restoreGracePeriod > Duration.zero) {
+      try {
+        restored = await _awaitLateRestore();
+      } on SyncUnavailable {
+        return const SyncUnavailableResult();
+      }
+      if (restored != null) {
+        return _acceptBootCandidate(
+          restored,
+          generated: false,
+          transitionPending: false,
+        );
+      }
     }
 
     final generated = await _generateIdentity();
@@ -161,8 +163,11 @@ class OwnerIdentityBridge extends ChangeNotifier {
   ///
   /// Android Block Store can only restore on a new-device boot and exposes no
   /// completion callback. The event stream helps on platforms that emit one;
-  /// bounded polling covers Block Store's silent late-arrival path.
+  /// bounded polling covers Block Store's silent late-arrival path. A
+  /// non-positive grace period returns before installing a watch, poll, or timer.
   Future<OwnerIdentity?> _awaitLateRestore() async {
+    if (_restoreGracePeriod <= Duration.zero) return null;
+
     final restoredEvent = Completer<OwnerIdentity>();
     StreamSubscription<OwnerIdentity>? subscription;
     try {
