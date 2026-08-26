@@ -1,3 +1,36 @@
+## v0.9.0 — 2026-08-26
+
+### Features
+
+- **Fresh-session shutdown + recoverable delivery** — `/new` now drains in-flight work deterministically (fence → drain → dispose, replacing the fixed-delay exit); adds schema-owned `delivery_retry`, an encrypted durable app outbox with stable-ID resend, and reconnect recovery (verified end-to-end in the production pairing harness).
+- **Cockpit: atomic JSON stores** — Hive replaced by tolerant-read/atomic-write stores with corruption quarantine and a one-shot idempotent migration; removes the Windows locked-box/OneDrive crash classes.
+- **Relay failover** — ordered primary + paired-record alternate relay candidates with cancellation-safe retries, covered at the production seam.
+- **Theme token cross-surface contract** — `branding/theme-contract.json` golden fixture + synchronizer; Constellation III geometry single-sourced from the canonical SVG across rasterizer and OG image; WCAG AA contract tests on app + cockpit.
+- **Site test baseline** — Playwright/Chromium: four-partition light/dark computed-style contract + 14 route smokes via `pnpm check`.
+- **Secure pairing deep links** — verified Android App Links (`outpost-pi.kevoun.com`, assetlinks.json), enrollment data confined to URI fragments, hardened parser (custom schemes and foreign origins rejected).
+- **Public-exposure guard** — `scripts/check-public-exposure.sh` + CI: tree, full-history reachable-blob (binary/merge-safe), and all-public-refs modes with content-free diagnostics.
+
+### Fixes
+
+- Transcript reordering on the phone after backlog flush + reconnects (ordering convergence, duplicate-replay safe).
+- Hydration truncation notice now surfaced in the transcript.
+- Identity boot restore race: bounded restore grace — cloud-key restore no longer misread as first run (also fixes the PairingPage test hang it introduced).
+- Extension broker reconnect after boot-time tailnet rebind; peers-lock restore collision safety; stale-generation relay dispatch fencing.
+- Sync-suite load sensitivity eliminated (deterministic completion barriers; green at concurrency 2).
+- Outbox resend no longer resets overdue no-echo timers; pre-settlement replacement confirmation restored.
+- PostCSS override dependencies patched (8.5.18 → 8.5.23, site + extension).
+
+### Security
+
+- Custom-scheme pairing-token hijack surface removed (App Links migration above); revocation outbox retention and cockpit file permissions tracked for follow-up.
+- Operator-authorized history rescrub executed (private network literals + committed session notes purged from public history; cache residual accepted).
+
+### Internal
+
+- Cruft batch: 7 behavior-preserving removals across app/relay/extension.
+- Owner multiplexer wire discriminators now derived from the generated schema.
+- Documentation drift repair across 17+ surfaces; PROTOCOL.md `session_new` rolled forward to the dual execution path.
+
 # Changelog
 
 All notable changes to Outpost-Pi are documented in this file.
