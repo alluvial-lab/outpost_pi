@@ -59,8 +59,16 @@ class OwnerIdentityBridge extends ChangeNotifier {
   Future<void> _watchTail = Future<void>.value();
   bool _transitionPending = false;
   bool _disposed = false;
+  final Duration _restoreGracePeriod;
+  final Duration _restorePollInterval;
 
-  OwnerIdentityBridge(this._store, this._pairing);
+  OwnerIdentityBridge(
+    this._store,
+    this._pairing, {
+    Duration restoreGracePeriod = const Duration(seconds: 3),
+    Duration restorePollInterval = const Duration(milliseconds: 200),
+  }) : _restoreGracePeriod = restoreGracePeriod,
+       _restorePollInterval = restorePollInterval;
 
   /// Return the bootstrapped owner identity, or null before the router gate runs.
   OwnerIdentity? get currentIdentity => _transitionPending ? null : _current;
@@ -103,10 +111,28 @@ class OwnerIdentityBridge extends ChangeNotifier {
       throw StateError('Owner transition is pending identity restoration');
     }
 
-    final generated = await _generateIdentity();
-    // A restored identity can arrive after the first null read. Re-read before
-    // saving so a concurrent restoration wins over a local first-run key.
+    // A null read on a fresh install is ambiguous on Android: Block Store has
+    // no restore-complete signal and may deliver the backed-up blob after the
+    // first retrieve call. Poll the store and listen for an event during a
+    // bounded grace period before minting a new Owner key. The final re-read
+    // below remains necessary because a restore can race the eventual save.
     OwnerIdentity? restored;
+    try {
+      restored = await _awaitLateRestore();
+    } on SyncUnavailable {
+      return const SyncUnavailableResult();
+    }
+    if (restored != null) {
+      return _acceptBootCandidate(
+        restored,
+        generated: false,
+        transitionPending: false,
+      );
+    }
+
+    final generated = await _generateIdentity();
+    // A restored identity can arrive after the grace period but before save.
+    // Re-read before saving so a concurrent restoration still wins.
     try {
       restored = await _store.load();
     } on SyncUnavailable {
@@ -129,6 +155,46 @@ class OwnerIdentityBridge extends ChangeNotifier {
       generated: true,
       transitionPending: false,
     );
+  }
+
+  /// Wait for a late platform restore without making boot unbounded.
+  ///
+  /// Android Block Store can only restore on a new-device boot and exposes no
+  /// completion callback. The event stream helps on platforms that emit one;
+  /// bounded polling covers Block Store's silent late-arrival path.
+  Future<OwnerIdentity?> _awaitLateRestore() async {
+    final restoredEvent = Completer<OwnerIdentity>();
+    StreamSubscription<OwnerIdentity>? subscription;
+    try {
+      subscription = _store.watch().listen((identity) {
+        if (!restoredEvent.isCompleted) restoredEvent.complete(identity);
+      }, onError: (Object _) {});
+    } catch (_) {
+      // A store without a watch implementation still gets the polling path.
+    }
+
+    final deadline = DateTime.now().add(_restoreGracePeriod);
+    final pollInterval = _restorePollInterval <= Duration.zero
+        ? const Duration(milliseconds: 1)
+        : _restorePollInterval;
+    try {
+      while (true) {
+        final loaded = await _store.load();
+        if (loaded != null) return loaded;
+        if (restoredEvent.isCompleted) return restoredEvent.future;
+
+        final remaining = deadline.difference(DateTime.now());
+        if (remaining <= Duration.zero) return null;
+        final wait = remaining < pollInterval ? remaining : pollInterval;
+        await Future.any<void>([
+          restoredEvent.future.then<void>((_) {}),
+          Future<void>.delayed(wait),
+        ]);
+        if (restoredEvent.isCompleted) return restoredEvent.future;
+      }
+    } finally {
+      await subscription?.cancel();
+    }
   }
 
   /// Commit [identity] only after the router has completed every cleanup step.
