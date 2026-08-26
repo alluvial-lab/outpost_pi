@@ -1,14 +1,14 @@
 ---
 id: feature-public-flip-branding-and-exposure
 kind: feature
-stage: drafting
+stage: implementing
 tags: [branding, security, ops, release]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-08-26
 ---
 
 # Public flip: branding holdover cleanup + private-layer exposure remediation
@@ -46,7 +46,7 @@ unavailable this session — provenance established via git hash-object).
 - Scattered: `scripts/herdr-setup.sh` comment (LAN IP), fixture hostname
   `dev-vm` (cosmetic). Site docs page tailscale mentions are benign links.
 
-## Status: DESIGN LOCKED 2026-08-14 — implementation pending
+## Historical status: design locked 2026-08-14
 
 Identity complete (see `.mockups/design-system/` + `branding/`):
 - **World**: Phosphor Beacon — dark-native #0D1210 / light #F3F6F3, accent
@@ -60,11 +60,11 @@ Identity complete (see `.mockups/design-system/` + `branding/`):
   (rects/circles/lines + supersample + LANCZOS) — no external SVG converter
   needed; banner wordmark text wants Space Mono present at export time.
 
-Remaining child stories: icon regeneration sweep (app/cockpit/site PNGs,
- hash-verify ≠ upstream), app+cockpit theme replacement (app_colors.dart is
- byte-identical to upstream), site logo sync, screenshot retake. Typography
- implementation = Space Mono via google_fonts in app/cockpit (already a dep),
- tokens.css ported to Tailwind/CSS vars on site.
+The original remediation checkpoints were the icon regeneration sweep
+(app/cockpit/site PNGs, hash-verify ≠ upstream), app+cockpit theme replacement,
+and site logo sync. Those checkpoints completed in v0.5.0. The 2026-08-26
+revalidation below separates their realized state from the remaining public-
+exposure regression and stale screenshot prose.
 
 ## Licensing verdict (adversarial review, 2026-08-15 — gpt-5.6-sol cross-model)
 
@@ -78,15 +78,14 @@ subproject (per-direct-dep verified). Remaining licensing work is
 binary-distribution-gated, not flip-gated: .work/backlog/backlog-licensing-binary-notices.md
 (LGPL libmpv/FFmpeg notices + MPL dbus for cockpit binaries; licenses screen in both apps).
 
-## Path decision (operator)
+## Realized repository path
 
-- **Option 1 — fresh public repo**: cleaned snapshot (squashed/shallow
-  history) pushed to a new public repo; this repo stays private as the dev
-  archive. Zero history risk, fast, preserves MIT attribution via
-  LICENSE/NOTICE. RECOMMENDED.
-- **Option 2 — flip this repo public**: requires `git filter-repo` to strip
-  the private layer from all history (force-push; breaks dependabot PR refs
-  + all clones), then tree cleanup. Heavier, riskier, same visual result.
+The earlier fresh-repository recommendation was superseded by the operator's
+executed 2026-08-15 path: targeted `git filter-repo` redaction, upstream-history
+truncation to one MIT import root, and a force-push before making
+`alluvial-lab/outpost_pi` public. `.work` intentionally remains public; local
+session notes and the full operator runbook remain ignored. LICENSE and NOTICE
+continue to preserve Jacob Moura/`remote_pi` provenance.
 
 ## Child stories (tracked in .work/active/stories/)
 
@@ -118,11 +117,10 @@ approved Noto Sans Mono fallback because Space Mono is not installed on the VM;
 the themed phone screenshot and device visual smoke await device UAT because no
 phone is attached.
 
-**Lifecycle boundary:** this feature intentionally remains active at `drafting`.
-The branding cascade is complete, but choosing and executing the fresh-public-
-repo versus history-rewrite path is operator-owned and was explicitly excluded
-from this implementation drain. No public-flip/security work was attempted and
-nothing was pushed.
+**Historical lifecycle boundary:** the feature stayed at `drafting` after the
+brand cascade because public exposure and device proof still required operator
+action. The public flip subsequently executed in v0.5.0. The 2026-08-26 design
+pass advances the feature for the narrower regression closure described below.
 
 Parked by operator 2026-08-14: components mockup layer
 (.mockups/design-system/components.css + showcase) — run before any
@@ -135,3 +133,230 @@ redesigned-screen mocks, not needed for the asset/theme cascade.
 - `git grep -lE "192\.168\.50|100\.106\.7|dev-vm|tailscale"` on exported
   tree → only benign hits (site docs links), zero infra.
 - App + cockpit build/analyze green; site lint+build green.
+
+## Design-time revalidation — 2026-08-26
+
+### Scope map and evidence
+
+Direct-read only was sufficient: the feature is a realized remediation audit,
+not a new subsystem, and the remaining unknowns were answerable from public Git
+refs, current files, and the shipped v0.5.0 child evidence. No exploratory
+fanout was used.
+
+- **Icons/themes fixed:** all 44 current app/Cockpit platform icon candidates
+  compare different from `upstream/main`; the mobile theme hash differs from
+  upstream; 37 runtime references use the Phosphor Beacon values.
+- **Site mark fixed:** `site/public/logo.svg` and `site/src/app/icon.svg` are
+  byte-identical to `branding/logo-full-dark.svg`.
+- **Typography fixed:** Schyler/Trajan searches are empty and Space Mono remains
+  wired across app, Cockpit, and site.
+- **Stale image removed:** `branding/screenshot-app.png` and source references
+  are absent. One sentence in `site/src/app/cockpit/page.tsx` still claims a
+  screenshot appears above it; that is the only residual brand inconsistency.
+- **Public flip executed:** GitHub reports `alluvial-lab/outpost_pi` as PUBLIC;
+  public history has one root commit, `2226812b` (`Import from remote_pi at
+  d6be6a4 (MIT) — see LICENSE/NOTICE`); LICENSE/NOTICE attribution checks pass;
+  `AGENTS.local.md` and `.work/session-notes/**` are ignored and untracked.
+- **Exposure regression found:** the scrubbed pre-flip sensitive commits are
+  reachable only from intentionally retained private local branches, but
+  `origin/main` contains one post-flip commit (`a649b3dd`) with the literal
+  tailnet relay address and the current active story still carries it. The
+  separately published `feat/app-theme-system` head has no known address hit.
+
+### Existing completed children — do not re-work
+
+1. `story-brand-icon-regen-sweep` — done; canonical generator and all platform
+   icon exports landed.
+2. `story-brand-theme-replacement` — done; app/Cockpit Phosphor Beacon and Space
+   Mono landed.
+3. `story-brand-site-sync` — done; site tokens and canonical marks landed; stale
+   imagery was removed.
+4. `story-public-flip-shred-runbook` — done; the initial public-ref scrub and
+   public visibility transition executed.
+
+## Design decisions
+
+- **Repository remediation path:** keep the established public repository and
+  perform a narrow second rewrite of a fresh public-origin mirror after the
+  current-tree fix — recreating the repository would discard public metadata,
+  while tree-only redaction leaves a reachable committed value.
+- **Public work tracking:** keep `.work`, `.research`, protocol contracts, and
+  public agent guidance tracked; sanitize content and reject only declared
+  local/private paths. Their existence is not itself evidence of exposure.
+- **Screenshot closure:** do not manufacture or restore a marketing screenshot
+  without a real current capture. Remove the false copy now; a future current
+  capture is additive marketing work, not required to prove upstream imagery is
+  gone.
+- **Private archive isolation:** scan and rewrite only refs obtained from a fresh
+  mirror of public `origin`; never include the deliberately retained local
+  pre-scrub branches in a push plan.
+- **Review posture:** effective review weight is `standard` (caller default):
+  exactly one balanced fresh-context feature review after implementation. A
+  separate design-time advisory pass was skipped because the remediation path
+  is constrained by the already-executed scrub and independently checkable Git
+  evidence; unavailable design review does not block this pass.
+
+## Architectural choice
+
+Three approaches were considered:
+
+1. **Fresh public repository snapshot.** This maximizes history isolation but
+   now sacrifices the established public URL's issues, releases, watchers, and
+   clone continuity. It fit the pre-flip decision point, not the current state.
+2. **Current-tree redaction only.** This is least disruptive but fails the
+   feature's history-exposure contract because the address remains reachable in
+   `origin/main` ancestry and provides no prevention.
+3. **Guarded tree cleanup plus a targeted public-origin rewrite (chosen).** Add
+   a tested recurring guard, land all current-tree corrections, then rewrite
+   only public heads/tags in a disposable mirror and verify a fresh clone. This
+   addresses cause and residue while preserving repository identity and the MIT
+   import root.
+
+The trickiest unit is the public-history rescrub: it is destructive, changes
+post-regression SHAs, interacts with branch protection/tags/open clones, and can
+accidentally publish private archive refs. It is therefore last and explicitly
+operator-gated.
+
+## Implementation Units
+
+### Unit 1: Close residual brand evidence honestly
+
+**File**: `site/src/app/cockpit/page.tsx`
+**Story**: `feature-public-flip-branding-and-exposure-brand-evidence-closure`
+
+```tsx
+// Keep the mesh explanation, but remove the sentence claiming a missing
+// screenshot exists. No replacement image is imported without a real capture.
+export default function CockpitPage() {
+  // Existing page body; only the false screenshot sentence changes.
+}
+```
+
+**Implementation Notes**:
+- Make the one prose correction; do not touch completed app/Cockpit themes,
+  regenerate icons, or restore upstream imagery.
+- Re-run hash/content anchors as verification evidence.
+
+**Acceptance Criteria**:
+- [ ] No tracked stale screenshot or false screenshot reference remains.
+- [ ] Existing canonical mark, theme, and typography evidence remains green.
+- [ ] Site lint and production build pass.
+
+---
+
+### Unit 2: Current-tree redaction and regression guard
+
+**Files**: `.work/active/stories/backlog-ext-broker-no-reconnect-after-boot-tailscale-rebind.md`, `scripts/check-public-exposure.sh`, `scripts/check-public-exposure.test.sh`, `.github/workflows/ci.yml`
+**Story**: `feature-public-flip-branding-and-exposure-public-tree-guard`
+
+```bash
+scan_tracked_paths() { local repo_root="$1"; }
+scan_tree() { local repo_root="$1"; }
+scan_history() { local repo_root="$1" revision_scope="$2"; }
+main() { : "${1:---tree}"; }
+```
+
+**Implementation Notes**:
+- Replace the literal URL with a semantic tailnet relay placeholder without
+  weakening the reconnect incident's technical diagnosis.
+- The scanner rejects known operator network literals and tracked local-only
+  paths, supports tree/branch-history/public-mirror modes, and emits bounded
+  path/commit identifiers rather than incident content.
+- CI runs scanner fixtures plus the current-tree guard unconditionally on push
+  and PR; a subproject path filter would recreate the `.work` blind spot. The
+  history story enables branch-ancestry CI only after the known hit is removed,
+  avoiding a deliberately red intermediate pipeline.
+- Fixture tests construct forbidden values at runtime so the guard does not
+  match its own checked-in tests.
+
+**Acceptance Criteria**:
+- [ ] Current tracked tree and branch ancestry pass the new guard.
+- [ ] Negative fixtures prove forbidden path, tree-content, and history-only
+  failures; a clean fixture passes.
+- [ ] Tree-mode CI covers root work/docs/scripts changes as well as
+  subprojects without failing on the not-yet-rewritten historical commit.
+
+---
+
+### Unit 3: Public-origin history rescrub and operator verification
+
+**Files**: `.work/active/stories/feature-public-flip-branding-and-exposure-history-rescrub.md` (execution/ref-map record), `.github/workflows/ci.yml`; reuses `scripts/check-public-exposure.sh`
+**Story**: `feature-public-flip-branding-and-exposure-history-rescrub`
+
+```bash
+# Disposable mirror only; exact mutation remains operator-controlled.
+git clone --mirror git@github.com:alluvial-lab/outpost_pi.git <temp-mirror>
+git -C <temp-mirror> filter-repo --replace-text <local-rules> --force
+scripts/check-public-exposure.sh --all-public-refs <temp-mirror>
+```
+
+**Implementation Notes**:
+- Inventory public heads/tags before rewriting and preserve an old→new ref map.
+- Replace only the post-flip literal; do not remove `.work`, change author
+  identity, or alter LICENSE/NOTICE provenance.
+- Verify the mirror before preparing a force-push packet. Enable history-mode
+  CI only on the clean rewritten tip. The operator owns branch-protection
+  changes, remote mutation, clone coordination, and cached-object disposition;
+  then a fresh public clone must pass the same checks.
+
+**Acceptance Criteria**:
+- [ ] No private local ref appears in the mirror or push plan.
+- [ ] All public heads/tags, the one import root, and MIT provenance survive.
+- [ ] Rewritten mirror and post-push fresh clone have zero forbidden tree/history
+  hits and pass `git fsck --full`; post-rewrite CI checks both tree and ancestry.
+- [ ] Without recorded operator execution and post-push verification, the story
+  and feature remain active.
+
+## Implementation Order
+
+1. In parallel: `feature-public-flip-branding-and-exposure-brand-evidence-closure`
+   (after completed `story-brand-site-sync`) and
+   `feature-public-flip-branding-and-exposure-public-tree-guard` (after completed
+   `story-public-flip-shred-runbook`).
+2. `feature-public-flip-branding-and-exposure-history-rescrub` after both
+   current-tree checkpoints.
+3. Parent feature verification and one standard fresh-context review.
+
+## Simplification
+
+- Reuse the completed v0.5.0 icon/theme/site work; no duplicate brand stories,
+  token registries, generators, or screenshot placeholders.
+- Keep public work/research/contract surfaces rather than maintaining a second
+  public-tree manifest; one executable exposure guard owns the policy.
+- Use one disposable public-origin rewrite instead of touching the development
+  checkout or recreating the public repository.
+- Remove false screenshot prose rather than adding an unverified visual asset.
+
+## Testing
+
+- **Brand interface evidence:** upstream hash comparisons and canonical SVG
+  equality protect the public identity contract; site lint/build protects the
+  edited marketing surface.
+- **Exposure regression tests:** temporary Git fixtures prove guard exit behavior
+  for tracked-path, tree-content, and history-only leaks without weakening the
+  patterns to make CI green.
+- **Public-history verification:** mirror scan, ref map, `git fsck --full`, root
+  commit check, LICENSE/NOTICE checks, and a fresh post-push clone protect against
+  accidental ref loss, private-ref publication, corruption, or provenance loss.
+- **No redundant Flutter suites:** no app/Cockpit source changes are planned;
+  their shipped theme tests and direct hash/content checks are the relevant
+  evidence. Any implementation deviation into those subprojects restores their
+  prescribed analyze/test commands.
+
+## Risks
+
+- **Riskiest assumption:** a second targeted rewrite is operationally acceptable
+  for the current public consumers. It changes every descendant SHA after the
+  regression and may require branch-protection, tag, PR, and clone coordination.
+- **Failure condition:** a mirror accidentally includes private local refs, a
+  force-push omits a public ref, or a current-tree commit lands after the mirror
+  snapshot and reintroduces the value.
+- **Fallback:** the guard/current-tree fix remains safe and shippable while the
+  history story stays active; rebuild the disposable mirror from the latest
+  public origin and do not mutate remote state until its ref map and checks pass.
+- **Cached objects:** even a successful rewrite may leave old-SHA access in GitHub
+  caches. The operator must record either a support purge request or explicit
+  acceptance of the bounded, non-routable address-disclosure risk.
+- **Guard scope:** patterns that are too broad create noisy false positives;
+  patterns that are too narrow miss new private coordinates. Start with the
+  confirmed operator subnets/local paths and expand only from verified evidence.
