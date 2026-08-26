@@ -1,14 +1,14 @@
 ---
 id: app-relay-url-network-failover
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-26
-updated: 2026-08-27
+updated: 2026-08-26
 ---
 
 # Single relay URL leaves the app fully down when its network path dies
@@ -45,5 +45,12 @@ incident are in debug/ (90b/914/935 series).
 - Discrepancies from design: The larger multi-address preference editor and explicit transport-error copy remain deferred; this slice provides the ordered failover path requested by the story.
 - Adjacent issues parked: none.
 
-## Blocker
+## Prior blocker (resolved)
 - The required full app verification command is still blocked by the unrelated `PairingPage` widget-test timeout observed during the story-1 run; the focused relay configuration suite and scoped analyze pass. The story remains `stage: implementing` until the full suite is green.
+
+## Closure (2026-08-26)
+- Review verdict: PASS; reconnect attempts preserve configured-primary ordering, deduplicate equivalent wire endpoints, and cancel each failed candidate before trying the next.
+- Stage: `done`.
+- Focused verification: `test/data/transport/relay_config_test.dart` — 14/14 passed.
+- Shared full-suite evidence: `flutter test --exclude-tags e2e --concurrency=2` — 976/976 passed on the quiescent machine (commits `cfa060b5..64614030`; the earlier PairingPage hang was fixed in `7000f226`).
+- Unmet acceptance criteria: none for this bounded failover slice. Multi-address preference editing and explicit transport-error copy remain deferred as documented.
