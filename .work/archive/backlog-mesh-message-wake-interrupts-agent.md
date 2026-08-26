@@ -1,11 +1,24 @@
 ---
 id: backlog-mesh-message-wake-interrupts-agent
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-26
 tags: [pi-extension, workflow]
+status: superseded
+superseded_by: operator discard 2026-08-26 (groom) — see body note
 ---
 
 # Inbound mesh messages wake/interrupt the agent — needs proper characterization
+
+## Retired (operator discard, 2026-08-26)
+
+Groom spike confirmed presence events (`peer_joined`/`peer_left`) never reach
+the agent-turn path — they only refresh roster counts/footer
+(`local_mesh_commands.ts:300`). The only inbound wake is real peer→agent
+messages (`_deliverMeshMessageToAgent`, `index.ts:2235`), which now batch
+while busy and flush once at `agent_settled` — landed after this 2026-08-03
+capture. Operator could not recall the disruption and suspects legacy
+behavior; discarded rather than kept open on an uncharacterized memory.
+Re-capture with specifics if it recurs.
 
 ## Reminder (sparse by design — not yet fully described)
 

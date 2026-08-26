@@ -3,9 +3,20 @@ id: idea-same-pc-peer-presence-ux
 created: 2026-07-02
 updated: 2026-07-02
 tags: [mesh, ux, design-exploration]
+status: superseded
+superseded_by: operator discard 2026-08-26 (groom) — see body note
 ---
 
 # Same-PC cross-cwd peer presence UX — how should it flow?
+
+## Retired (operator discard, 2026-08-26)
+
+The triggering annoyance (sibling projects appearing noisily) was not
+recollectionable at groom time; the UX questions below were never answered
+and the operator chose to discard rather than park indefinitely. The
+entanglement analysis (leader consumes `peer_joined`/`peer_left` for the
+cross-PC inventory push, `broker_remote.ts:304`) is retained in this body —
+it constrains any future presence-scoping work.
 
 ## Why this was parked
 

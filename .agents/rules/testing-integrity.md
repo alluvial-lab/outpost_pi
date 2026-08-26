@@ -25,6 +25,23 @@ When a test fails, classify it before fixing:
 
 Do not silently fix unrelated product bugs mid-test-pass unless the user asked for broad cleanup and the bug is small enough to verify fully.
 
+## Agent-reported test results
+
+Subagent pass/fail self-reports are claims, not evidence (2026-06-30
+false-failure incidents; full history in
+`.work/archive/backlog-piext-agents-false-uds-failure-claims`):
+
+- The orchestrator independently re-runs the owning suite on high-risk
+  stories (lifecycle, listeners, delivery, identity). Agent
+  self-classification is never the sole gate.
+- Environment-flake dismissal applies only to failures whose names or
+  errors name the environment (bind EPERM, read-only socket paths, fixture
+  leader-election races). Tests asserting behavior — listener counts,
+  delivery counts, state transitions, exactly-once — are root-caused and
+  fixed, never waived as flakes.
+- Validate expectation changes against a clean checkout of HEAD; counts
+  observed while debugging a dirty tree are not evidence.
+
 ## Verification by subproject
 
 Use the owning subproject's commands.
