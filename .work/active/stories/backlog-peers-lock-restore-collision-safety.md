@@ -1,7 +1,7 @@
 ---
 id: backlog-peers-lock-restore-collision-safety
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, security]
 parent: null
 depends_on: []
@@ -52,3 +52,4 @@ third generation before restore.
 - Discrepancies from design: the existing ABA/token fencing was retained; only the mismatch restoration branch changed, and a reappeared lock path is never replaced.
 - Adjacent issues parked: none.
 - Verification: `corepack pnpm typecheck`; `corepack pnpm test` (60 files, 1101 passed, 3 skipped); `corepack pnpm build`; targeted storage suite (35 passed).
+- Bounded inline review: pass; the restore path atomically reserves an absent lock directory, refuses an existing successor, fences child-file restoration with a reclaim marker, and the collision test preserves the third owner. No material blockers.
