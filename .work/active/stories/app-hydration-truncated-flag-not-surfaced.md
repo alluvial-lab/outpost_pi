@@ -1,14 +1,14 @@
 ---
 id: app-hydration-truncated-flag-not-surfaced
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, ux]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-25
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # Session hydration truncation is invisible in the app
@@ -27,3 +27,15 @@ Direction: surface a subtle "earlier history on this device is not synced"
 affordance at the top of the transcript when `truncated` is true (and/or let
 the app request a larger limit in `session_sync` for on-demand backfill).
 Not release-blocking; the bounded sync is the designed contract.
+
+## Implementation notes
+- Execution capability: inline, focused app state/UI change with a bounded transcript replay test.
+- Review weight: standard (source: caller default).
+- Files changed: `app/lib/data/sync/sync_events.dart`, `app/lib/data/sync/sync_service.dart`, `app/lib/ui/chat/states/chat_state.dart`, `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`, `app/lib/ui/chat/chat_page.dart`, and `app/test/data/sync/sync_service_test.dart`.
+- Tests added/removed: Added a sync regression test proving `truncated` is exposed and clears after a complete replay; the UI consumes that state through a keyed, subtle transcript notice.
+- Simplification: No unrelated persistence or replay behavior changed.
+- Discrepancies from design: The implementation surfaces the existing signal; on-demand larger-limit backfill remains intentionally deferred because the story's acceptance direction permits an affordance without a new wire request.
+- Adjacent issues parked: none.
+
+## Blocker
+- Required `flutter analyze && flutter test --exclude-tags e2e --concurrency=2` verification was attempted. Analyze passed; the full suite reached 972 tests but timed out in two unrelated `PairingPage` widget tests after 10 minutes each. The focused truncation regression passed. Per test-integrity rules, the story remains `stage: implementing` until the required full suite is green.

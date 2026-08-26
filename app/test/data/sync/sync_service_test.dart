@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:app/data/local/boxes.dart';
+import 'package:app/data/local/hive_owner_delivery_outbox.dart';
 import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/data/local/records/session_index_record.dart';
@@ -16,7 +17,9 @@ import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/domain/contracts/owner_delivery_outbox.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
+import 'package:app/domain/entities/pending_owner_delivery.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
@@ -236,6 +239,65 @@ class _MemoryTranscriptStore implements TranscriptEventStore {
       const Stream<List<TranscriptEvent>>.empty();
 }
 
+class _MemoryOwnerDeliveryOutbox implements OwnerDeliveryOutbox {
+  final Map<String, PendingOwnerDelivery> deliveries =
+      <String, PendingOwnerDelivery>{};
+  int listCalls = 0;
+  bool failNextUpsert = false;
+  Completer<void>? upsertStarted;
+  Completer<void>? upsertGate;
+  Completer<void>? listStarted;
+  Completer<void>? listGate;
+
+  @override
+  Future<void> upsert(PendingOwnerDelivery delivery) async {
+    final started = upsertStarted;
+    if (started != null && !started.isCompleted) started.complete();
+    final gate = upsertGate;
+    if (gate != null) {
+      upsertGate = null;
+      await gate.future;
+    }
+    if (failNextUpsert) {
+      failNextUpsert = false;
+      throw StateError('outbox write failed');
+    }
+    deliveries[delivery.id] = delivery;
+  }
+
+  @override
+  Future<List<PendingOwnerDelivery>> listForRoom({
+    required String peerEpk,
+    required String roomId,
+  }) async {
+    listCalls += 1;
+    final started = listStarted;
+    if (started != null && !started.isCompleted) started.complete();
+    final gate = listGate;
+    if (gate != null) {
+      listGate = null;
+      await gate.future;
+    }
+    return deliveries.values
+        .where(
+          (delivery) =>
+              delivery.peerEpk == peerEpk && delivery.roomId == roomId,
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> removeConfirmed({
+    required String id,
+    required String confirmedSessionId,
+  }) async {
+    final delivery = deliveries[id];
+    if (delivery?.targetSessionId == confirmedSessionId) {
+      deliveries.remove(id);
+    }
+  }
+}
+
 class _RecordingDebugLog implements DebugLog {
   final List<DebugEvent> events = [];
 
@@ -322,6 +384,9 @@ void main() {
     _dir = Directory.systemTemp.createTempSync('rp_v2_sync_');
     await LocalBoxes.initForTest(_dir.path);
   });
+  setUp(() async {
+    await LocalBoxes().ownerDeliveryOutboxBox().clear();
+  });
   tearDownAll(() async {
     await Hive.close();
     await _dir.delete(recursive: true);
@@ -341,6 +406,7 @@ void main() {
     Duration deliveryPendingEchoTimeout = const Duration(seconds: 60),
     PendingSendTimerFactory? pendingSendTimerFactory,
     TranscriptEventStore? transcriptEventStore,
+    OwnerDeliveryOutbox? ownerDeliveryOutbox,
     DebugLog? debugLog,
     Future<void> Function(String key, Map<String, dynamic> value)?
     runtimeRecordWriter,
@@ -355,6 +421,7 @@ void main() {
       conn,
       boxes,
       transcriptEventStore: transcriptEventStore,
+      ownerDeliveryOutbox: ownerDeliveryOutbox,
       debugLog: debugLog,
       runtimeRecordWriter: runtimeRecordWriter,
       pendingSendTimeout: pendingSendTimeout,
@@ -485,6 +552,60 @@ void main() {
         'legacy': true,
       }, reason: 'old peer+room legacy cache box is not deleted');
 
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'truncated session history is exposed as active-session state',
+    () async {
+      final s = await setup();
+      final events = <SessionEvent>[];
+      final sub = s.sync.events.listen(events.add);
+      final startedAt = DateTime.now().millisecondsSinceEpoch;
+
+      s.ch.pushRaw(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'sync-truncated-flag',
+          sessionStartedAt: startedAt,
+          events: const [
+            UserInputEvt(ts: 1, id: 'truncated-row', text: 'recent row'),
+          ],
+          eos: true,
+          truncated: true,
+        ),
+      );
+      await _waitUntil(
+        () => s.sync.historyTruncated,
+        reason: 'truncated history flag to settle',
+      );
+      expect(
+        events.whereType<SessionHistoryTruncationChanged>().last.truncated,
+        isTrue,
+      );
+
+      s.ch.pushRaw(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'sync-complete-flag',
+          sessionStartedAt: startedAt,
+          events: const [],
+          eos: true,
+          truncated: false,
+        ),
+      );
+      await _waitUntil(
+        () => !s.sync.historyTruncated,
+        reason: 'complete history flag to settle',
+      );
+      expect(
+        events.whereType<SessionHistoryTruncationChanged>().last.truncated,
+        isFalse,
+      );
+
+      await sub.cancel();
       s.conn.dispose();
       s.sync.dispose();
     },
@@ -961,7 +1082,10 @@ void main() {
       final streamingEmissions = <StreamingMessage?>[];
       final workingEmissions = <bool>[];
       final sub = s.sync.streamingStream.listen(streamingEmissions.add);
-      final workingSub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(workingEmissions.add);
+      final workingSub = s.sync.turnProjectionStream
+          .map((projection) => projection.working)
+          .distinct()
+          .listen(workingEmissions.add);
 
       final hydration = s.sync.debugApplyHistory(
         SessionHistory(
@@ -1019,7 +1143,10 @@ void main() {
       final streamingEmissions = <StreamingMessage?>[];
       final workingEmissions = <bool>[];
       final sub = s.sync.streamingStream.listen(streamingEmissions.add);
-      final workingSub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(workingEmissions.add);
+      final workingSub = s.sync.turnProjectionStream
+          .map((projection) => projection.working)
+          .distinct()
+          .listen(workingEmissions.add);
 
       final hydration = s.sync.debugApplyHistory(
         SessionHistory(
@@ -1071,62 +1198,72 @@ void main() {
     },
   );
 
-  test('failed or disposed hydration never publishes a stale projection', () async {
-    final failedStore = _MemoryTranscriptStore()..failNextAppend = true;
-    final failed = await setup(transcriptEventStore: failedStore);
-    final failedEmissions = <StreamingMessage?>[];
-    final failedSub = failed.sync.streamingStream.listen(failedEmissions.add);
-    final history = SessionHistory(
-      sessionId: failed.sessionId,
-      inReplyTo: 'hydrate-failure',
-      sessionStartedAt: 1,
-      events: const [
-        UserInputEvt(ts: 1, id: 'failed-hydration', text: 'must not publish'),
-      ],
-      eos: true,
-    );
-
-    await expectLater(failed.sync.debugApplyHistory(history), throwsStateError);
-    await _settle();
-    expect(failedEmissions, isEmpty);
-    expect(messages(failed.epk), isEmpty);
-    await failedSub.cancel();
-    failed.conn.dispose();
-    failed.sync.dispose();
-
-    final disposedStore = _MemoryTranscriptStore();
-    final disposed = await setup(transcriptEventStore: disposedStore);
-    final appendStarted = Completer<void>();
-    final appendGate = Completer<void>();
-    disposedStore
-      ..appendStarted = appendStarted
-      ..appendGate = appendGate;
-    final disposedEmissions = <StreamingMessage?>[];
-    final disposedSub = disposed.sync.streamingStream.listen(
-      disposedEmissions.add,
-    );
-    final pending = disposed.sync.debugApplyHistory(
-      SessionHistory(
-        sessionId: disposed.sessionId,
-        inReplyTo: 'hydrate-dispose',
+  test(
+    'failed or disposed hydration never publishes a stale projection',
+    () async {
+      final failedStore = _MemoryTranscriptStore()..failNextAppend = true;
+      final failed = await setup(transcriptEventStore: failedStore);
+      final failedEmissions = <StreamingMessage?>[];
+      final failedSub = failed.sync.streamingStream.listen(failedEmissions.add);
+      final history = SessionHistory(
+        sessionId: failed.sessionId,
+        inReplyTo: 'hydrate-failure',
         sessionStartedAt: 1,
         events: const [
-          UserInputEvt(ts: 1, id: 'disposed-hydration', text: 'must not publish'),
+          UserInputEvt(ts: 1, id: 'failed-hydration', text: 'must not publish'),
         ],
         eos: true,
-      ),
-    );
-    await appendStarted.future;
-    disposed.sync.dispose();
-    appendGate.complete();
-    await pending;
-    await _settle();
+      );
 
-    expect(disposedEmissions, isEmpty);
-    expect(messages(disposed.epk), isEmpty);
-    await disposedSub.cancel();
-    disposed.conn.dispose();
-  });
+      await expectLater(
+        failed.sync.debugApplyHistory(history),
+        throwsStateError,
+      );
+      await _settle();
+      expect(failedEmissions, isEmpty);
+      expect(messages(failed.epk), isEmpty);
+      await failedSub.cancel();
+      failed.conn.dispose();
+      failed.sync.dispose();
+
+      final disposedStore = _MemoryTranscriptStore();
+      final disposed = await setup(transcriptEventStore: disposedStore);
+      final appendStarted = Completer<void>();
+      final appendGate = Completer<void>();
+      disposedStore
+        ..appendStarted = appendStarted
+        ..appendGate = appendGate;
+      final disposedEmissions = <StreamingMessage?>[];
+      final disposedSub = disposed.sync.streamingStream.listen(
+        disposedEmissions.add,
+      );
+      final pending = disposed.sync.debugApplyHistory(
+        SessionHistory(
+          sessionId: disposed.sessionId,
+          inReplyTo: 'hydrate-dispose',
+          sessionStartedAt: 1,
+          events: const [
+            UserInputEvt(
+              ts: 1,
+              id: 'disposed-hydration',
+              text: 'must not publish',
+            ),
+          ],
+          eos: true,
+        ),
+      );
+      await appendStarted.future;
+      disposed.sync.dispose();
+      appendGate.complete();
+      await pending;
+      await _settle();
+
+      expect(disposedEmissions, isEmpty);
+      expect(messages(disposed.epk), isEmpty);
+      await disposedSub.cancel();
+      disposed.conn.dispose();
+    },
+  );
 
   test(
     'user_message echo writes one MessageRecord + updates the index',
@@ -1170,22 +1307,138 @@ void main() {
   );
 
   test('optimistic send + echo dedupe → exactly one record', () async {
-    final s = await setup();
+    final outbox = _MemoryOwnerDeliveryOutbox();
+    final s = await setup(ownerDeliveryOutbox: outbox);
     await s.sync.sendMessage('hello');
     await _settle();
     expect(messages(s.epk), hasLength(1));
     expect(messages(s.epk).first.pending, isTrue);
 
     final id = (s.ch.sent.whereType<UserMessage>().last).id;
+    expect(outbox.deliveries[id]?.targetSessionId, s.sessionId);
     s.ch.push(UserInput(id: id, text: 'hello'));
     await _settle();
 
     final m = messages(s.epk);
     expect(m, hasLength(1), reason: 'echo dedupes by id — no duplicate');
     expect(m.first.pending, isFalse);
+    expect(outbox.deliveries, isEmpty);
     s.conn.dispose();
     s.sync.dispose();
   });
+
+  test('outbox persistence completes before the first channel write', () async {
+    final outbox = _MemoryOwnerDeliveryOutbox();
+    final started = Completer<void>();
+    final gate = Completer<void>();
+    outbox
+      ..upsertStarted = started
+      ..upsertGate = gate;
+    final s = await setup(ownerDeliveryOutbox: outbox);
+
+    final sending = s.sync.sendMessage('durable before wire');
+    await started.future.timeout(const Duration(seconds: 1));
+    expect(s.ch.sent.whereType<UserMessage>(), isEmpty);
+    expect(messages(s.epk).single.text, 'durable before wire');
+
+    gate.complete();
+    await sending;
+    expect(s.ch.sent.whereType<UserMessage>(), hasLength(1));
+    expect(outbox.deliveries, hasLength(1));
+
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test(
+    'cold SyncService reconstruction resends one stable id from Hive',
+    () async {
+      final s = await setup();
+      await s.sync.sendMessage('survive service death');
+      final original = s.ch.sent.whereType<UserMessage>().single;
+      final hiveOutbox = HiveOwnerDeliveryOutbox(LocalBoxes());
+      expect(
+        await hiveOutbox.listForRoom(peerEpk: s.epk, roomId: 'main'),
+        hasLength(1),
+      );
+
+      s.sync.dispose();
+      s.ch.sent.clear();
+      final reopened = SyncService(s.conn, LocalBoxes());
+      await reopened.activate(s.epk, 'main');
+      await _waitUntil(
+        () =>
+            s.ch.sent
+                .whereType<UserMessage>()
+                .where((message) => message.id == original.id)
+                .length ==
+            1,
+        reason: 'cold service outbox resend',
+      );
+
+      final resent = s.ch.sent.whereType<UserMessage>().single;
+      expect(resent.id, original.id);
+      expect(resent.sessionId, s.sessionId);
+      s.ch.push(UserInput(id: resent.id, text: resent.text));
+      await _waitUntil(
+        () => !LocalBoxes().ownerDeliveryOutboxBox().values.any(
+          (value) => value is Map && value['peer_epk'] == s.epk,
+        ),
+        reason: 'matching echo to clear the reopened Hive outbox',
+      );
+
+      reopened.dispose();
+      s.conn.dispose();
+    },
+  );
+
+  test('outbox persistence failure fails visibly and sends nothing', () async {
+    final outbox = _MemoryOwnerDeliveryOutbox()..failNextUpsert = true;
+    final s = await setup(ownerDeliveryOutbox: outbox);
+
+    await s.sync.sendMessage('must stay local');
+    await _settle();
+
+    expect(s.ch.sent.whereType<UserMessage>(), isEmpty);
+    expect(outbox.deliveries, isEmpty);
+    expect(messages(s.epk).single.status, UserMsgStatus.failed);
+    expect(s.sync.turnProjection.working, isFalse);
+
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test(
+    'permanent receiver error fails visibly and removes its target',
+    () async {
+      final outbox = _MemoryOwnerDeliveryOutbox();
+      final s = await setup(ownerDeliveryOutbox: outbox);
+      await s.sync.sendMessage('receiver rejects');
+      final id = s.ch.sent.whereType<UserMessage>().single.id;
+
+      s.ch.push(
+        ErrorMessage(
+          sessionId: s.sessionId,
+          inReplyTo: id,
+          code: 'internal_error',
+          message: 'permanent rejection',
+        ),
+      );
+      await _waitUntil(
+        () =>
+            messages(s.epk).where((row) => row.id == id).singleOrNull?.status ==
+            UserMsgStatus.failed,
+        reason: 'permanent receiver failure projection',
+      );
+      await _waitUntil(
+        () => !outbox.deliveries.containsKey(id),
+        reason: 'permanent receiver failure outbox removal',
+      );
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
 
   test(
     'send diagnostics omit prompt and image content while wire and transcript retain it',
@@ -1908,15 +2161,26 @@ void main() {
     final s = await setup();
     expect(s.sync.turnProjection.working, isFalse);
     final flags = <bool>[];
-    final sub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(flags.add);
+    final sub = s.sync.turnProjectionStream
+        .map((projection) => projection.working)
+        .distinct()
+        .listen(flags.add);
 
     s.ch.push(UserInput(id: 'u1', text: 'hi'));
     await _settle();
-    expect(s.sync.turnProjection.working, isTrue, reason: 'working from the echo');
+    expect(
+      s.sync.turnProjection.working,
+      isTrue,
+      reason: 'working from the echo',
+    );
 
     s.ch.push(AgentDone(inReplyTo: 'u1'));
     await _settle();
-    expect(s.sync.turnProjection.working, isFalse, reason: 'idle after agent_done');
+    expect(
+      s.sync.turnProjection.working,
+      isFalse,
+      reason: 'idle after agent_done',
+    );
     expect(flags, [true, false]);
 
     await sub.cancel();
@@ -2062,7 +2326,11 @@ void main() {
         isA<StatusRetrying>(),
         reason: 'disconnect transitions to retrying',
       );
-      expect(s.sync.turnProjection.working, isFalse, reason: 'status drop clears working');
+      expect(
+        s.sync.turnProjection.working,
+        isFalse,
+        reason: 'status drop clears working',
+      );
       expect(s.sync.streaming, isNull, reason: 'streaming cursor is cleared');
       expect(
         s.sync.turnProjection.cancelTargetId,
@@ -2136,7 +2404,10 @@ void main() {
     expect(s.sync.turnProjection.cancelTargetId, 'r1');
 
     final flags = <bool>[];
-    final sub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(flags.add);
+    final sub = s.sync.turnProjectionStream
+        .map((projection) => projection.working)
+        .distinct()
+        .listen(flags.add);
 
     // Switch the writer to a DIFFERENT session (what the chat does on a
     // tablet session switch). Must clear the in-memory signals.
@@ -3185,12 +3456,15 @@ void main() {
   test(
     'late authoritative history replay after timeout confirms and removes failure',
     () async {
+      final outbox = _MemoryOwnerDeliveryOutbox();
       final s = await setup(
         pendingSendTimeout: const Duration(milliseconds: 20),
+        ownerDeliveryOutbox: outbox,
       );
       await s.sync.sendMessage('eventual replay');
       await _settle();
       final sentId = s.ch.sent.whereType<UserMessage>().last.id;
+      expect(outbox.deliveries, contains(sentId));
 
       await _waitUntil(
         () => messages(s.epk).singleOrNull?.status == UserMsgStatus.failed,
@@ -3218,6 +3492,10 @@ void main() {
       expect(rows.single.role, MsgRole.user);
       expect(rows.single.text, 'eventual replay');
       expect(rows.single.status, UserMsgStatus.confirmed);
+      await _waitUntil(
+        () => outbox.deliveries.isEmpty,
+        reason: 'durable history confirmation outbox removal',
+      );
       expect(
         await s.sync.debugTranscriptEventStore.readSession(
           transcriptKeyFor(s.epk),
@@ -3243,7 +3521,11 @@ void main() {
       await _settle();
       s.ch.push(AgentDone(inReplyTo: 'success-u1'));
       await _settle();
-      expect(s.sync.turnProjection.working, isFalse, reason: 'success converges idle');
+      expect(
+        s.sync.turnProjection.working,
+        isFalse,
+        reason: 'success converges idle',
+      );
 
       s.ch.push(UserInput(id: 'error-u1', text: 'fail'));
       await _settle();
@@ -3257,14 +3539,22 @@ void main() {
         ),
       );
       await _settle();
-      expect(s.sync.turnProjection.working, isFalse, reason: 'error converges idle');
+      expect(
+        s.sync.turnProjection.working,
+        isFalse,
+        reason: 'error converges idle',
+      );
 
       s.ch.push(UserInput(id: 'cancel-u1', text: 'cancel'));
       await _settle();
       s.ch.push(AgentChunk(inReplyTo: 'cancel-u1', delta: 'partial'));
       s.ch.push(Cancelled(inReplyTo: 'cancel-req', targetId: 'cancel-u1'));
       await _settle();
-      expect(s.sync.turnProjection.working, isFalse, reason: 'cancel converges idle');
+      expect(
+        s.sync.turnProjection.working,
+        isFalse,
+        reason: 'cancel converges idle',
+      );
 
       s.ch.push(
         Compaction(
@@ -3275,7 +3565,11 @@ void main() {
         ),
       );
       await _settle();
-      expect(s.sync.turnProjection.working, isFalse, reason: 'compaction converges idle');
+      expect(
+        s.sync.turnProjection.working,
+        isFalse,
+        reason: 'compaction converges idle',
+      );
 
       final log = await s.sync.debugTranscriptEventStore.readSession(
         transcriptKeyFor(s.epk),
@@ -3310,7 +3604,11 @@ void main() {
         ]),
       );
       expect(replayedTexts, contains(startsWith('⚠ provider_error:')));
-      expect(sync2.turnProjection.working, isFalse, reason: 'replay rebuild stays idle');
+      expect(
+        sync2.turnProjection.working,
+        isFalse,
+        reason: 'replay rebuild stays idle',
+      );
 
       s.conn.dispose();
       sync2.dispose();
@@ -3660,80 +3958,113 @@ void main() {
     },
   );
 
-  test('stale held-message read cannot send after session rotation', () async {
-    final store = _MemoryTranscriptStore();
-    final s = await setup(transcriptEventStore: store);
-    s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 1));
-    await _settle();
-    await s.sync.sendMessage('held for stale read');
-    await _settle();
-    final held = store
-        .eventsFor(transcriptKeyFor(s.epk))
-        .whereType<UserMessageSubmitted>()
-        .single;
-    expect(held.held, isTrue);
-    s.ch.sent.clear();
-
-    final readGate = Completer<void>();
-    final readStarted = Completer<void>();
-    store
-      ..readGate = readGate
-      ..readStarted = readStarted;
-    s.ch.pushControl(
-      RoomAnnounced(
-        peer: s.epk,
-        roomId: 'main',
-        sessionId: s.sessionId,
-        startedAt: 2,
-      ),
-    );
-    await readStarted.future.timeout(const Duration(seconds: 1));
-
-    const rotated = 'held-read-rotated';
-    _sessionByEpk[s.epk] = rotated;
-    s.ch.defaultSessionId = rotated;
-    s.ch.pushRaw(
-      PairOk(
-        inReplyTo: 'rotate-held-read',
-        sessionName: 'Pi',
-        sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
-        roomId: 'main',
-        sessionId: rotated,
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    readGate.complete();
-    await _settle();
-    await _settle();
-    await _settle();
-
-    expect(
-      s.ch.sent.whereType<UserMessage>().where(
-        (message) => message.id == held.clientMessageId,
-      ),
-      isEmpty,
-      reason: 'the old-session held message must not send after rotation',
-    );
-    expect(s.sync.activeSessionRef?.sessionId, rotated);
-    final syncs = s.ch.sent.whereType<SessionSync>().toList();
-    expect(syncs, isNotEmpty);
-    expect(
-      syncs,
-      everyElement(
-        predicate<SessionSync>((message) => message.sessionId == rotated),
-      ),
-    );
-
-    s.conn.dispose();
-    s.sync.dispose();
-  });
-
   test(
-    'room metadata skips transcript reads while fresh-live replays once',
+    'stale outbox read cannot send old target; successor retargets once',
     () async {
       final store = _MemoryTranscriptStore();
-      final s = await setup(transcriptEventStore: store);
+      final outbox = _MemoryOwnerDeliveryOutbox();
+      final s = await setup(
+        transcriptEventStore: store,
+        ownerDeliveryOutbox: outbox,
+      );
+      s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 1));
+      await _settle();
+      await s.sync.sendMessage('held for stale read');
+      await _settle();
+      final held = outbox.deliveries.values.single;
+      final oldSessionId = s.sessionId;
+      s.ch.sent.clear();
+
+      final readGate = Completer<void>();
+      final readStarted = Completer<void>();
+      outbox
+        ..listGate = readGate
+        ..listStarted = readStarted;
+      s.ch.pushControl(
+        RoomAnnounced(
+          peer: s.epk,
+          roomId: 'main',
+          sessionId: s.sessionId,
+          startedAt: 2,
+        ),
+      );
+      await readStarted.future.timeout(const Duration(seconds: 1));
+
+      const rotated = 'held-read-rotated';
+      _sessionByEpk[s.epk] = rotated;
+      s.ch.defaultSessionId = rotated;
+      s.ch.pushRaw(
+        PairOk(
+          inReplyTo: 'rotate-held-read',
+          sessionName: 'Pi',
+          sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
+          roomId: 'main',
+          sessionId: rotated,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      readGate.complete();
+      await _waitUntil(
+        () =>
+            s.ch.sent
+                .whereType<UserMessage>()
+                .where((message) => message.id == held.id)
+                .length ==
+            1,
+        reason: 'the successor generation to retarget and resend once',
+      );
+
+      final resent = s.ch.sent.whereType<UserMessage>().singleWhere(
+        (message) => message.id == held.id,
+      );
+      expect(resent.sessionId, rotated);
+      expect(outbox.deliveries[held.id]?.targetSessionId, rotated);
+      expect(s.sync.activeSessionRef?.sessionId, rotated);
+
+      s.ch.pushRaw(
+        UserInput(
+          sessionId: oldSessionId,
+          id: held.id,
+          text: 'late old-session echo',
+        ),
+      );
+      await _settle();
+      expect(
+        outbox.deliveries[held.id]?.targetSessionId,
+        rotated,
+        reason: 'a late old-session echo cannot clear the successor target',
+      );
+
+      s.ch.pushRaw(UserInput(sessionId: rotated, id: held.id, text: held.text));
+      await _waitUntil(
+        () => !outbox.deliveries.containsKey(held.id),
+        reason: 'matching successor echo to clear the outbox',
+      );
+      final syncs = s.ch.sent.whereType<SessionSync>().toList();
+      expect(syncs, isNotEmpty);
+      expect(
+        syncs,
+        everyElement(
+          predicate<SessionSync>((message) => message.sessionId == rotated),
+        ),
+      );
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'room metadata skips outbox reads while fresh-live recovers once',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final outbox = _MemoryOwnerDeliveryOutbox();
+      final s = await setup(
+        transcriptEventStore: store,
+        ownerDeliveryOutbox: outbox,
+      );
       final initialReads = store.readCalls;
+      final initialOutboxReads = outbox.listCalls;
 
       for (var i = 0; i < 6; i++) {
         s.ch.pushControl(
@@ -3749,6 +4080,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 60));
       }
       expect(store.readCalls, initialReads);
+      expect(outbox.listCalls, initialOutboxReads);
 
       s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 1));
       await _waitUntil(
@@ -3757,10 +4089,11 @@ void main() {
       );
       await Future<void>.delayed(const Duration(milliseconds: 60));
       expect(store.readCalls, initialReads);
+      expect(outbox.listCalls, initialOutboxReads);
 
       final replayStarted = Completer<void>();
-      store.readStarted = replayStarted;
-      store.readGate = Completer<void>()..complete();
+      outbox.listStarted = replayStarted;
+      outbox.listGate = Completer<void>()..complete();
       s.ch.pushControl(
         RoomAnnounced(
           peer: s.epk,
@@ -3772,10 +4105,15 @@ void main() {
       );
       await replayStarted.future.timeout(const Duration(seconds: 1));
       await _waitUntil(
-        () => store.readCalls == initialReads + 1,
-        reason: 'one fresh-live held replay read',
+        () => outbox.listCalls == initialOutboxReads + 1,
+        reason: 'one fresh-live owner-outbox recovery read',
       );
-      expect(store.readCalls, initialReads + 1);
+      expect(outbox.listCalls, initialOutboxReads + 1);
+      expect(
+        store.readCalls,
+        initialReads,
+        reason: 'delivery recovery no longer scans transcript provenance',
+      );
 
       s.conn.dispose();
       s.sync.dispose();
@@ -4086,7 +4424,10 @@ void main() {
     expect(s.sync.turnProjection.cancelTargetId, 'r1');
 
     final flags = <bool>[];
-    final sub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(flags.add);
+    final sub = s.sync.turnProjectionStream
+        .map((projection) => projection.working)
+        .distinct()
+        .listen(flags.add);
 
     // `session_new` wipe boundary: clear must converge working state false,
     // not leave a stale cancel target / streaming cursor.
@@ -4508,6 +4849,41 @@ void main() {
     );
 
     test(
+      'delivery_retry disarms the short timer and retains recovery intent',
+      () async {
+        final timers = _PendingTimerScheduler();
+        final outbox = _MemoryOwnerDeliveryOutbox();
+        final s = await setup(
+          pendingSendTimeout: short,
+          pendingSendTimerFactory: timers.schedule,
+          ownerDeliveryOutbox: outbox,
+        );
+        await s.sync.sendMessage('retry after successor');
+        final id = s.ch.sent.whereType<UserMessage>().single.id;
+
+        s.ch.push(
+          ErrorMessage(
+            sessionId: s.sessionId,
+            inReplyTo: id,
+            code: 'delivery_retry',
+            message: 'retry after room recovery',
+          ),
+        );
+        await _settle();
+
+        expect(s.sync.debugPendingSendTimerCount, 0);
+        expect(messages(s.epk).single.status, UserMsgStatus.pending);
+        expect(outbox.deliveries[id]?.targetSessionId, s.sessionId);
+        timers.elapse(short + const Duration(seconds: 1));
+        await _settle();
+        expect(messages(s.epk).single.status, UserMsgStatus.pending);
+
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+
+    test(
       '(d) delivery_pending still fails if no replay echo arrives',
       () async {
         final s = await setup(
@@ -4740,7 +5116,11 @@ void main() {
       '(ii) relay-only reconnect keeps a held message until RoomsSnapshot confirmation',
       () async {
         final store = _MemoryTranscriptStore();
-        final s = await setup(transcriptEventStore: store);
+        final outbox = _MemoryOwnerDeliveryOutbox();
+        final s = await setup(
+          transcriptEventStore: store,
+          ownerDeliveryOutbox: outbox,
+        );
         expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
 
         final disconnected = s.conn.statusStream.firstWhere(
@@ -4759,9 +5139,9 @@ void main() {
 
         final readStarted = Completer<void>();
         final readGate = Completer<void>();
-        store
-          ..readStarted = readStarted
-          ..readGate = readGate;
+        outbox
+          ..listStarted = readStarted
+          ..listGate = readGate;
         final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
         final staleReconnect = s.conn.roomsStream.firstWhere(
           (_) =>
@@ -4806,7 +5186,7 @@ void main() {
         expect(
           reconnect.sent.whereType<UserMessage>(),
           isEmpty,
-          reason: 'the controlled transcript read has not released the resend',
+          reason: 'the controlled outbox read has not released the resend',
         );
 
         readGate.complete();
@@ -4821,6 +5201,20 @@ void main() {
           reconnect.sent.whereType<UserMessage>(),
           hasLength(1),
           reason: 'fresh room confirmation releases the held message once',
+        );
+        reconnect.pushControl(
+          RoomsSnapshot(
+            peer: s.epk,
+            rooms: <RoomInfo>[
+              RoomInfo(roomId: 'main', sessionId: s.sessionId, startedAt: 2),
+            ],
+          ),
+        );
+        await _settle();
+        expect(
+          reconnect.sent.whereType<UserMessage>(),
+          hasLength(1),
+          reason: 'same-generation snapshots cannot duplicate recovery sends',
         );
 
         s.conn.dispose();
@@ -5060,8 +5454,10 @@ void main() {
               sessionId: s.sessionId,
             ),
           );
-          await _settle();
-          await _settle();
+          await _waitUntil(
+            () => console.contains('[msg-resend] id=$heldId failed'),
+            reason: 'fixed resend failure diagnostic',
+          );
           expect(reconnect.sent.whereType<UserMessage>(), isEmpty);
         } finally {
           debugPrint = originalDebugPrint;
