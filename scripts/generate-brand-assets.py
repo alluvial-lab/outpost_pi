@@ -90,8 +90,6 @@ def save_existing_mark(
         size,
         background=background,
         geometry=MARK_GEOMETRY,
-        ink=DARK_INK,
-        accent=DARK_ACCENT,
     )
     if preserve_alpha and existing_mode == "RGBA" and image.mode == "RGB":
         image = image.convert("RGBA")
@@ -113,8 +111,6 @@ def render_icons() -> None:
                 size,
                 background=None,
                 geometry=MARK_GEOMETRY,
-                ink=DARK_INK,
-                accent=DARK_ACCENT,
             ),
             android / density / "ic_launcher_foreground.png",
         )
@@ -138,8 +134,6 @@ def render_icons() -> None:
                 size,
                 background=DARK_BG,
                 geometry=MARK_GEOMETRY,
-                ink=DARK_INK,
-                accent=DARK_ACCENT,
             ),
             path,
         )
@@ -153,8 +147,6 @@ def render_icons() -> None:
                 size,
                 background=DARK_BG,
                 geometry=MARK_GEOMETRY,
-                ink=DARK_INK,
-                accent=DARK_ACCENT,
             ),
             path,
         )
@@ -164,8 +156,6 @@ def render_icons() -> None:
         256,
         background=DARK_BG,
         geometry=MARK_GEOMETRY,
-        ink=DARK_INK,
-        accent=DARK_ACCENT,
     ).save(
         windows_icon,
         format="ICO",
@@ -203,8 +193,6 @@ def render_icons() -> None:
                 size,
                 background=DARK_BG,
                 geometry=MARK_GEOMETRY,
-                ink=DARK_INK,
-                accent=DARK_ACCENT,
             ),
             ROOT / f"site/public/favicon-{size}.png",
         )
@@ -229,8 +217,6 @@ def render_banner() -> None:
         260 * scale,
         background=None,
         geometry=MARK_GEOMETRY,
-        ink=DARK_INK,
-        accent=DARK_ACCENT,
     )
     image.alpha_composite(mark, (96 * scale, 190 * scale)) if image.mode == "RGBA" else image.paste(
         mark, (96 * scale, 190 * scale), mark
