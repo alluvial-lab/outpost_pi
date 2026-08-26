@@ -1,7 +1,7 @@
 ---
 id: feature-site-test-baseline
 kind: feature
-stage: implementing
+stage: review
 tags: [site, testing]
 parent: null
 depends_on: []
@@ -279,3 +279,38 @@ integration rather than separate worker assignments.
   explicit smoke inventory. The implementation review should compare the list
   with `site/src/app/**/page.tsx`; automatic source parsing is not added to this
   thin baseline because it would test file discovery rather than route behavior.
+
+## Implementation run
+
+- Executed inline in the host because this harness exposes no implementation
+  subagent adapter. The site-only ownership boundary was preserved; unrelated
+  concurrent app, cockpit, pi-extension, and relay changes were not touched.
+- Worker capability recorded from the caller: `openai-codex/gpt-5.6-luna` at
+  `xhigh`; review weight is `standard` from the autopilot caller's default.
+
+## Completed checkpoints
+
+- `feature-site-test-baseline-computed-style-contract` — advanced directly to
+  `done` in `b4ff28a2`. Added the one-project Chromium Playwright harness,
+  production `next start` server, four-partition computed-style contract,
+  computed WCAG ratio helper, scripts, lockfile dependency, and transient
+  output ignores.
+- `feature-site-test-baseline-route-smoke-and-workflow` — advanced directly to
+  `done` in `ef1c3617` after its dependency. Added independent smoke tests for
+  the fourteen current App Router page routes and wired the CI site lane to
+  install only Chromium and run `pnpm check`.
+
+## Integrated verification
+
+- `cd site && PATH="/tmp/outpost-corepack-bin:$PATH" pnpm check` — PASS:
+  lint, production build, and all 18 Chromium tests (14 route tests plus the
+  four required theme partitions).
+- `cd site && corepack pnpm exec playwright install chromium` — PASS; Chromium
+  and its headless shell were available locally. CI uses the corresponding
+  `pnpm exec playwright install --with-deps chromium` command.
+- Route inventory was derived from `site/src/app/**/page.tsx`: one root page
+  and thirteen nested page files, excluding the generated not-found and asset
+  endpoints. No browser reports, results, or build output are tracked.
+
+The feature is implementation-complete and eligible for the standard feature
+review. No implementation blocker remains.
