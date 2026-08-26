@@ -1,7 +1,7 @@
 ---
 id: gate-docs-changelog-v090-user-visible-drain
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,9 @@ The v0.9.0 bundle contains user-visible and operator-visible changes with no rel
 
 ## Required edit
 Add a v0.9.0 changelog entry covering the released fresh-session/outbox/retry contract, mobile actions, Cockpit JSON migration, site browser baseline, and theme/brand contract changes, plus the user-visible fixes in the bound items. Keep the entry as the active release truth and update the comparison links when the release tag is cut.
+
+## Closure (2026-08-26)
+
+Resolved by release-deploy Phase 5.5: the v0.9.0 changelog entry was drafted
+from the 41 bound items, confirmed by the operator, and prepended to
+CHANGELOG.md (features / fixes / security / internal grouping).
