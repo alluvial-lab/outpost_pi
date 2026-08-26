@@ -1,7 +1,7 @@
 ---
 id: feature-fresh-session-shutdown-and-recoverable-delivery
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, lifecycle]
 parent: null
 depends_on: []
@@ -477,3 +477,16 @@ records 976/976 non-E2E tests plus clean analysis, the extension passes
 1,103 tests / 3 skipped plus typecheck/build, and the production-backed pairing
 harness passes all 17 current scenarios including quiesce-to-reconnect recovery
 and pre-settlement replacement confirmation.
+
+## Review closure (2026-08-26)
+
+Standard weight, one independent fresh-context pass (the feature's first —
+the design-time advisory pass was degraded-unavailable and this review
+carried that weight): **approve**, zero findings. All five recorded design
+risks verified addressed with deterministic tests; schema single-source
+confirmed (delivery_retry codegen both sides, unknown codes accepted);
+outbox encrypted + wipe-participating + fail-visible; shutdown ordering
+verified (no fixed-delay remnant); the f1fc63be pre-settlement regression
+class carries projection + integration + e2e coverage; 17-scenario
+production-backed harness evidence accepted. Reviewer verification:
+protocol 7/7, extension focused 77/77, app focused 161/161. Feature done.
