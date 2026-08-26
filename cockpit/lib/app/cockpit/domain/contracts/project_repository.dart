@@ -2,7 +2,7 @@ import 'package:cockpit/app/cockpit/domain/entities/project.dart';
 
 /// Persist projects and their saved folders.
 ///
-/// This domain contract has a concrete Hive implementation in `data/`.
+/// Concrete persistence is supplied by the feature's `data/` adapter.
 abstract class ProjectRepository {
   /// Return all saved projects from oldest to newest by creation time.
   Future<List<Project>> all();

@@ -1,7 +1,7 @@
 /// Represent a directory saved by the user as a workspace.
 ///
-/// Root workspaces are persisted through Hive. **Worktrees** are runtime
-/// `Project` forks with [parentId], derived from Git and never persisted because
+/// Root workspaces are persisted through the project repository. **Worktrees**
+/// are runtime `Project` forks with [parentId], derived from Git and never persisted because
 /// Git owns their existence (see `plan/42`, decisions 1 and 4). Cockpit agents
 /// operate in subdirectories of [path].
 class Project {
