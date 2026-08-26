@@ -1,7 +1,7 @@
 ---
 id: feature-theme-token-cross-surface-contract-contract-tooling
 kind: story
-stage: implementing
+stage: done
 tags: [branding, site, testing]
 parent: feature-theme-token-cross-surface-contract
 depends_on: []
@@ -30,3 +30,31 @@ This is intentionally golden-based rather than Dart code generation: mobile and 
 ## Ordering constraint
 
 This checkpoint is the anchor for both Flutter port checks. Complete it before either surface adopts the fixture.
+
+## Implementation
+
+- Added the restricted standard-library parser/projection module in
+  `scripts/brand_contract.py` and the deterministic synchronizer at
+  `scripts/sync-brand-contracts.py`.
+- `branding/theme-contract.json` is the checked-in dark/light role fixture with
+  the WCAG AA normal-text threshold. The parser validates supported selectors,
+  color values, duplicate/missing roles, and the duplicated dark media block.
+- `branding/logo-foreground.svg` now drives Pillow rasterization through the
+  validated `MarkGeometry` model and the generated
+  `site/src/generated/constellation_mark.generated.ts` projection. The OG
+  component consumes that projection instead of carrying mark coordinates.
+- Added the `brand-contract` CI freshness job and routed canonical contract
+  paths to the app, cockpit, and site jobs.
+
+## Verification
+
+- `python3 scripts/sync-brand-contracts.py --check` — PASS.
+- `python3 -m py_compile scripts/brand_contract.py scripts/sync-brand-contracts.py scripts/generate-brand-assets.py` — PASS.
+- `python3 scripts/generate-brand-assets.py` — PASS; generated assets were
+  unchanged because the parsed SVG geometry matches the prior renderer.
+- Parser boundary checks for invalid CSS and canonical SVG geometry — PASS.
+- `cd site && corepack pnpm lint` — PASS.
+- `cd site && corepack pnpm build` — PASS.
+
+The requested direct-read design was sufficient; no implementation deviation
+was required.

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "source": ".mockups/design-system/tokens.css",
+  "wcagAaNormalText": 4.5,
+  "modes": {
+    "dark": {
+      "bgPrimary": "#0D1210",
+      "bgSecondary": "#131A16",
+      "bgTertiary": "#1E2620",
+      "textPrimary": "#E4EFE8",
+      "textSecondary": "#89978D",
+      "textLink": "#74CC9C",
+      "textLinkHover": "#8FD9A8",
+      "border": "#1E2620",
+      "borderStrong": "#2A342C",
+      "accent": "#74CC9C",
+      "accentHover": "#8FD9A8",
+      "accentMuted": "rgba(116, 204, 156, 0.14)",
+      "onAccent": "#0A2418",
+      "success": "#7FD99A",
+      "successBg": "rgba(127, 217, 154, 0.14)",
+      "warning": "#E6C86E",
+      "warningBg": "rgba(230, 200, 110, 0.14)",
+      "error": "#FF8B7D",
+      "errorBg": "rgba(255, 139, 125, 0.14)",
+      "info": "#7DB8E8",
+      "infoBg": "rgba(125, 184, 232, 0.14)"
+    },
+    "light": {
+      "bgPrimary": "#F3F6F3",
+      "bgSecondary": "#F8FAF8",
+      "bgTertiary": "#DFE6DF",
+      "textPrimary": "#182019",
+      "textSecondary": "#57635A",
+      "textLink": "#256E47",
+      "textLinkHover": "#1C5A39",
+      "border": "#DFE6DF",
+      "borderStrong": "#C2CEC3",
+      "accent": "#256E47",
+      "accentHover": "#1C5A39",
+      "accentMuted": "rgba(37, 110, 71, 0.12)",
+      "onAccent": "#FFFFFF",
+      "success": "#3E7A4E",
+      "successBg": "rgba(62, 122, 78, 0.12)",
+      "warning": "#8A6A1F",
+      "warningBg": "rgba(138, 106, 31, 0.12)",
+      "error": "#B34234",
+      "errorBg": "rgba(179, 66, 52, 0.12)",
+      "info": "#33689B",
+      "infoBg": "rgba(51, 104, 155, 0.12)"
+    }
+  }
+}

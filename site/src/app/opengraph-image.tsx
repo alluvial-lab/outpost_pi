@@ -1,5 +1,7 @@
 import { ImageResponse } from "next/og";
 
+import { constellationMark } from "@/generated/constellation_mark.generated";
+
 export const alt = "Outpost-Pi — Your coding agents, in your pocket";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -33,17 +35,34 @@ export default function OpengraphImage() {
             justifyContent: "center",
           }}
         >
-          <svg width="280" height="280" viewBox="0 0 1024 1024">
+          <svg width="280" height="280" viewBox={constellationMark.viewBox}>
             <rect width="1024" height="1024" fill="#0D1210" rx="200" />
             <path
-              d="M 398 564 L 695 385 M 398 564 L 633 693"
-              stroke="#E4EFE8"
-              strokeWidth="34"
-              strokeLinecap="round"
+              d={constellationMark.edgePath}
+              stroke={constellationMark.ink}
+              strokeWidth={constellationMark.strokeWidth}
+              strokeLinecap={constellationMark.strokeLinecap}
             />
-            <rect x="314" y="480" width="168" height="168" rx="25" fill="#74CC9C" />
-            <circle cx="695" cy="385" r="63" fill="#E4EFE8" />
-            <circle cx="633" cy="693" r="71" fill="#E4EFE8" />
+            <rect
+              x={constellationMark.hub.x}
+              y={constellationMark.hub.y}
+              width={constellationMark.hub.width}
+              height={constellationMark.hub.height}
+              rx={constellationMark.hub.radius}
+              fill={constellationMark.accent}
+            />
+            <circle
+              cx={constellationMark.peers[0].cx}
+              cy={constellationMark.peers[0].cy}
+              r={constellationMark.peers[0].radius}
+              fill={constellationMark.ink}
+            />
+            <circle
+              cx={constellationMark.peers[1].cx}
+              cy={constellationMark.peers[1].cy}
+              r={constellationMark.peers[1].radius}
+              fill={constellationMark.ink}
+            />
           </svg>
         </div>
         <div
