@@ -4408,37 +4408,39 @@ describe("routeClientMessage cancel handling", () => {
   });
 });
 
-// ── QR no longer carries `r` (relay URL) ──────────────────────────────────────
+// ── Verified pairing App Link ─────────────────────────────────────────────────
 
-describe("QR payload (no r field, with rm)", () => {
-  test("buildQRUri produces URI with t + epk + n (no r)", async () => {
-    const { buildQRUri } = await import("./pairing/qr.js");
+describe("verified pairing App Link", () => {
+  test("buildQRUri keeps the enrollment token out of the HTTP request", async () => {
+    const { buildQRUri, PAIR_LINK_ORIGIN, PAIR_LINK_PATH } = await import("./pairing/qr.js");
     const epk = Buffer.alloc(32, 0x42);
-    const uri = buildQRUri("token-abc", epk, "feature/x");
-    expect(uri.startsWith("outpostpi://pair?")).toBe(true);
-    const url = new URL(uri.replace("remotepi:", "https:"));
-    expect(url.searchParams.get("t")).toBe("token-abc");
-    expect(url.searchParams.get("epk")).toBeTruthy();
-    expect(url.searchParams.get("n")).toBe("feature/x");
-    expect(url.searchParams.get("r")).toBeNull();   // ← key assertion: no relay URL
-    expect(uri).not.toContain("r=");
+    const url = new URL(buildQRUri("token-abc", epk, "feature/x"));
+    const params = new URLSearchParams(url.hash.slice(1));
+
+    expect(url.origin).toBe(PAIR_LINK_ORIGIN);
+    expect(url.pathname).toBe(PAIR_LINK_PATH);
+    expect(url.search).toBe("");
+    expect(params.get("t")).toBe("token-abc");
+    expect(params.get("epk")).toBeTruthy();
+    expect(params.get("n")).toBe("feature/x");
+    expect(params.get("r")).toBeNull();
   });
 
-  test("buildQRUri includes rm=<12-char roomId> when provided", async () => {
+  test("buildQRUri includes rm=<12-char roomId> in the fragment", async () => {
     const { buildQRUri } = await import("./pairing/qr.js");
     const epk = Buffer.alloc(32, 0x42);
-    const uri = buildQRUri("token-abc", epk, "feature/x", "aB12CD34eF56");
-    const url = new URL(uri.replace("remotepi:", "https:"));
-    expect(url.searchParams.get("rm")).toBe("aB12CD34eF56");
-    expect(url.searchParams.get("rm")).toMatch(/^[A-Za-z0-9_-]{12}$/);
+    const url = new URL(buildQRUri("token-abc", epk, "feature/x", "aB12CD34eF56"));
+    const params = new URLSearchParams(url.hash.slice(1));
+    expect(params.get("rm")).toBe("aB12CD34eF56");
+    expect(params.get("rm")).toMatch(/^[A-Za-z0-9_-]{12}$/);
   });
 
-  test("buildQRUri without roomId omits rm field (backward-compat)", async () => {
+  test("buildQRUri without roomId omits rm field", async () => {
     const { buildQRUri } = await import("./pairing/qr.js");
     const epk = Buffer.alloc(32, 0x42);
-    const uri = buildQRUri("token-abc", epk, "feature/x");
-    const url = new URL(uri.replace("remotepi:", "https:"));
-    expect(url.searchParams.get("rm")).toBeNull();
+    const url = new URL(buildQRUri("token-abc", epk, "feature/x"));
+    const params = new URLSearchParams(url.hash.slice(1));
+    expect(params.get("rm")).toBeNull();
   });
 });
 

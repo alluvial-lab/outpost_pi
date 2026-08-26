@@ -44,7 +44,10 @@ void main() {
       );
       expect(tester.takeException(), isNull);
 
-      await tester.enterText(find.byType(TextField), 'outpostpi://pair?t=test');
+      await tester.enterText(
+        find.byType(TextField),
+        'https://outpost-pi.kevoun.com/pair#t=test',
+      );
       await tester.drag(
         find.byKey(const Key('paste-qr-sheet-scroll')),
         const Offset(0, -280),

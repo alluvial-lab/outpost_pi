@@ -20,7 +20,7 @@ void main() {
       final pairCodeFile = File(rpc.pairCodeFile!);
       await pairCodeFile.writeAsString(
         jsonEncode(<String, Object>{
-          'uri': 'outpostpi://pair?t=token-123',
+          'uri': 'https://outpost-pi.kevoun.com/pair#t=token-123',
           'token': 'token-123',
           'expiresAt': 1760000000000,
           'roomId': 'room-1',
@@ -30,7 +30,7 @@ void main() {
       timers.firePeriodic();
 
       final event = await code;
-      expect(event.uri, 'outpostpi://pair?t=token-123');
+      expect(event.uri, 'https://outpost-pi.kevoun.com/pair#t=token-123');
       expect(event.token, 'token-123');
       expect(event.expiresAt, '1760000000000');
       expect(event.roomId, 'room-1');

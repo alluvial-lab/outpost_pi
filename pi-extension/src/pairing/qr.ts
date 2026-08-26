@@ -83,7 +83,10 @@ export const qrSession = new QRSession();
 
 // ── URI + display ─────────────────────────────────────────────────────────────
 
-/** Build the room-targeted, opaque pairing URI consumed by the mobile app. */
+export const PAIR_LINK_ORIGIN = "https://outpost-pi.kevoun.com";
+export const PAIR_LINK_PATH = "/pair";
+
+/** Build the room-targeted, verified pairing App Link consumed by the mobile app. */
 export function buildQRUri(
   token: string,
   longtermEdPk: Uint8Array, // Ed25519 key that authenticates the signed-DH handshake establishing the E2E owner channel
@@ -111,7 +114,10 @@ export function buildQRUri(
     n: sessionName.slice(0, 80),
   });
   if (roomId) params.set("rm", roomId);
-  return `outpostpi://pair?${params.toString()}`;
+  // Keep the enrollment capability in the fragment. Android receives it when
+  // dispatching the verified App Link, while an HTTP fallback never sends it
+  // to the site or its access logs.
+  return `${PAIR_LINK_ORIGIN}${PAIR_LINK_PATH}#${params.toString()}`;
 }
 
 /**

@@ -7,107 +7,113 @@ void main() {
     const goodEpk = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'; // 32 bytes
     const sessionName = 'test+session';
 
-    test('parses legacy QR with relay (r=) param', () {
-      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
-          'r=ws%3A%2F%2Flocalhost&n=$sessionName';
-      final qr = QrPairPayload.tryParse(raw);
+    String link(String parameters) => '$kPairLinkPrefix$parameters';
+
+    test('parses the verified HTTPS link without a relay parameter', () {
+      final qr = QrPairPayload.tryParse(
+        link('t=$goodToken&epk=$goodEpk&n=$sessionName'),
+      );
       expect(qr, isNotNull);
       expect(qr!.token, goodToken);
       expect(qr.epk, goodEpk);
       expect(qr.sessionName, 'test session');
-      expect(qr.relayUrl, 'ws://localhost',
-          reason: 'legacy r= is parsed for mismatch detection');
+      expect(qr.relayUrl, isNull);
     });
 
-    test('parses new QR WITHOUT r= param — relayUrl is null', () {
-      final raw =
-          'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
-      final qr = QrPairPayload.tryParse(raw);
+    test('parses a legacy relay parameter inside the protected fragment', () {
+      final qr = QrPairPayload.tryParse(
+        link(
+          't=$goodToken&epk=$goodEpk&'
+          'r=ws%3A%2F%2Flocalhost&n=$sessionName',
+        ),
+      );
       expect(qr, isNotNull);
-      expect(qr!.token, goodToken);
-      expect(qr.epk, goodEpk);
-      expect(qr.sessionName, 'test session');
-      expect(qr.relayUrl, isNull,
-          reason: 'no r= present — app uses its configured relay');
+      expect(qr!.relayUrl, 'ws://localhost');
     });
 
-    test('rejects when t is missing or wrong length', () {
-      final missingT =
-          'outpostpi://pair?epk=$goodEpk&n=$sessionName';
-      expect(QrPairPayload.tryParse(missingT), isNull);
-
-      final badT = 'outpostpi://pair?t=AAAA&epk=$goodEpk&n=$sessionName';
-      expect(QrPairPayload.tryParse(badT), isNull);
+    test('rejects a custom-scheme link even when its payload is valid', () {
+      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
+      expect(QrPairPayload.tryParse(raw), isNull);
     });
 
-    test('rejects when epk has wrong byte length', () {
+    test('rejects an unverified HTTPS origin and path lookalikes', () {
+      final parameters = 't=$goodToken&epk=$goodEpk&n=$sessionName';
+      expect(
+        QrPairPayload.tryParse('https://example.com/pair#$parameters'),
+        isNull,
+      );
+      expect(
+        QrPairPayload.tryParse('$kPairLinkOrigin/pairing#$parameters'),
+        isNull,
+      );
+    });
+
+    test('rejects enrollment parameters in the HTTP query', () {
       final raw =
-          'outpostpi://pair?t=$goodToken&epk=AAAAAAAAA&n=$sessionName';
+          '$kPairLinkOrigin$kPairLinkPath?'
+          't=$goodToken&epk=$goodEpk&n=$sessionName';
       expect(QrPairPayload.tryParse(raw), isNull);
     });
 
-    test('rejects non-remotepi scheme', () {
-      const raw =
-          'https://example.com/pair?t=x&epk=y&n=z';
-      expect(QrPairPayload.tryParse(raw), isNull);
+    test('rejects when t is missing or has the wrong length', () {
+      expect(
+        QrPairPayload.tryParse(link('epk=$goodEpk&n=$sessionName')),
+        isNull,
+      );
+      expect(
+        QrPairPayload.tryParse(link('t=AAAA&epk=$goodEpk&n=$sessionName')),
+        isNull,
+      );
     });
 
-    test('empty r= is treated as null (not the empty string)', () {
-      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
-          'r=&n=$sessionName';
-      final qr = QrPairPayload.tryParse(raw);
+    test('rejects when epk has the wrong byte length', () {
+      expect(
+        QrPairPayload.tryParse(
+          link('t=$goodToken&epk=AAAAAAAAA&n=$sessionName'),
+        ),
+        isNull,
+      );
+    });
+
+    test('empty r is treated as null', () {
+      final qr = QrPairPayload.tryParse(
+        link('t=$goodToken&epk=$goodEpk&r=&n=$sessionName'),
+      );
       expect(qr, isNotNull);
       expect(qr!.relayUrl, isNull);
     });
 
-    test(
-      'parses QR with `rm` (room id) — plan 17 fix lets the app target '
-      'the Pi\'s cwd-session at pair_request time',
-      () {
-        final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
-            'rm=abc123def456&n=$sessionName';
-        final qr = QrPairPayload.tryParse(raw);
-        expect(qr, isNotNull);
-        expect(qr!.roomId, 'abc123def456');
-      },
-    );
-
-    test('QR without `rm` (legacy) leaves roomId null', () {
-      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
-      final qr = QrPairPayload.tryParse(raw);
-      expect(qr, isNotNull);
-      expect(qr!.roomId, isNull);
-    });
-
-    test('empty rm= is treated as null', () {
-      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
-          'rm=&n=$sessionName';
-      final qr = QrPairPayload.tryParse(raw);
-      expect(qr, isNotNull);
-      expect(qr!.roomId, isNull);
-    });
-
-    test('tolerates surrounding whitespace and trailing newlines (paste)', () {
-      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
-      expect(QrPairPayload.tryParse('  $raw  '), isNotNull,
-          reason: 'leading/trailing spaces');
-      expect(QrPairPayload.tryParse('\n$raw\n'), isNotNull,
-          reason: 'trailing newlines');
-    });
-
-    test('tolerates surrounding quote characters (terminal/message paste)', () {
-      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
-      expect(QrPairPayload.tryParse('"$raw"'), isNotNull,
-          reason: 'double quotes');
-      expect(QrPairPayload.tryParse("'$raw'"), isNotNull,
-          reason: 'single quotes');
-    });
-
-    test('still rejects a genuinely malformed scheme after trimming', () {
-      expect(
-        QrPairPayload.tryParse('  https://example.com/pair?t=x  '),
-        isNull,
+    test('parses the Pi room id used for the first pair request', () {
+      final qr = QrPairPayload.tryParse(
+        link('t=$goodToken&epk=$goodEpk&rm=abc123def456&n=$sessionName'),
       );
+      expect(qr, isNotNull);
+      expect(qr!.roomId, 'abc123def456');
+    });
+
+    test('missing or empty room id remains backward compatible', () {
+      final withoutRoom = QrPairPayload.tryParse(
+        link('t=$goodToken&epk=$goodEpk&n=$sessionName'),
+      );
+      final emptyRoom = QrPairPayload.tryParse(
+        link('t=$goodToken&epk=$goodEpk&rm=&n=$sessionName'),
+      );
+      expect(withoutRoom, isNotNull);
+      expect(withoutRoom!.roomId, isNull);
+      expect(emptyRoom, isNotNull);
+      expect(emptyRoom!.roomId, isNull);
+    });
+
+    test('tolerates surrounding whitespace and trailing newlines', () {
+      final raw = link('t=$goodToken&epk=$goodEpk&n=$sessionName');
+      expect(QrPairPayload.tryParse('  $raw  '), isNotNull);
+      expect(QrPairPayload.tryParse('\n$raw\n'), isNotNull);
+    });
+
+    test('tolerates surrounding quote characters', () {
+      final raw = link('t=$goodToken&epk=$goodEpk&n=$sessionName');
+      expect(QrPairPayload.tryParse('"$raw"'), isNotNull);
+      expect(QrPairPayload.tryParse("'$raw'"), isNotNull);
     });
   });
 }

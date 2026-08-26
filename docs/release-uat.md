@@ -34,15 +34,31 @@ session-hydrate lifecycle end to end on a real deploy:
 1. **Relay up** — container `outpost-pi-relay` running; `docker logs
    outpost-pi-relay` shows `authenticated` for a real peer, not just `Up`.
 2. **Pi extension up** — `/outpost-pi` footer shows 🟢 connected.
-3. **`/outpost-pi pair` renders the QR** in the TUI (the actual QR glyph, not
+3. **Verified pairing-link association** (Android releases): deploy the
+   candidate site's `/.well-known/assetlinks.json`, install the release-signed
+   slim APK (not the debug APK), then run:
+   ```bash
+   adb shell pm verify-app-links --re-verify dev.kevoun.outpostpi
+   adb shell pm get-app-links dev.kevoun.outpostpi
+   adb shell cmd package resolve-activity --brief \
+     -a android.intent.action.VIEW \
+     -c android.intent.category.BROWSABLE \
+     -d 'https://outpost-pi.kevoun.com/pair#t=AAAAAAAAAAAAAAAAAAAAAA&epk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&n=uat'
+   ```
+   The domain must report `verified`, and the dummy-token resolution must be
+   `dev.kevoun.outpostpi/.MainActivity` without a chooser. Never put a live
+   pairing token in an ADB command or shell history. A signing-key rotation
+   requires publishing its new SHA-256 fingerprint first; the production
+   association intentionally excludes the debug certificate.
+4. **`/outpost-pi pair` renders the QR** in the TUI (the actual QR glyph, not
    just the "QR ready" notify).
-4. **App scans → `pair_ok` returns** (no 30s timeout).
-5. **Session transcript hydrates** in the app — messages stream both
+5. **App scans → `pair_ok` returns** (no 30s timeout).
+6. **Session transcript hydrates** in the app — messages stream both
    directions; an outbound user message produces an agent response on the app.
-6. **Scanner boundary smoke** (mobile_scanner v7 native
+7. **Scanner boundary smoke** (mobile_scanner v7 native
    boundary; added 2026-08-16, first executable at next phone-attached
    checkpoint): on the local emulator `scripts/emulator-scanner-smoke.sh` (boot line + prereqs in story-ci-android-emulator-test-job); on a real phone `cd app && flutter test integration_test/mobile_scanner_boundary_test.dart -d <android-or-ios-device> --tags e2e`.
-7. **Phosphor Beacon visual smoke on a real device** (dark + light modes;
+8. **Phosphor Beacon visual smoke on a real device** (dark + light modes;
    pending since v0.5.0 — themed screenshot retake for the site is tracked by
    `feature-public-flip-branding-and-exposure`): verify app theme renders the
    dual-mode tokens and Space Mono on-device, both appearance modes.

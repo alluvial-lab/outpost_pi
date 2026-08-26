@@ -315,7 +315,8 @@ void main() {
     final piPublic = await _piSigningKey.extractPublicKey();
     final epk = base64Url.encode(piPublic.bytes).replaceAll('=', '');
     _qrUri =
-        'outpostpi://pair?t=AAAAAAAAAAAAAAAAAAAAAA&epk=$epk&'
+        'https://outpost-pi.kevoun.com/pair#'
+        't=AAAAAAAAAAAAAAAAAAAAAA&epk=$epk&'
         'r=ws%3A%2F%2Flocalhost&n=test+session';
   });
 
@@ -364,9 +365,12 @@ void main() {
           _PrefsForTest(),
           bridge,
         );
-        // Looks like a pairing code (outpostpi://) but has a bad token —
-        // must surface an error rather than silently swallowing it.
-        await vm.onQrScanned('outpostpi://pair?t=BADTOKEN&epk=AAAA&n=test');
+        // Looks like the verified pairing link but has a bad token — it must
+        // surface an error rather than silently swallowing it.
+        await vm.onQrScanned(
+          'https://outpost-pi.kevoun.com/pair#'
+          't=BADTOKEN&epk=AAAA&n=test',
+        );
         expect(vm.state, isA<PairingError>());
         final error = vm.state as PairingError;
         expect(error.canRetry, isTrue);

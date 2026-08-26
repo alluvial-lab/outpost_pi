@@ -1,7 +1,14 @@
 import 'dart:convert';
 
-// QR URI format:
-//   outpostpi://pair?t=<base64url>&epk=<base64url>&n=<name>[&r=<url>][&rm=<roomId>]
+const kPairLinkOrigin = 'https://outpost-pi.kevoun.com';
+const kPairLinkPath = '/pair';
+const kPairLinkPrefix = '$kPairLinkOrigin$kPairLinkPath#';
+
+// QR/App Link format:
+//   https://outpost-pi.kevoun.com/pair#t=<base64url>&epk=<base64url>&n=<name>[&r=<url>][&rm=<roomId>]
+//
+// Parameters stay in the fragment so a browser fallback never sends the
+// enrollment capability to the site or its access logs.
 //
 // Fields:
 //   t   — ephemeral token (16 bytes, base64url), single-use, valid for 60s
@@ -61,12 +68,21 @@ class QrPairPayload {
     }
     try {
       final uri = Uri.parse(input);
-      if (uri.scheme != 'outpostpi' || uri.host != 'pair') return null;
-      final t = uri.queryParameters['t'];
-      final epk = uri.queryParameters['epk'];
-      final r = uri.queryParameters['r']; // legacy/optional
-      final n = uri.queryParameters['n'];
-      final rm = uri.queryParameters['rm']; // plan 17 — Pi-side room
+      if (uri.scheme != 'https' ||
+          uri.host != 'outpost-pi.kevoun.com' ||
+          uri.path != kPairLinkPath ||
+          uri.userInfo.isNotEmpty ||
+          uri.hasPort ||
+          uri.hasQuery ||
+          uri.fragment.isEmpty) {
+        return null;
+      }
+      final parameters = Uri.splitQueryString(uri.fragment);
+      final t = parameters['t'];
+      final epk = parameters['epk'];
+      final r = parameters['r']; // legacy/optional
+      final n = parameters['n'];
+      final rm = parameters['rm']; // plan 17 — Pi-side room
       // r is no longer required — plan 14 dropped it from the canonical
       // contract. Legacy QRs continue to include it; we capture it for
       // mismatch detection but don't reject when absent.

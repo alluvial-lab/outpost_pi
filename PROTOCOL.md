@@ -431,7 +431,15 @@ is not a relay offline queue; a restart loses the state.
 
 ## Pairing
 
-The QR code presents a Pi-pubkey + room hint + single-use token.
+The QR code presents a Pi-pubkey + room hint + single-use token through the
+verified pairing link `https://outpost-pi.kevoun.com/pair#…`. Enrollment fields
+are encoded in the URI fragment: Android delivers them to the app, but an HTTP
+browser fallback sends only `/pair` and cannot place the token in site access
+logs. The Android `autoVerify` intent filter accepts only that HTTPS origin and
+exact path; `/.well-known/assetlinks.json` binds the host to package
+`dev.kevoun.outpostpi` and its release signing certificate. A signing-key
+rotation requires publishing the new SHA-256 certificate fingerprint before
+shipping the newly signed app; debug certificates are not trusted.
 
 ### App ↔ Pi targeting invariants
 

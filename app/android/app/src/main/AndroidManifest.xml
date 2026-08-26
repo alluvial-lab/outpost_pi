@@ -38,14 +38,17 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Camera-free pairing: let Android route outpostpi://pair links
-                 to the exported Flutter activity. The Flutter pairing surface
-                 remains the validation boundary for the untrusted URI. -->
-            <intent-filter>
+            <!-- Camera-free pairing uses a verified Android App Link. The
+                 domain association binds this route to the release signer;
+                 the Flutter pairing surface still validates the URI fields. -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="outpostpi" android:host="pair"/>
+                <data
+                    android:scheme="https"
+                    android:host="outpost-pi.kevoun.com"
+                    android:path="/pair"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
