@@ -1,7 +1,7 @@
 ---
 id: feature-fresh-session-shutdown-and-recoverable-delivery-boundary-e2e-proof
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, app, lifecycle]
 parent: feature-fresh-session-shutdown-and-recoverable-delivery
 depends_on: [feature-fresh-session-shutdown-and-recoverable-delivery-managed-shutdown-drain, feature-fresh-session-shutdown-and-recoverable-delivery-durable-mobile-resend]
@@ -47,7 +47,7 @@ SDK delivery adapter.
       delivery counter records one post-recovery delivery.
 - [x] A timeout/failure report states which phase failed without logging prompt
       contents or owner-channel secrets.
-- [ ] `e2e/run-pairing.sh` passes in addition to both owning subproject suites.
+- [x] `e2e/run-pairing.sh` passes in addition to both owning subproject suites.
 
 ## Ordering
 
@@ -87,14 +87,34 @@ Runs after both the extension shutdown/fence and app durable-resend checkpoints.
   other reached successor resend/echo and exposed the host status readiness
   condition (`paired` is ready after rapid app reattach), which was also fixed.
 
-## Blocker
+## Failure adjudication (2026-08-26)
 
-- The final `e2e/run-pairing.sh` run passed the new recovery scenario plus 15
-  other E2E scenarios, but the pre-existing
-  `session_replacement_e2e_test.dart` repeatedly timed out waiting for its
-  pre-settlement `cli_` confirmation after the real SDK delivery had entered
-  the host's deferred turn. Deterministic channel readiness, SyncService writer
-  binding, and protected-tail drain checks did not restore the missing live
-  confirmation. This behavior failure appeared after the outbox/lifecycle
-  changes and is not waived as a flake. Keep this child at `implementing` until
-  that regression is root-caused and the exact full harness exits green.
+- **Verdict — production regression, not stale test.** A clean full-harness
+  reproduction reached the replacement host's explicit deferred-turn
+  `pending` barrier, then produced no protected `cli_` confirmation for the
+  test's 15-second observation window. The current source explained the runtime
+  evidence: the timestamp-ownership path consumed the pre-wake identity
+  reservation at SDK `message_end` but returned without persisting or
+  publishing it, then waited for the replacement context's full-turn
+  `sendUserMessage` Promise before `_confirmUserDelivery`. This contradicted the
+  existing replacement contract that SDK `message_end` confirms the admitted
+  prompt before the turn settles.
+- The managed-shutdown drain did not justify that reorder. It still retains the
+  admitted attempt in `_inflightUserDeliveries` until the full-turn Future
+  settles, so a later fresh-session fence waits for it before reset/disposal.
+  The earlier user `message_end` is independently the SDK acceptance signal and
+  can durably confirm the app id while the attempt remains in flight; the
+  10-second shutdown deadline and durable-outbox fallback remain unchanged.
+- **Fix:** reserve the delivery producer timestamp and steering provenance with
+  the original client id before SDK wake. When matching user `message_end`
+  arrives, persist the canonical `user_confirmed` fact before publishing
+  `user_input`; after full-turn settlement, the ordinary delivery confirmation
+  reuses the same timestamp and identity. Focused extension tests now pin the
+  pre-settlement durable confirmation and post-settlement timestamp equality.
+- **Evidence:** the targeted production-backed replacement scenario passed
+  1/1. The full `e2e/run-pairing.sh` then passed all 17 currently registered
+  scenarios (the earlier 16-scenario expectation was stale) and the redaction
+  check passed. The extension passed typecheck, 60 test files (1,103 passed / 3
+  skipped), and build. The recoverable-delivery scenario remained green in the
+  same full run, satisfying this checkpoint and the durable-mobile-resend
+  integration follow-up.

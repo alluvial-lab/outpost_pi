@@ -117,6 +117,13 @@ interface PeerMeshAccounting {
   bytes: number;
 }
 
+interface DeliveredUserEventReservation {
+  clientMessageId: string;
+  eventId: string;
+  producerTs?: number;
+  streamingBehavior?: "steer";
+}
+
 const DEFAULT_MESH_INGRESS_LIMITS: MeshIngressLimits = {
   maxFrames: 128,
   maxBytes: 1024 * 1024,
@@ -169,7 +176,10 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private readonly issuer = new RemoteSessionIssuer();
   private sessionStartedAt: number | null = null;
   private readonly transcriptLog = new TranscriptEventLog();
-  private readonly deliveredUserEventIds = new Map<string, { clientMessageId: string; eventId: string }[]>();
+  private readonly deliveredUserEventIds = new Map<
+    string,
+    DeliveredUserEventReservation[]
+  >();
   /** Ingress idempotency guard (story-extension-user-message-ingress-
    *  idempotency): `clientMessageId`s already delivered in each session, so a
    *  duplicate `user_message` frame (reconnect flush, relay fan-out, app
@@ -459,19 +469,32 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   }
 
   /**
-   * Reserve app identity for the next matching SDK user message.
+   * Reserve app identity and producer metadata for the matching SDK user fact.
    *
-   * The returned rollback removes only this still-pending reservation and is
-   * a no-op after consumption or session reset.
+   * A user `message_end` is the SDK acceptance boundary and can arrive before
+   * the full-turn `sendUserMessage` Promise settles. The reservation lets that
+   * event persist and publish the canonical app id and producer timestamp. The
+   * returned rollback removes only this still-pending reservation and is a
+   * no-op after consumption or session reset.
    */
   rememberDeliveredUserEvent(
     text: string,
     images: readonly { data: string; mime: string }[] | undefined,
     clientMessageId: string,
     eventId: string,
+    producer?: { ts: number; streamingBehavior?: "steer" },
   ): () => void {
     const key = transcriptUserContentSignature(text, images);
-    const entry = { clientMessageId, eventId };
+    const entry = {
+      clientMessageId,
+      eventId,
+      ...(producer ? {
+        producerTs: producer.ts,
+        ...(producer.streamingBehavior
+          ? { streamingBehavior: producer.streamingBehavior }
+          : {}),
+      } : {}),
+    };
     const existing = this.deliveredUserEventIds.get(key) ?? [];
     existing.push(entry);
     this.deliveredUserEventIds.set(key, existing);
@@ -508,16 +531,17 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       const text = stringifyContent(message.content);
       const images = imagesFromContent(message.content);
       const matched = this.consumeDeliveredUserEvent(text, images);
-      const producerTs = matched ? this.recordedTranscriptTs(matched.eventId) : undefined;
-
-      // App delivery owns its timestamp. If message_end wins the race, consume
-      // the reservation but wait for the delivery hook to record and publish.
-      if (matched && producerTs === undefined && this.hasTranscriptPersistence()) return;
-
+      const recordedProducerTs = matched
+        ? this.recordedTranscriptTs(matched.eventId)
+        : undefined;
       const clientMessageId = matched?.clientMessageId ?? `sync_${ts}`;
-      const canonicalTs = producerTs ?? ts;
+      const canonicalTs = recordedProducerTs ?? matched?.producerTs ?? ts;
       const eventId = matched?.eventId
         ?? deterministicTranscriptEventId(sessionId, "user_confirmed", clientMessageId);
+      // `message_end` proves SDK acceptance before a replacement context's
+      // full-turn Promise necessarily settles. Persist the delivery hook's
+      // reserved identity/time here so the app receives a prompt confirmation
+      // without weakening persistence-before-visibility or timestamp ownership.
       const recorded = this.transcriptLog.record({
         kind: "user_confirmed",
         eventId,
@@ -526,6 +550,9 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
         clientMessageId,
         text,
         ...(images.length > 0 ? { images } : {}),
+        ...(matched?.streamingBehavior
+          ? { streamingBehavior: matched.streamingBehavior }
+          : {}),
       });
       if (recorded.status !== "recorded" && recorded.status !== "duplicate") return;
       this.lastTranscriptUserId = clientMessageId;
@@ -535,6 +562,9 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
         text,
         ts: this.recordedTranscriptTs(eventId) ?? canonicalTs,
         ...(images.length > 0 ? { images } : {}),
+        ...(matched?.streamingBehavior
+          ? { streaming_behavior: matched.streamingBehavior }
+          : {}),
       }));
       return;
     }
@@ -1101,7 +1131,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private consumeDeliveredUserEvent(
     text: string,
     images: readonly { data: string; mime: string }[] | undefined,
-  ): { clientMessageId: string; eventId: string } | undefined {
+  ): DeliveredUserEventReservation | undefined {
     const key = transcriptUserContentSignature(text, images);
     const existing = this.deliveredUserEventIds.get(key);
     if (!existing || existing.length === 0) return undefined;

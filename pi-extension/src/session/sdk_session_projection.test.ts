@@ -840,12 +840,14 @@ describe("SdkSessionProjection delivered-user reservations", () => {
       .filter((message) => message?.type === "user_input");
   }
 
-  function bindDurableSession(projection: SdkSessionProjection): void {
-    projection.bindApi(makePi());
+  function bindDurableSession(projection: SdkSessionProjection) {
+    const pi = makePi();
+    projection.bindApi(pi);
     projection.bindSessionContext({
       ...makeSessionStartCtx(),
       sessionManager: { getSessionId: () => "session-1", buildContextEntries: () => [] },
     });
+    return pi;
   }
 
   function recordDeliveredUser(
@@ -864,6 +866,43 @@ describe("SdkSessionProjection delivered-user reservations", () => {
       text,
     })).toEqual({ status: "recorded" });
   }
+
+  test("message_end durably confirms reserved cli identity before full-turn settlement", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    const pi = bindDurableSession(projection);
+    projection.rememberDeliveredUserEvent(
+      "replacement prompt",
+      undefined,
+      "cli_replacement",
+      "event-replacement",
+      { ts: 5_500, streamingBehavior: "steer" },
+    );
+
+    projection.recordSdkMessageTranscriptEvents({
+      role: "user",
+      content: "replacement prompt",
+      timestamp: 9_000,
+    });
+
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      TRANSCRIPT_EVENT_CUSTOM_TYPE,
+      expect.objectContaining({
+        kind: "user_confirmed",
+        eventId: "event-replacement",
+        clientMessageId: "cli_replacement",
+        ts: 5_500,
+        streamingBehavior: "steer",
+      }),
+    );
+    expect(liveUserInputs(outputs)).toEqual([
+      expect.objectContaining({
+        id: "cli_replacement",
+        ts: 5_500,
+        streaming_behavior: "steer",
+      }),
+    ]);
+  });
 
   test("cancelling one equal-content reservation removes only that entry", () => {
     const outputs = makeOutputs();

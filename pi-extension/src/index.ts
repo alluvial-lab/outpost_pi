@@ -837,8 +837,15 @@ function _rememberDeliveredUserEvent(
   images: readonly { data: string; mime: string }[] | undefined,
   clientMessageId: string,
   eventId: string,
+  producer: { ts: number; streamingBehavior?: "steer" },
 ): () => void {
-  return _sdkSessionProjection.rememberDeliveredUserEvent(text, images, clientMessageId, eventId);
+  return _sdkSessionProjection.rememberDeliveredUserEvent(
+    text,
+    images,
+    clientMessageId,
+    eventId,
+    producer,
+  );
 }
 
 function _recordSdkMessageTranscriptEvents(message: SdkTranscriptMessage): void {
@@ -2574,11 +2581,16 @@ async function _attemptUserDeliveryOnce(prepared: PreparedUserDelivery, attemptS
     shouldSteer: prepared.shouldSteer,
   });
   const eventId = deterministicTranscriptEventId(attemptSessionId, "user_confirmed", prepared.msg.id);
+  const producedAt = Date.now();
   const cancelUserEventReservation = _rememberDeliveredUserEvent(
     prepared.msg.text,
     prepared.msg.images,
     prepared.msg.id,
     eventId,
+    {
+      ts: producedAt,
+      ...(prepared.shouldSteer ? { streamingBehavior: "steer" as const } : {}),
+    },
   );
   const rollbackAttempt = () => {
     turnSeed.rollback();
@@ -2623,7 +2635,13 @@ async function _attemptUserDeliveryOnce(prepared: PreparedUserDelivery, attemptS
     rollbackAttempt();
     return wake;
   }
-  _confirmUserDelivery(prepared.msg, prepared.shouldSteer, attemptSessionId, eventId);
+  _confirmUserDelivery(
+    prepared.msg,
+    prepared.shouldSteer,
+    attemptSessionId,
+    eventId,
+    producedAt,
+  );
   _deliveryDebugLog.log({
     tag: "msg_delivered",
     id: prepared.msg.id,
@@ -2638,9 +2656,9 @@ function _confirmUserDelivery(
   shouldSteer: boolean,
   attemptSessionId: string,
   eventId: string,
+  producedAt: number,
 ): void {
   const sessionId = attemptSessionId;
-  const producedAt = Date.now();
   const recorded = _recordDurableTranscriptEvent({
     kind: "user_confirmed",
     eventId,
