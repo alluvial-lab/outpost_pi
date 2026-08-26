@@ -63,6 +63,82 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
   return { promise, resolve };
 }
 
+describe("relay transport reconnect lifecycle", () => {
+  test("a transient boot connect failure keeps retrying until the relay returns", async () => {
+    vi.useFakeTimers();
+    try {
+      const relays: FakeRelay[] = [];
+      let attempts = 0;
+      const transport = createRelayTransportPort({
+        createRelay: () => {
+          const relay = new FakeRelay();
+          relay.connect = vi.fn(async () => {
+            attempts += 1;
+            if (attempts === 1) throw new Error("network unavailable during boot");
+          });
+          relays.push(relay);
+          return relay as unknown as RelayClient;
+        },
+        toWebSocketUrl: (url) => url,
+        backoffMs: () => 1,
+        now: () => 0,
+        setTimer: (cb, delayMs) => setTimeout(cb, delayMs),
+        clearTimer: (timer) => clearTimeout(timer),
+        emitRelayState: vi.fn(),
+      });
+
+      await transport.start({ relayUrl: "ws://relay.test", keypair });
+      expect(transport.status()).toBe("reconnecting");
+      expect(transport.hasPendingReconnect()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(relays).toHaveLength(2);
+      expect(transport.status()).toBe("connected");
+
+      await transport.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a link close during boot connect is observed and retried", async () => {
+    vi.useFakeTimers();
+    try {
+      const relays: FakeRelay[] = [];
+      let first = true;
+      const transport = createRelayTransportPort({
+        createRelay: () => {
+          const relay = new FakeRelay();
+          relay.connect = vi.fn(async () => {
+            if (first) {
+              first = false;
+              relay.emit("close");
+            }
+          });
+          relays.push(relay);
+          return relay as unknown as RelayClient;
+        },
+        toWebSocketUrl: (url) => url,
+        backoffMs: () => 1,
+        now: () => 0,
+        setTimer: (cb, delayMs) => setTimeout(cb, delayMs),
+        clearTimer: (timer) => clearTimeout(timer),
+        emitRelayState: vi.fn(),
+      });
+
+      await transport.start({ relayUrl: "ws://relay.test", keypair });
+      expect(transport.status()).toBe("reconnecting");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(relays).toHaveLength(2);
+      expect(transport.status()).toBe("connected");
+
+      await transport.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("relay transport control frames", () => {
   test("decodes peer presence control frames and rejects outer envelopes", () => {
     expect(decodeRelayControlFrame(JSON.stringify({ type: "peer_offline", peer: "peer-a", since_ts: 123 }))).toEqual({
