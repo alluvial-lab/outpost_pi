@@ -1,14 +1,14 @@
 ---
 id: backlog-app-no-outpostpi-deeplink-intent-filter
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-23
-updated: 2026-08-27
+updated: 2026-08-26
 ---
 
 # `outpostpi://` scheme parsed by the app but not declared as a VIEW intent-filter
@@ -38,5 +38,13 @@ viewmodel, and test that `adb shell am start -a android.intent.action.VIEW -d
 ## Verification boundary
 - The unit test proves the source manifest's VIEW/BROWSABLE scheme/host declaration. The debug APK merged manifest preserved the filter; no Android device/emulator is available here to run `adb shell am start` or verify automatic pair-sheet routing.
 
-## Blocker
+## Prior blocker (resolved)
 - The required full app verification command was attempted during the preceding app story and timed out in two unrelated `PairingPage` widget tests after 10 minutes each. The manifest contract test, source check, and debug APK build/merged-manifest inspection passed. Per test-integrity rules, this story remains `stage: implementing` until the required full suite is green.
+
+## Closure (2026-08-26)
+- Review verdict: PASS for the bounded manifest-filter slice; the exported activity declares `VIEW`, `DEFAULT`, `BROWSABLE`, and `outpostpi://pair`.
+- Stage: `done`.
+- Focused verification: `test/platform/android_manifest_intent_filter_test.dart` — 1/1 passed.
+- Shared full-suite evidence: `flutter test --exclude-tags e2e --concurrency=2` — 976/976 passed on the quiescent machine (commits `cfa060b5..64614030`; the earlier PairingPage hang was fixed in `7000f226`).
+- Operator UAT residue: debug merged-manifest inspection passed; `adb shell am start` dispatch cannot be run without a device/emulator and remains an operator UAT note, not an unmet criterion for this source-level slice.
+- Unmet acceptance criteria: none for the scoped declaration-only implementation. URI-to-ViewModel routing and iOS registration remain explicitly documented discrepancies/deferred follow-up.
