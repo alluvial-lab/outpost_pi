@@ -1,7 +1,7 @@
 ---
 id: feature-theme-token-cross-surface-contract-cockpit-theme-properties
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, branding, testing]
 parent: feature-theme-token-cross-surface-contract
 depends_on: [feature-theme-token-cross-surface-contract-app-theme-properties]
@@ -30,3 +30,24 @@ Cockpit-only syntax, terminal, git, and file roles remain native derived roles; 
 ## Ordering constraint
 
 Apply after the app checkpoint so both Flutter suites use one established fixture role vocabulary rather than inventing parallel aliases.
+
+## Implementation
+
+- Added a local test-only `ThemeContractFixture` using the established JSON
+  schema and color vocabulary; no production sharing package was introduced.
+- Replaced duplicated cockpit palette literals with direct-role comparisons for
+  `AppColors`, including the deliberate `panel3`/neutral shadcn accent versus
+  brand-green primary distinction.
+- Exercised `buildTokens` and `buildTheme` in both brightness modes, asserting
+  shadcn semantic slots and all four computed WCAG 2.1 ratios against the
+  fixture threshold.
+- Retained independent terminal cursor, syntax-color, and Space Mono checks.
+
+## Verification
+
+- `cd cockpit && flutter analyze` — PASS (zero issues).
+- `cd cockpit && flutter test` — PASS (286 tests).
+- `cd cockpit && dart format` — PASS.
+
+No production Dart code or deviation from the shared golden-fixture decision
+was required.
