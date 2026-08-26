@@ -229,6 +229,10 @@ final class TranscriptProjectionReducer {
           );
         }
       case UserMessageConfirmed():
+        // A confirmation is authoritative even when a no-echo backstop fired
+        // first. The timeout was a transport false-negative, so do not let the
+        // stale failure continue to control the optimistic rendering path.
+        _failedUsers.remove(event.clientMessageId);
         _acceptedUsers[event.clientMessageId] = event;
         _messageTimestamps[event.clientMessageId] = event.ts;
         if (!event.semanticPickup) {

@@ -480,6 +480,62 @@ void main() {
   });
 
   test(
+    'timeout failure clears on acceptance before semantic pickup, then delivers',
+    () {
+      final reducer = TranscriptProjectionReducer.empty(sessionId: session);
+      final steeringSubmission = UserMessageSubmitted(
+        eventId: 'local:steer-timeout',
+        sessionId: session,
+        ts: base,
+        clientMessageId: 'steer-timeout',
+        text: 'eventual steering delivery',
+        awaitingPickup: true,
+      );
+      final timeout = failed('steer-timeout', 'send timed out');
+      final accepted = UserMessageConfirmed(
+        eventId: 'server:accepted:steer-timeout',
+        sessionId: session,
+        ts: base.add(const Duration(seconds: 1)),
+        clientMessageId: 'steer-timeout',
+        text: 'eventual steering delivery',
+        streamingBehavior: UserMessageStreamingBehavior.steer,
+        semanticPickup: false,
+      );
+      final pickup = confirmed('steer-timeout', 'eventual steering delivery');
+
+      expect(
+        reducer.applyAll([steeringSubmission, timeout]).projection.messages,
+        [
+          const UserMsg(
+            id: 'steer-timeout',
+            text: 'eventual steering delivery',
+            status: UserMsgStatus.failed,
+          ),
+        ],
+      );
+      final afterAcceptance = reducer.applyAll([accepted]).projection;
+      expect(
+        afterAcceptance.messages,
+        isEmpty,
+        reason: 'an accepted message awaiting pickup must not stay failed',
+      );
+      expect(
+        afterAcceptance.steering,
+        const SteeringPending(
+          clientMessageId: 'steer-timeout',
+          text: 'eventual steering delivery',
+        ),
+      );
+
+      final afterPickup = reducer.applyAll([pickup]).projection;
+      expect(afterPickup.messages, [
+        const UserMsg(id: 'steer-timeout', text: 'eventual steering delivery'),
+      ]);
+      expect(afterPickup.steering, isA<NoSteering>());
+    },
+  );
+
+  test(
     'timeout marks pending local send failed while no confirmation exists',
     () {
       final projection = deriveTranscriptProjection(

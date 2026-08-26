@@ -3620,6 +3620,116 @@ void main() {
   );
 
   test(
+    'identity-blocked timeout clears when redelivery echoes before pickup',
+    () async {
+      const epk = 'identity-timeout-peer';
+      const sessionId = 'identity-timeout-session';
+      _sessionByEpk[epk] = sessionId;
+      final channel = _FakeChannel()..defaultSessionId = sessionId;
+      final conn = ConnectionManager(
+        factory: (_, _) async => channel,
+        storage: _FakeStorage(),
+        emitDebounce: Duration.zero,
+      );
+      final outbox = _MemoryOwnerDeliveryOutbox();
+      final sync = SyncService(
+        conn,
+        LocalBoxes(),
+        ownerDeliveryOutbox: outbox,
+        pendingSendTimeout: Duration.zero,
+      );
+      addTearDown(() {
+        sync.dispose();
+        conn.dispose();
+      });
+
+      // No active session identity yet: the send is held in the identity
+      // overlay and its local timeout makes the failure visible there.
+      await sync.activate(epk, 'main');
+      await sync.sendMessage(
+        'identity recovery',
+        streamingBehavior: UserMessageStreamingBehavior.steer,
+      );
+      final id = outbox.deliveries.keys.single;
+      await _waitUntil(
+        () =>
+            sync.identityPendingMessages.singleOrNull is UserMsg &&
+            (sync.identityPendingMessages.single as UserMsg).status ==
+                UserMsgStatus.failed,
+        reason: 'the identity-blocked send timeout projection',
+      );
+
+      expect((sync.identityPendingMessages.single as UserMsg).id, id);
+      expect(
+        (sync.identityPendingMessages.single as UserMsg).status,
+        UserMsgStatus.failed,
+      );
+
+      // Binding migrates the failed identity overlay into the canonical
+      // transcript and the durable outbox recovery resends the stable id.
+      conn.adopt(
+        channel,
+        const PeerRecord(
+          remoteEpk: epk,
+          sessionName: 'Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+        ),
+      );
+      channel.pushRaw(
+        PairOk(
+          inReplyTo: 'identity-timeout-pair',
+          sessionName: 'Pi',
+          sessionStartedAt: 1,
+          roomId: 'main',
+          sessionId: sessionId,
+        ),
+      );
+      await _waitUntil(
+        () =>
+            sync.activeSessionRef?.sessionId == sessionId &&
+            channel.sent.whereType<UserMessage>().any(
+              (message) => message.id == id,
+            ),
+        reason: 'identity binding and durable outbox redelivery',
+      );
+      expect(sync.identityPendingMessages, isEmpty);
+
+      // Steering acceptance is a delivery echo, not semantic pickup. The
+      // timeout failure must no longer render this accepted id as red.
+      channel.push(
+        UserInput(
+          id: id,
+          text: 'identity recovery',
+          streamingBehavior: UserMessageStreamingBehavior.steer,
+        ),
+      );
+      await _waitUntil(
+        () => !outbox.deliveries.containsKey(id),
+        reason: 'the accepted echo to clear the owner outbox',
+      );
+      expect(
+        messages(epk).where((row) => row.id == id),
+        isEmpty,
+        reason: 'accepted steering must wait for pickup, not remain failed',
+      );
+
+      // The timestamped pickup is the authoritative delivered row.
+      channel.push(UserInput(id: id, text: 'identity recovery', ts: 2));
+      await _waitUntil(
+        () => messages(epk).singleOrNull?.status == UserMsgStatus.confirmed,
+        reason: 'the semantic pickup to materialize the delivered row',
+      );
+      expect(messages(epk), [
+        isA<MessageRecord>()
+            .having((row) => row.id, 'id', id)
+            .having((row) => row.text, 'text', 'identity recovery')
+            .having((row) => row.status, 'status', UserMsgStatus.confirmed),
+      ]);
+    },
+  );
+
+  test(
     'late authoritative history replay after timeout confirms and removes failure',
     () async {
       final outbox = _MemoryOwnerDeliveryOutbox();
