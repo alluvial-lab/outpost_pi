@@ -1,7 +1,7 @@
 ---
 id: feature-cockpit-storage-json-vs-hive
 kind: feature
-stage: review
+stage: done
 tags: [cockpit]
 parent: null
 depends_on: []
@@ -505,3 +505,21 @@ concurrent theme-contract tests, generated plugin registrants, and other
 subproject work were preserved and excluded from all Cockpit storage commits.
 Identity storage was not touched; the mobile owner-identity work remains a
 separate surface. No blockers or implementation-discovery bounces occurred.
+
+## Review closure (2026-08-26)
+
+Standard one pass confirmed the concurrent-open split-brain blocker. It was
+fixed by caching the in-flight `Future<StateStore>` per store name, removing a
+failed future so retries are not poisoned, and adding deterministic concurrent-
+open and failed-retry regression tests. Break-it proof: the new concurrent-open
+test failed against the unfixed code (`identical()` expected `true`, actual
+`false`), then passed with the fix. All other review evidence was confirmed
+clean:
+
+- Atomic writes: complete snapshots use flushed same-directory temporary files and bounded atomic rename retry.
+- Quarantine: corrupt and unsupported JSON is quarantined before an empty store opens, with content-free diagnostics.
+- Marker-last idempotent migration: legacy export preserves sources and commits the migration marker only after all work completes.
+- Single legacy Hive import: `package:hive` remains confined to the one-shot migrator and is absent from live runtime paths.
+- Factory discipline: repositories open stores through one injected factory, which owns instance reuse and flush lifecycle.
+- Exit flush: requested app exit awaits the factory's `flushAll()`.
+- Wiring test unchanged: the storage-neutral bootstrap-error boundary test remains unchanged and passes.
