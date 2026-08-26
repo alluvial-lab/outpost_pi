@@ -1,7 +1,7 @@
 ---
 id: feature-public-flip-branding-and-exposure-brand-evidence-closure
 kind: story
-stage: implementing
+stage: done
 tags: [branding, site]
 parent: feature-public-flip-branding-and-exposure
 depends_on: [story-brand-site-sync]
@@ -34,18 +34,47 @@ mock capture.
 
 ## Acceptance evidence
 
-- [ ] `site/src/app/cockpit/page.tsx` contains no claim about a missing
+- [x] `site/src/app/cockpit/page.tsx` contains no claim about a missing
   screenshot and introduces no replacement image.
-- [ ] `git ls-files branding/screenshot-app.png` and tracked site screenshot
+- [x] `git ls-files branding/screenshot-app.png` and tracked site screenshot
   searches return no stale artifact.
-- [ ] Canonical site SVG comparisons pass and the app/Cockpit upstream hash
+- [x] Canonical site SVG comparisons pass and the app/Cockpit upstream hash
   comparisons retain zero identical icon/theme holdovers.
-- [ ] Schyler/Trajan searches remain empty and Space Mono remains wired across
+- [x] Schyler/Trajan searches remain empty and Space Mono remains wired across
   app, Cockpit, and site.
-- [ ] `cd site && pnpm lint && pnpm build` passes.
+- [x] `cd site && pnpm lint && pnpm build` passes.
 
 ## Ordering constraint
 
 `story-brand-site-sync` is already done and supplies the canonical site assets.
 This checkpoint may proceed in parallel with the public-tree exposure guard; the
 history rescrub waits for both so it rewrites the final feature tree.
+
+## Implementation run
+
+- Executed inline in the host because this harness exposes no implementation
+  subagent adapter; the one-file site correction remained an isolated write set.
+- Worker capability: `openai-codex/gpt-5.6-sol`, `xhigh`, caller-selected for
+  the security/exposure feature bundle.
+
+## Implementation notes
+
+- Removed only the stale sentence claiming a screenshot existed above the mesh
+  explanation. No image, icon, theme, or typography asset was added or changed.
+- Reused the completed branding evidence rather than duplicating the v0.5.0
+  remediation work.
+
+## Verification evidence
+
+- `cd site && corepack pnpm lint && corepack pnpm build` — PASS; Next 16
+  production build generated all 18 static routes.
+- Tracked screenshot checks — PASS: the retired screenshot is absent and site
+  source contains no stale screenshot claim or reference.
+- Canonical mark byte comparisons — PASS: both site SVG copies match
+  `branding/logo-full-dark.svg`.
+- Upstream holdover comparison — PASS: all 43 current overlapping app/Cockpit
+  platform icon candidates differ from `upstream/main`; the mobile theme also
+  differs.
+- Typography/content anchors — PASS: Schyler/Trajan are absent and Space Mono
+  remains wired in app, Cockpit, and site.
+- `git diff --check` for the owned files — PASS.

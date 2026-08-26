@@ -211,7 +211,6 @@ export default function CockpitPage() {
                 extension, which hands every agent the mesh tools. So an agent in
                 one pane can reach another — in the next pane, or paired in from a
                 different machine — and they collaborate over the Outpost-Pi mesh.
-                That&apos;s exactly what the screenshot up top is doing.
               </p>
             </div>
             <div className="reveal" style={{ marginTop: 24, maxWidth: 760 }}>
