@@ -1,7 +1,7 @@
 ---
 id: gate-security-postcss-override-vulnerable
 kind: story
-stage: review
+stage: done
 tags: [site, pi-extension, security]
 parent: null
 depends_on: []
@@ -33,5 +33,6 @@ verification against the Tailwind/Next toolchain.
 - Simplification: none; advanced the existing PostCSS security override from `8.5.18` to the patched `8.5.23` rather than removing the override needed to keep the dependency graphs aligned.
 - Discrepancies from design: none.
 - Adjacent issues parked: none.
+- Bounded inline review: no material blockers; both `site/package.json` and `pi-extension/package.json` were checked and contain no direct PostCSS pin or override, while the workspace overrides and lockfiles consistently resolve `8.5.23`.
 - Audit delta: baseline `pnpm audit --audit-level=low` reported one moderate PostCSS advisory in each graph; after lockfile regeneration and install, both audits report `No known vulnerabilities found`.
 - Verification: site `pnpm check` passed (lint, production build, and 18 Playwright tests; using the preinstalled browser cache); pi-extension `corepack pnpm typecheck`, `corepack pnpm test` (60 files, 1102 passed, 3 skipped), and `corepack pnpm build` passed.
