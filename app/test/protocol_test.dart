@@ -208,6 +208,34 @@ void main() {
     });
   });
 
+  group('Known error codes', () {
+    test('canonical delivery_retry fixture decodes with session identity', () {
+      final line = File('../protocol/fixtures/app-pi/server-messages.jsonl')
+          .readAsLinesSync()
+          .firstWhere((line) => line.contains('"code":"delivery_retry"'));
+      final message = decodeServer(line) as ErrorMessage;
+
+      expect(message.code, KnownErrorCode.deliveryRetry.wire);
+      expect(message.inReplyTo, 'msg-retry');
+      expect(message.sessionId, 'sdk-session-1');
+    });
+
+    test('future error code remains accepted as an open string', () {
+      final message =
+          ServerMessage.fromJson({
+                'type': 'error',
+                'session_id': 'session-1',
+                'in_reply_to': 'msg-future',
+                'code': 'future_delivery_signal',
+                'message': 'future signal',
+              })
+              as ErrorMessage;
+
+      expect(message.code, 'future_delivery_signal');
+      expect(KnownErrorCode.fromWire(message.code), isNull);
+    });
+  });
+
   group('UnsupportedTypeException', () {
     test('thrown for unknown type', () {
       expect(

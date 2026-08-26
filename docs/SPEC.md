@@ -48,6 +48,13 @@ Ed25519 in the app; Hive for local cache in Flutter; `flutter_modular` +
   nor a durable message queue. Unobserved app disconnects and cross-PC relay
   targets have no such queue and report offline normally (`transport_error:
   offline` for cross-PC relay forwarding).
+- **Durable app-owned owner-prompt recovery.** Before sending a
+  `user_message`, the app persists its stable id and payload in an encrypted,
+  room-scoped outbox. Recovery waits for authoritative live-room and canonical
+  session identity, retargets durably, and removes an entry only after a
+  matching-session confirmation is recorded. An extension restart fence emits
+  `delivery_retry` before SDK handoff. This app↔extension paired contract is
+  at-least-once, not exactly-once; the relay remains opaque and has no queue.
 - **Cross-PC is relay-mediated.** Direct PC-to-PC (WebRTC/QUIC) is long-term
   roadmap; the relay becomes the fallback then.
 

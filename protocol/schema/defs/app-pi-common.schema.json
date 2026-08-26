@@ -38,7 +38,8 @@
         "timeout",
         "internal_error",
         "session_mismatch",
-        "delivery_pending"
+        "delivery_pending",
+        "delivery_retry"
       ]
     },
     "errorCode": {

@@ -50,7 +50,8 @@ enum KnownErrorCode {
   timeout('timeout'),
   internalError('internal_error'),
   sessionMismatch('session_mismatch'),
-  deliveryPending('delivery_pending');
+  deliveryPending('delivery_pending'),
+  deliveryRetry('delivery_retry');
 
   const KnownErrorCode(this.wire);
   final String wire;

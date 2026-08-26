@@ -312,7 +312,23 @@ Replies (`action_ok` / `models_list`) only confirm dispatch. Visible effects arr
 | `timeout` | Operation exceeded its wait window |
 | `internal_error` | Permanent local-processing failure |
 | `session_mismatch` | The message belongs to another remote session. Pi rejects it fail-closed and returns its current `session_id`; the app treats the response as a convergence/control signal (not visible transcript content) — canonical rebind and `session_sync` are triggered by room-metadata rotation, never by the error's `session_id` |
-| `delivery_pending` | Transient signal: the message arrived during a session transition and was queued for replay; the app keeps the bubble pending and waits for the echo or an extended timeout |
+| `delivery_pending` | Transient signal: the live extension retained the message for local replay; the app keeps the bubble pending and waits for confirmation |
+| `delivery_retry` | Recoverable rejection: a restart fence refused the message before Pi SDK delivery. The app retains the durable outbox entry and retries the original id only after a fresh authoritative room/session snapshot |
+
+`delivery_pending` and `delivery_retry` assign recovery to different owners.
+The former promises extension-local replay; the latter promises no SDK handoff
+and leaves retry responsibility with the app. The app persists an encrypted,
+room-scoped outbox intent before first send and removes it only after a
+confirmation from the outbox entry's target session is durably recorded. A
+successor-session retry keeps the original client id but retargets the entry
+before send, so a late old-session echo cannot clear it. The relay continues to
+route opaque `outer.ct` frames and owns no message queue.
+
+This is an **at-least-once** no-loss posture. Same-session stable-id
+idempotency collapses ordinary duplicates, but a hard boundary after SDK
+acceptance and before every confirmation can cause the app to repeat intent in
+a successor session. App and extension must deploy together for the complete
+contract; neither mixed-endpoint direction provides it.
 
 ### Why typed actions rather than a generic picker
 
@@ -530,6 +546,8 @@ Details in `plan/04-pairing.md`.
 | Owner revokes Pi-A from the mesh | Pi-A detects it at the next `mesh_versions` poll, self-revokes, and exits gracefully |
 | Pi WS reconnects frequently (NAT timeout) | Relay deduplicates `peer_online` emission (offline→online transition only); client deduplicates identical snapshots |
 | Relay crashes | All cross-PC traffic stops; local agents continue operating (UDS) |
+| App exits with an unconfirmed owner prompt | The encrypted room-scoped outbox retains the original client id and payload; resend waits for a fresh live room with a canonical session id |
+| Extension starts managed shutdown while a prompt arrives | The restart fence returns `delivery_retry` before SDK delivery; the app keeps the outbox entry and retargets it after successor-room hydration |
 
 ---
 

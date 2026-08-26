@@ -114,6 +114,34 @@ describe("fixtures", () => {
 });
 
 describe("decodeServer validator-backed compatibility", () => {
+  test("decodes the canonical delivery_retry fixture", () => {
+    const fixture = readFileSync(
+      join(repoRoot, "protocol", "fixtures", "app-pi", "server-messages.jsonl"),
+      "utf8",
+    )
+      .split("\n")
+      .find((line) => line.includes('"code":"delivery_retry"'));
+
+    expect(fixture).toBeDefined();
+    expect(decodeServer(fixture!)).toEqual(expect.objectContaining({
+      type: "error",
+      code: "delivery_retry",
+      in_reply_to: "msg-retry",
+      session_id: "sdk-session-1",
+    }));
+  });
+
+  test("keeps error codes open for forward compatibility", () => {
+    const message = {
+      type: "error",
+      session_id: "session-1",
+      in_reply_to: "msg-future",
+      code: "future_delivery_signal",
+      message: "future signal",
+    };
+    expect(decodeServer(JSON.stringify(message))).toEqual(message);
+  });
+
   test("accepts drifted schema-valid server variants", () => {
     const messages = [
       { type: "user_message", id: "msg-1", session_id: "session-1", text: "hello" },

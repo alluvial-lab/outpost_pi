@@ -207,7 +207,7 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /export type StreamingBehavior = "steer";/);
   assert.match(output, /export type ByeReason = "peer_stop" \| "session_replaced" \| "shutdown";/);
   assert.match(output, /export type PairErrorCode = "token_expired" \| "token_consumed" \| "token_unknown" \| "bad_dh_sig" \| "internal_error";/);
-  assert.match(output, /export type KnownErrorCode = "tool_approval_required"[\s\S]*"session_mismatch" \| "delivery_pending";/);
+  assert.match(output, /export type KnownErrorCode = "tool_approval_required"[\s\S]*"session_mismatch" \| "delivery_pending" \| "delivery_retry";/);
   assert.match(output, /export type ErrorCode = KnownErrorCode \| \(string & \{\}\);/);
   assert.match(output, /export type SessionHistoryEvent =\n  \| HistoryUserInput\n  \| HistoryToolRequest\n  \| HistoryToolResult\n  \| HistoryAgentMessage\n  \| HistoryCompaction\n  \| HistoryError;/);
 
