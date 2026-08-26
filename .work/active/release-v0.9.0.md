@@ -1,7 +1,7 @@
 ---
 id: release-v0.9.0
 kind: release
-stage: planned
+stage: quality-gate
 tags: []
 parent: null
 depends_on: []
