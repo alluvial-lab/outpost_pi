@@ -4,7 +4,7 @@ enum AppThemeMode { system, light, dark }
 /// Select the code viewer's syntax theme family across light and dark variants.
 enum SyntaxThemeId { one, dracula, github }
 
-/// Represent immutable application preferences persisted locally through Hive.
+/// Represent immutable application preferences persisted by the settings contract.
 ///
 /// Apply changes through [copyWith]. A `null` font selects the design default.
 class AppSettings {
