@@ -26,6 +26,32 @@ independent, sooner backstop.
 TUI footer and app UI reported success while the wire path was broken. A green
 footer is not acceptance; an `authenticated` line in the relay log is.
 
+## Building the candidate artifacts
+
+`scripts/release-apk.sh --slim --upload-draft v<version>-rc.<n>` owns every
+distributable APK build (never ship from a battery-touched `app/build`).
+One-time / per-machine wiring it assumes:
+
+1. `~/.config/outpost-pi/release-upload.keystore.jks` + `keystore.env`
+   (mode 0600) — the release signer.
+2. `app/android/key.properties` — Gradle-side signing config, **gitignored
+   by design and NOT auto-created by the script**. Materialize from the env
+   before the first slim build of a machine:
+   ```bash
+   set -a; . ~/.config/outpost-pi/keystore.env; set +a; umask 177
+   printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+     "$OUTPOST_PI_UPLOAD_KEYSTORE" "$OUTPOST_PI_UPLOAD_KEYSTORE_PASSWORD" \
+     "$OUTPOST_PI_UPLOAD_KEY_ALIAS" "$OUTPOST_PI_UPLOAD_KEYSTORE_PASSWORD" \
+     > app/android/key.properties
+   ```
+3. Build from the tag (a `git worktree add <dir> v<ver>-rc.<n>` keeps the
+   main tree untouched); remove the worktree after — it then contains
+   key material.
+
+Output: `outpost-<version>-<code>.apk` (fat debug) + `outpost-<version>-<code>-arm64.apk`
+(signed slim release) attached to a **draft** prerelease on the tag;
+publishing is the operator gate.
+
 ## App↔Pi release smoke (the common case)
 
 For a release that touches the app↔Pi path, the smoke exercises the pairing →
