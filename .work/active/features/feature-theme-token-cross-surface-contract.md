@@ -1,7 +1,7 @@
 ---
 id: feature-theme-token-cross-surface-contract
 kind: feature
-stage: review
+stage: done
 tags: [app, cockpit, branding, testing]
 parent: null
 depends_on: []
@@ -271,7 +271,9 @@ Completed the serial checkpoints in dependency order:
 
 Each child advanced directly to `done` with its own implementation commit:
 `152cd56d`, `c5337b4a`, and `88dbef69` respectively. No implementation
-blockers or design deviations were recorded.
+blockers or design deviations were recorded. Corrective commit `732a6686`
+also removed the canonical-color override from the rasterizer, keeping
+canonical SVG colors authoritative.
 
 ## Integrated verification
 
@@ -284,5 +286,60 @@ blockers or design deviations were recorded.
 - `cd site && corepack pnpm lint` — PASS.
 - `cd site && corepack pnpm build` — PASS.
 
-The feature is now review-ready; effective review weight is `standard` from
-the autopilot caller/default policy.
+## Review closure
+
+Standard one-pass review is closed. Receiver adjudication confirmed all
+review findings; this permitted fix-verify pass applied each correction with
+no re-review.
+
+### Findings fixed
+
+1. Cockpit now maps `accentSoft` to the shared `accentMuted` role, and the
+   regression test proves an `accentSoft`-only drift fails the contract check.
+2. CSS parsing now accepts only the documented contract grammar and rejects
+   declarations in additional selectors instead of relying on cascade
+   computation.
+3. Canonical SVG parsing now rejects unexpected semantic attributes, including
+   `transform`, and projection validation rejects mark geometry drift in the
+   full-dark, full-light, monochrome, and banner SVGs.
+4. `LogoMark` consumes the generated canonical TypeScript projection; the
+   synchronizer validates all four mark-bearing SVG projections against
+   `branding/logo-foreground.svg`.
+5. Checked-in parser regressions cover stale fixtures, unsupported CSS grammar,
+   unexpected SVG attributes, missing primitives, and deterministic outputs.
+6. Pattern references, `AGENTS.md`, and `branding/README.md` describe the
+   fixture/synchronizer and single-canonical/projection model.
+7. The summary records corrective commit `732a6686`.
+
+### Break-it proof
+
+Each scratch mutation was reverted before closure:
+
+- Changing only Cockpit `accentSoft` to `0x2474CC9D` made the focused theme
+  test exit 1 with `dark role accentMuted drifted from the shared fixture`.
+- Appending `:root { --color-accent: #FFFFFF; }` to `tokens.css` made
+  `sync-brand-contracts.py --check` exit 1 with `Unsupported CSS grammar
+  outside the canonical contract blocks`.
+- Adding `transform="translate(10 0)"` to the canonical path made the check
+  exit 1 with `edge path has unsupported attribute(s): transform`.
+- Changing one path coordinate in `logo-full-dark.svg` made the check exit 1
+  with `edge path drifted from canonical geometry`.
+
+### Verification
+
+- `python3 scripts/sync-brand-contracts.py --check` — PASS.
+- `python3 -m unittest discover -s scripts -p 'test_*.py'` — PASS (5 tests).
+- Cockpit focused theme test — PASS; `flutter analyze` — PASS; full
+  `flutter test` — PASS (314 tests in the concurrent working tree).
+- App focused theme test — PASS. A full app rerun was attempted but timed out
+  in the unrelated pairing view-model suite after 973 tests while other app
+  work was dirty; no app files changed in this fix.
+- Site `corepack pnpm lint && corepack pnpm build` — PASS.
+- `pnpm check` was not required because no site test configuration changed.
+
+### Commits
+
+- `afc3e0ed` — Cockpit accentMuted fixture mapping and regression proof.
+- `849efdec` — strict CSS/SVG parser, projection validation, parser tests, CI.
+- `58b30709` — canonical mark projection consumption and current-state docs.
+- Closure commit: this commit.
