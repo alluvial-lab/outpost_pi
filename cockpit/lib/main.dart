@@ -24,35 +24,58 @@ import 'package:window_manager/window_manager.dart';
 /// inherit this directory via `Hive.initFlutter`.
 const String hiveSubdir = kDebugMode ? 'cockpit-debug' : 'cockpit';
 
-Future<void> main() async {
+typedef BootstrapTask = Future<void> Function();
+typedef BootstrapPreflight = Future<void> Function();
+typedef BootstrapStoreOpener = Future<Object?> Function(String name);
+
+/// Run Cockpit startup and render a recoverable error when it cannot complete.
+///
+/// The bootstrap task is injectable so the composition boundary can be tested
+/// without depending on a particular persistence implementation.
+Future<void> main() => runCockpit();
+
+/// Execute the startup boundary that production uses before showing the app.
+///
+/// Startup failures are consumed here, after the complete bootstrap task has
+/// unwound, so they cannot escape as an unhandled asynchronous exception.
+Future<void> runCockpit({BootstrapTask? bootstrap}) async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await _bootstrap();
+    await (bootstrap ?? bootstrapCockpit)();
   } catch (error, stack) {
     debugPrint('Cockpit bootstrap failed: $error\n$stack');
     runApp(BootstrapErrorApp(error: error));
   }
 }
 
-Future<void> _bootstrap() async {
-  // Plan 46 — initialize media_kit (libmpv) before any Player.
-  MediaKit.ensureInitialized();
+/// Initialize Cockpit and compose its production dependency graph.
+///
+/// [openStore] is the raw persistence boundary. The default adapter opens a
+/// Hive box, while tests can inject any store implementation and exercise the
+/// retry and error-rendering behavior without naming that backend. [preflight]
+/// isolates native startup preparation from that boundary for deterministic
+/// tests.
+Future<void> bootstrapCockpit({
+  BootstrapPreflight? preflight,
+  BootstrapStoreOpener? openStore,
+  int retryAttempts = defaultHiveOpenAttempts,
+  Duration retryDelay = const Duration(milliseconds: 300),
+}) async {
+  final prepare = preflight ?? _prepareBootstrap;
+  final open = openStore ?? _openHiveStore;
+  Future<Object?> openWithRetry(String name) => withFileSystemRetry(
+    () => open(name),
+    attempts: retryAttempts,
+    delay: retryDelay,
+  );
 
-  // Kills orphaned `pi --mode rpc` processes and language servers (LSP) from
-  // the previous cycle before any new spawn (covers hot restart and cold
-  // restart after a crash).
-  await PiProcessRegistry.cleanOrphans();
-  await LspProcessRegistry.cleanOrphans();
-  await PairingSeamCleanup.sweep();
+  await prepare();
 
-  // Own subdirectory; in debug mode separated from the production build. The
-  // feature boxes are opened by their own async builders (see
+  // The feature boxes are opened by their own async builders (see
   // buildCockpitModule); here only the settings box, which SettingsController
   // needs before the first frame.
-  await Hive.initFlutter(hiveSubdir);
-  final settingsBox = await openHiveBoxWithRetry<dynamic>(
-    HiveSettingsStore.boxName,
-  );
+  final settingsBox =
+      await openWithRetry(HiveSettingsStore.boxName) as Box<dynamic>;
 
   // Preferences loaded BEFORE the first frame → the app opens in the saved
   // theme (no flash). App-scoped: provided via `ModularApp.provide`, above the
@@ -60,7 +83,7 @@ Future<void> _bootstrap() async {
   final settings = SettingsController(HiveSettingsStore(settingsBox));
   await settings.load();
 
-  final winBox = await openHiveBoxWithRetry<dynamic>('window_state');
+  final winBox = await openWithRetry('window_state') as Box<dynamic>;
   await _setupWindow(winBox);
 
   // The only threaded value: lives in core (root-owned) and the features
@@ -80,6 +103,23 @@ Future<void> _bootstrap() async {
     ),
   );
 }
+
+Future<void> _prepareBootstrap() async {
+  // Plan 46 — initialize media_kit (libmpv) before any Player.
+  MediaKit.ensureInitialized();
+
+  // Kills orphaned `pi --mode rpc` processes and language servers (LSP) from
+  // the previous cycle before any new spawn (covers hot restart and cold
+  // restart after a crash).
+  await PiProcessRegistry.cleanOrphans();
+  await LspProcessRegistry.cleanOrphans();
+  await PairingSeamCleanup.sweep();
+
+  // Own subdirectory; in debug mode separated from the production build.
+  await Hive.initFlutter(hiveSubdir);
+}
+
+Future<Object?> _openHiveStore(String name) => Hive.openBox<dynamic>(name);
 
 /// Hides the native title bar and restores the last window size.
 Future<void> _setupWindow(Box<dynamic> winBox) async {

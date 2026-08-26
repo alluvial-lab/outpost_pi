@@ -1,7 +1,7 @@
 ---
 id: gate-review-cockpit-bootstrap-wiring-test
 kind: story
-stage: implementing
+stage: review
 tags: [cockpit, testing]
 parent: null
 depends_on: []
@@ -26,3 +26,22 @@ retry exhaustion path.
 Injectable bootstrap/open boundary test: drive repeated `FileSystemException`s
 through retry exhaustion and assert `BootstrapErrorApp` renders with no
 unhandled throw, exercising the actual wiring in `cockpit/lib/main.dart`.
+
+## Implementation notes
+
+- Execution capability: `openai-codex/gpt-5.6-luna` xhigh, inline; focused
+  single-subproject change with a clear test seam.
+- Review weight: standard (source: default).
+- Files changed: `cockpit/lib/main.dart`,
+  `cockpit/test/domain/crash_recovery_test.dart`.
+- Tests added: a widget test injects a store opener into the production
+  bootstrap, drives three `FileSystemException`s through the production retry
+  boundary, and verifies the production error runner renders `BootstrapErrorApp`
+  without an escaping future.
+- Simplification: the production `runCockpit` catch boundary is now directly
+  reusable by the test; no unrelated test machinery was removed.
+- Discrepancies from design: a preflight seam was added so the widget test can
+  bypass unavailable native media initialization while still executing the
+  actual bootstrap/open/retry/error wiring. Production keeps the existing
+  preflight by default.
+- Adjacent issues parked: none.
