@@ -105,15 +105,31 @@ extension drain checkpoint under one parent-feature owner.
   final authoritative non-e2e verification and this story's stage transition
   remain pending that disjoint concurrent work settling.
 
-## Blocker
+## Prior blocker
 
 - The required combined `flutter test --exclude-tags e2e --concurrency=2`
-  cannot currently complete green because the independently tracked
-  `story-identity-boot-restore-race` is still `stage: implementing` with its own
-  full-suite blocker. Its new Owner restore-grace path leaves two PairingPage
-  widget tests hanging until their 10-minute per-test timeout; multiple real
-  full runs reached 968+ otherwise-passing tests before those same two failures.
-  This behavior assertion is not waived. All outbox-owned focused suites and
-  Flutter analysis are green, and implementation is committed so the boundary
-  E2E proof can continue; keep this child at `implementing` until the identity
-  story settles and the exact required full app command passes.
+  could not complete green while the independently tracked
+  `story-identity-boot-restore-race` remained under repair. Its Owner
+  restore-grace path left two PairingPage widget tests hanging until their
+  per-test timeout. That disjoint blocker is now resolved and the exact required
+  full app command passes.
+
+## Outbox verification follow-up (2026-08-26)
+
+Full-load diagnosis found one production interaction in the outbox recovery
+path: returning to a session rebuilt an immediately-due timeout from an old
+pending row, but recovery's successful resend unconditionally replaced it with a
+fresh timeout window. The overdue bubble therefore failed or remained pending
+according to scheduler order.
+
+`SyncService` now refreshes the resend timeout only when the durable delivery is
+still inside its original confirmation window. Overdue deliveries retain the
+already-due backstop while still resending the stable id. A deterministic test
+backdates both transcript and outbox facts and uses a fake timer; it timed out
+against the pre-fix production path and passes after the repair.
+
+Final evidence on the combined tree: `sync_service_test.dart` passed 115/115
+twice at `--concurrency=2`, the full non-e2e suite passed 976/976 at
+`--concurrency=2`, and `flutter analyze --no-pub` reported no issues. This note
+records the outbox regression repair; the parent autopilot owner retains control
+of this child story's stage transition.
