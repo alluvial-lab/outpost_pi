@@ -1,7 +1,7 @@
 ---
 id: feature-cruft-consolidated-cleanup
 kind: feature
-stage: implementing
+stage: review
 tags: [refactor, cleanup]
 parent: null
 depends_on: []
@@ -364,3 +364,11 @@ other hot-reload lifecycle tests remain unchanged.
    (`depends_on: [feature-cruft-consolidated-cleanup-step-1-app]`).
 3. `feature-cruft-consolidated-cleanup-step-3-pi-extension` — expiry boundary
    test (`depends_on: [feature-cruft-consolidated-cleanup-step-2-relay]`).
+
+## Implementation summary
+
+All three children are complete: the app cleanup landed in `98a3b1f5`, the
+relay cleanup in `cec28e0c`, and the pi-extension expiry coverage in
+`1dc518a3`; the pi-extension blocker was resolved by the full-suite rerun
+recorded in `2df34e54` (typecheck, 1,102 passed / 3 skipped across 60 Vitest
+files, and build green with no waivers).
