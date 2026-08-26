@@ -116,7 +116,8 @@ only picked up by a full pi process restart. See
 
 Identity v2.0 — **Phosphor Beacon** (dark `#0D1210` / light `#F3F6F3`,
 accent `#74CC9C`/`#256E47`), **Constellation III** mark, **Space Mono**
-everywhere. Contract: `.mockups/design-system/tokens.css`; canonical SVGs in
+across product surfaces; the generated banner PNG uses the approved Noto Sans
+Mono fallback on the build VM. Contract: `.mockups/design-system/tokens.css`; canonical SVGs in
 `branding/`; regeneration: `scripts/generate-brand-assets.py` (Pillow — no
 external SVG converter needed). Do not commit generated `dist/`, build
 artifacts, or secrets.

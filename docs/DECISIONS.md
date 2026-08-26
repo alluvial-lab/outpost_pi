@@ -38,9 +38,10 @@ resolved they move here.
 ## Provenance & repository
 
 - Outpost-Pi is derived from Jacob Moura's `remote_pi` (MIT-licensed); the
-  LICENSE and NOTICE preserve that attribution. Work is pushed only to
-  `origin` (`https://github.com/alluvial-lab/outpost_pi.git`), the only configured
-  remote.
+  LICENSE and NOTICE preserve that attribution. The durable repository policy is
+  that work is pushed only to `origin`
+  (`https://github.com/alluvial-lab/outpost_pi.git`); `upstream` is a fetch-only
+  provenance remote for the absorbed `remote_pi` source.
 - **Patchbay is the long-term play.** The bold refactor hardens the product's
   structure in the short term; patchbay is the intended successor direction.
   Bold-refactor design should avoid decisions that block a future patchbay
