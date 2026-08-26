@@ -1,7 +1,7 @@
 ---
 id: gate-review-cockpit-bootstrap-wiring-test
 kind: story
-stage: drafting
+stage: implementing
 tags: [cockpit, testing]
 parent: null
 depends_on: []
