@@ -1,8 +1,11 @@
 # Branding — Outpost-Pi
 
 Official visual identity, **v2.0 — Phosphor Beacon** (locked 2026-08-14).
-Source of truth: SVG files (scalable). Derived PNGs generated on-VM via the
-Pillow rasterizer (see below) — no external converter required.
+Source of truth: `logo-foreground.svg` is the single canonical Constellation III
+geometry. The other mark-bearing SVGs are checked projections: full-bleed and
+monochrome variants may change colors, while `banner.svg` adds layout and copy.
+Derived PNGs are generated on-VM via the Pillow rasterizer (see below) — no
+external converter required.
 
 ## Identity story
 
@@ -56,16 +59,18 @@ beacon is lit."
 
 | File | Content | Use |
 |---|---|---|
-| `logo-full-dark.svg` | Full-bleed dark (#0D1210 bg) | Primary logo: README, store, social |
-| `logo-full-light.svg` | Full-bleed light (#F3F6F3 bg) | Light-mode surfaces |
-| `logo-foreground.svg` | Mark on transparency | Android adaptive foreground, iOS compose |
+| `logo-foreground.svg` | **Canonical** mark on transparency | Geometry source; Android adaptive foreground, iOS compose |
+| `logo-full-dark.svg` | Full-bleed dark (#0D1210 bg) projection | Primary logo: README, store, social |
+| `logo-full-light.svg` | Full-bleed light (#F3F6F3 bg) projection | Light-mode surfaces |
 | `logo-background.svg` | Solid #0D1210 | Android adaptive background layer |
-| `logo-monochrome.svg` | White silhouette | Android 13+ themed icon; single-color contexts |
-| `banner.svg` | 1280×640: mark + wordmark + tagline + URL | GitHub README hero, social preview |
+| `logo-monochrome.svg` | White silhouette projection | Android 13+ themed icon; single-color contexts |
+| `banner.svg` | 1280×640 projection: mark + wordmark + tagline + URL | GitHub README hero, social preview |
 
 ## PNG generation (on-VM, no external tools)
 
-The mark is rects/circles/lines only — the Pillow rasterizer
+The mark geometry is read from `logo-foreground.svg`; the synchronizer validates
+mark-bearing SVG projections before generation. The mark is rects/circles/lines
+only — the Pillow rasterizer
 (`python3` + Pillow, present on the VM) draws it natively at 4× and downscales
 with LANCZOS. Standard exports:
 
