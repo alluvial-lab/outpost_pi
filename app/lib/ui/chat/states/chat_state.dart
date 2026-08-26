@@ -41,6 +41,9 @@ class ChatReady extends ChatState {
   /// Local transcript persistence warning; null while writes are healthy.
   final String? persistenceWarning;
 
+  /// True when the server's bounded replay omitted older transcript events.
+  final bool historyTruncated;
+
   const ChatReady({
     required this.messages,
     this.streaming,
@@ -53,6 +56,7 @@ class ChatReady extends ChatState {
     this.peerOfflineReason,
     this.queuedText,
     this.persistenceWarning,
+    this.historyTruncated = false,
   });
 
   bool get isOffline => status.transport is! ChatTransportOnline;
@@ -66,6 +70,7 @@ class ChatReady extends ChatState {
     String? peerOfflineReason,
     String? queuedText,
     String? persistenceWarning,
+    bool? historyTruncated,
     bool clearStreaming = false,
     bool clearPeerOffline = false,
     bool clearQueuedText = false,
@@ -82,6 +87,7 @@ class ChatReady extends ChatState {
     persistenceWarning: clearPersistenceWarning
         ? null
         : (persistenceWarning ?? this.persistenceWarning),
+    historyTruncated: historyTruncated ?? this.historyTruncated,
   );
 
   @override
@@ -93,7 +99,8 @@ class ChatReady extends ChatState {
       other.pairingRevoked == pairingRevoked &&
       other.peerOfflineReason == peerOfflineReason &&
       other.queuedText == queuedText &&
-      other.persistenceWarning == persistenceWarning;
+      other.persistenceWarning == persistenceWarning &&
+      other.historyTruncated == historyTruncated;
 
   @override
   int get hashCode => Object.hash(
@@ -104,6 +111,7 @@ class ChatReady extends ChatState {
     peerOfflineReason,
     queuedText,
     persistenceWarning,
+    historyTruncated,
   );
 }
 

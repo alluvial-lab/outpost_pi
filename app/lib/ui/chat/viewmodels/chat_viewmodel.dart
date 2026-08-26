@@ -496,6 +496,7 @@ class ChatViewModel extends ViewModel<ChatState> {
       peerOfflineReason: _peerOfflineReason,
       queuedText: _queuedText,
       persistenceWarning: _persistenceWarning,
+      historyTruncated: _sync.historyTruncated,
     );
   }
 

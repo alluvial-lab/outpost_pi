@@ -146,6 +146,7 @@ class SyncService extends Service {
   int _liveTurnObservationEpoch = 0;
   RemoteSessionRef? _persistenceDegradedRef;
   _HistoryHydrationWindow? _historyHydrationWindow;
+  bool _historyTruncated = false;
 
   // Streaming — in-memory only (#7).
   final StringBuffer _chunkBuffer = StringBuffer();
@@ -306,6 +307,9 @@ class SyncService extends Service {
   /// Return the fully canonical active session required for transcript writes.
   RemoteSessionRef? get activeSessionRef => _activeRef;
 
+  /// Whether the active session's bounded replay omitted older transcript events.
+  bool get historyTruncated => _historyTruncated;
+
   /// Return identity-blocked submissions visible for the active peer and room.
   List<ChatMessage> get identityPendingMessages =>
       List<ChatMessage>.unmodifiable(_visibleIdentityPendingMessages());
@@ -386,6 +390,7 @@ class SyncService extends Service {
     _indexLoaded = false;
     _resetTranscriptReducer();
     _historyHydrationWindow = null;
+    _setHistoryTruncated(false);
 
     if (nextRef != null) {
       await _loadIndex(nextRef, generation);
@@ -2312,6 +2317,9 @@ class SyncService extends Service {
         _finishHistoryHydration(hydration);
       }
     });
+    if (_isCurrentLifecycle(generation, ref)) {
+      _setHistoryTruncated(history.truncated);
+    }
   }
 
   _HistoryHydrationWindow _admitHistoryHydration(
@@ -2449,6 +2457,14 @@ class SyncService extends Service {
     SteeringPending(:final clientMessageId) => clientMessageId,
     NoSteering() => null,
   };
+
+  void _setHistoryTruncated(bool truncated) {
+    if (_historyTruncated == truncated) return;
+    _historyTruncated = truncated;
+    if (!_eventController.isClosed) {
+      _eventController.add(SessionHistoryTruncationChanged(truncated));
+    }
+  }
 
   void _setTranscriptSteering(SteeringProjection next) {
     if (_transcriptSteering == next) return;
