@@ -159,6 +159,24 @@ export const CLIENT_MESSAGE_TYPES = [
   "capture_upload_chunk",
   "capture_upload_end",
 ] as const;
+export const CLIENT_MESSAGE_DISCRIMINATORS = {
+  pair_request: "pair_request",
+  user_message: "user_message",
+  queued_message_set: "queued_message_set",
+  queued_message_clear: "queued_message_clear",
+  approve_tool: "approve_tool",
+  cancel: "cancel",
+  ping: "ping",
+  session_sync: "session_sync",
+  session_new: "session_new",
+  session_compact: "session_compact",
+  model_set: "model_set",
+  thinking_set: "thinking_set",
+  list_models: "list_models",
+  capture_upload_begin: "capture_upload_begin",
+  capture_upload_chunk: "capture_upload_chunk",
+  capture_upload_end: "capture_upload_end",
+} as const;
 export type ClientMessageType = (typeof CLIENT_MESSAGE_TYPES)[number];
 export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = [
   "user_message",

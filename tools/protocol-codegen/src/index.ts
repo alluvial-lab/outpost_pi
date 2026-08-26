@@ -939,6 +939,7 @@ function publicRegistryForFamily(family: OutpostPiIrFamily): PublicFamilyRegistr
     case "ClientMessage":
       return {
         constName: "CLIENT_MESSAGE_TYPES",
+        discriminatorsName: "CLIENT_MESSAGE_DISCRIMINATORS",
         typeName: "ClientMessageType",
         validatorsName: "CLIENT_MESSAGE_VALIDATORS",
         predicateName: "isClientMessage",

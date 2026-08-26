@@ -25,6 +25,7 @@ interface GeneratedProtocolModule {
   readonly relayControlTypes?: readonly string[];
   readonly RELAY_CONTROL_DISCRIMINATORS?: Readonly<Record<string, string>>;
   readonly CLIENT_MESSAGE_TYPES?: readonly string[];
+  readonly CLIENT_MESSAGE_DISCRIMINATORS?: Readonly<Record<string, string>>;
   readonly SERVER_MESSAGE_TYPES?: readonly string[];
   readonly SERVER_MESSAGE_DISCRIMINATORS?: Readonly<Record<string, string>>;
   readonly SESSION_SCOPED_CLIENT_MESSAGE_TYPES?: readonly string[];
@@ -112,13 +113,14 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
 
   assert.equal(second, first);
   assert.match(first, /export const CLIENT_MESSAGE_TYPES = \[/);
-  assert.doesNotMatch(first, /CLIENT_MESSAGE_DISCRIMINATORS/);
+  assert.match(first, /export const CLIENT_MESSAGE_DISCRIMINATORS = \{[\s\S]*pong: "pong",[\s\S]*error: "error",[\s\S]*\};/);
   assert.match(first, /export const appPiClientTypes = CLIENT_MESSAGE_TYPES;/);
   assert.match(first, /export function isClientMessage\(value: unknown\): value is ClientMessage/);
   assert.doesNotMatch(first, /function isFiniteNumber/);
 
   const generated = await importGeneratedProtocol(first);
   assert.deepEqual(generated.CLIENT_MESSAGE_TYPES, ["pong", "error"]);
+  assert.deepEqual(generated.CLIENT_MESSAGE_DISCRIMINATORS, { pong: "pong", error: "error" });
   assert.deepEqual(generated.SESSION_SCOPED_CLIENT_MESSAGE_TYPES, ["pong"]);
   assert.equal(generated.isClientMessage?.({ type: "pong", in_reply_to: "reply-1" }), true);
   assert.equal(generated.isClientMessage?.({ type: "error", message: "bad", code: "invalid_message" }), true);
@@ -223,7 +225,7 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
 
   assert.match(output, /export type ClientMessage =\n  \| PairRequest\n  \| UserMessage\n  \| QueuedMessageSet\n  \| QueuedMessageClear\n  \| ApproveTool\n  \| Cancel\n  \| Ping\n  \| SessionSync\n  \| SessionNew\n  \| SessionCompact\n  \| ModelSet\n  \| ThinkingSet\n  \| ListModels\n  \| CaptureUploadBegin\n  \| CaptureUploadChunk\n  \| CaptureUploadEnd;/);
   assert.match(output, /export type ServerMessage =\n  \| PairOk\n  \| PairError\n  \| UserInput\n  \| UserMessage\n  \| QueuedMessageState\n  \| AgentChunk\n  \| AgentDone\n  \| AgentMessage\n  \| Compaction\n  \| ToolRequest\n  \| ToolResult\n  \| ErrorMessage\n  \| Cancelled\n  \| Pong\n  \| Bye\n  \| SessionHistory\n  \| ActionOk\n  \| ActionError\n  \| ModelsList\n  \| CaptureUploadAck\n  \| CaptureUploadError;/);
-  assert.doesNotMatch(output, /CLIENT_MESSAGE_DISCRIMINATORS/);
+  assert.match(output, /export const CLIENT_MESSAGE_DISCRIMINATORS = \{[\s\S]*pair_request: "pair_request",[\s\S]*capture_upload_end: "capture_upload_end",[\s\S]*\};/);
   assert.match(output, /export const SERVER_MESSAGE_TYPES = \[/);
   assert.match(output, /export const SERVER_MESSAGE_DISCRIMINATORS = \{[\s\S]*pair_ok: "pair_ok",[\s\S]*pair_error: "pair_error",[\s\S]*bye: "bye",/);
   assert.match(output, /export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = \[/);
@@ -319,6 +321,8 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "capture_upload_ack",
     "capture_upload_error",
   ]);
+  assert.equal(generated.CLIENT_MESSAGE_DISCRIMINATORS?.pair_request, "pair_request");
+  assert.equal(generated.CLIENT_MESSAGE_DISCRIMINATORS?.capture_upload_end, "capture_upload_end");
   assert.equal(generated.SERVER_MESSAGE_DISCRIMINATORS?.pair_ok, "pair_ok");
   assert.equal(generated.SERVER_MESSAGE_DISCRIMINATORS?.pair_error, "pair_error");
   assert.equal(generated.SERVER_MESSAGE_DISCRIMINATORS?.bye, "bye");
