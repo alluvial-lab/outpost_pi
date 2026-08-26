@@ -5849,10 +5849,13 @@ void main() {
       () async {
         final s = await setup();
         s.ch.push(AgentChunk(inReplyTo: 'u_history', delta: 'partial'));
-        await _settle();
+        await _waitUntil(
+          () => s.sync.streaming?.buffer == 'partial',
+          reason: 'the history fixture stream to become active',
+        );
         expect(s.sync.turnProjection.working, isTrue);
 
-        s.ch.push(
+        await s.sync.debugApplyHistory(
           SessionHistory(
             sessionId: s.sessionId,
             inReplyTo: 'sync-history-terminal',
@@ -5882,10 +5885,13 @@ void main() {
       () async {
         final s = await setup();
         s.ch.push(AgentChunk(inReplyTo: 'u_history_compact', delta: 'partial'));
-        await _settle();
+        await _waitUntil(
+          () => s.sync.streaming?.buffer == 'partial',
+          reason: 'the compaction-replay stream to become active',
+        );
         expect(s.sync.turnProjection.working, isTrue);
 
-        s.ch.push(
+        await s.sync.debugApplyHistory(
           SessionHistory(
             sessionId: s.sessionId,
             inReplyTo: 'sync-history-compaction-terminal',
@@ -5900,7 +5906,10 @@ void main() {
             eos: true,
           ),
         );
-        await _settle();
+        await _waitUntil(
+          () => !s.sync.turnProjection.working && s.sync.streaming == null,
+          reason: 'the replayed compaction terminal projection',
+        );
 
         expect(s.sync.turnProjection.working, isFalse);
         expect(s.sync.turnProjection.cancelTargetId, isNull);
@@ -5913,11 +5922,13 @@ void main() {
     test('session switch projects idle', () async {
       final s = await setup();
       s.ch.push(AgentChunk(inReplyTo: 'u_switch', delta: 'partial'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'partial',
+        reason: 'the session-switch fixture stream to become active',
+      );
       expect(s.sync.turnProjection.working, isTrue);
 
       await s.sync.activate('epk_projection_switch', 'main');
-      await _settle();
 
       expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.turnProjection.cancelTargetId, isNull);
@@ -5931,7 +5942,10 @@ void main() {
         (status) => status is StatusRetrying,
       );
       s.ch.push(AgentChunk(inReplyTo: 'u_disconnect', delta: 'partial'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'partial',
+        reason: 'the disconnect fixture stream to become active',
+      );
       expect(s.sync.turnProjection.working, isTrue);
 
       await s.ch.close();
