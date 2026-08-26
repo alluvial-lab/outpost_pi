@@ -97,10 +97,11 @@ void main() {
   group('relay_config — orderedRelayUrls', () {
     test('keeps the configured endpoint first and removes wire duplicates', () {
       expect(
-        orderedRelayUrls(
-          'https://tailnet.example',
-          ['http://lan.example', 'wss://tailnet.example', 'http://lan.example'],
-        ),
+        orderedRelayUrls('https://tailnet.example', [
+          'http://lan.example',
+          'wss://tailnet.example',
+          'http://lan.example',
+        ]),
         ['https://tailnet.example', 'http://lan.example'],
       );
     });
