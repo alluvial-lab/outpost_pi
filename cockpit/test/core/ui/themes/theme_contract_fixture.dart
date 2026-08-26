@@ -141,6 +141,7 @@ Map<String, Color> cockpitContractRoles(AppColors colors) => <String, Color>{
   'textSecondary': colors.text2,
   'accent': colors.accent,
   'accentHover': colors.accentText,
+  'accentMuted': colors.accentSoft,
   'onAccent': colors.onAccent,
   'success': colors.ok,
   'warning': colors.warn,

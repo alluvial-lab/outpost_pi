@@ -13,6 +13,7 @@ void main() {
     final fixture = ThemeContractFixture.load();
     for (final mode in _themeModes) {
       final actual = cockpitContractRoles(mode.colors);
+      expect(actual.keys, contains('accentMuted'));
       for (final entry in actual.entries) {
         expect(
           entry.value,
@@ -22,6 +23,21 @@ void main() {
         );
       }
     }
+  });
+
+  test('accentSoft drift is caught by the shared contract mapping', () {
+    final fixture = ThemeContractFixture.load();
+    final drifted = AppColors.dark.copyWith(
+      accentSoft: const Color(0xFF123456),
+    );
+
+    expect(
+      () => expect(
+        cockpitContractRoles(drifted)['accentMuted'],
+        fixture.color(Brightness.dark, 'accentMuted'),
+      ),
+      throwsA(anything),
+    );
   });
 
   test('public token and theme builders resolve the same semantic theme', () {
