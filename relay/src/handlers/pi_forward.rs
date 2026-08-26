@@ -3,7 +3,8 @@
 //! Pi-A sends a control frame:
 //!
 //! ```jsonc
-//! { "type": "pi_envelope", "to_pc": "<Pi-B-pubkey-b64>", "envelope": { ... } }
+//! { "type": "pi_envelope", "to_pc": "<Pi-B-pubkey-b64>", "to_room": "main",
+//!   "envelope": { ... } }
 //! ```
 //!
 //! The relay authenticates Pi-A via the existing challenge-response (so we
