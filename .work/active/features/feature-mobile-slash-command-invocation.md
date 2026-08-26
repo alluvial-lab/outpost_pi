@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-slash-command-invocation
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, bug]
 parent: null
 depends_on: []
@@ -39,10 +39,11 @@ The Herdr fleet adoption that the second checkpoint left as an operational
 follow-up later landed in commit `310b20d8`: cold starts use the restart wrapper
 for every project pane and `scripts/wrap-agents.sh` converts already-running
 idle bare agents. The remaining active child,
-`story-mobile-extension-command-invocation`, is an independent research input
-already in flight. Advancing this parent to `implementing` records the realized
-core design and leaves only research consumption, current-state verification,
-and feature review; no already-delivered checkpoint is recreated.
+`story-mobile-extension-command-invocation`, was an independent research input
+and is now done. This parent records the realized core design; research
+consumption and current-state verification are the remaining implementation
+close-out work before feature review, and no already-delivered checkpoint is
+recreated.
 
 ## Rejected direction (do not revisit)
 
@@ -282,9 +283,10 @@ scripts/refresh-dist.sh        # restart wrapped agents with --continue
       working and already-wrapped agents are not interrupted.
 - [x] The operator runbook explains post-reboot bare-process recovery and how to
       verify wrapper parentage.
-- [ ] Before feature review, perform one live wrapped-interactive smoke from
-      mobile: New causes a brief disconnect, the same room returns with a new
-      canonical `session_id`, and the transcript hydrates empty.
+- [ ] Operator phone-attached UAT (not rerun by this headless close-out): New
+      causes a brief disconnect, the same room returns with a new canonical
+      `session_id`, and the transcript hydrates empty. Current-tree automated
+      coverage must prove the same contract before the feature enters review.
 
 ---
 
@@ -292,7 +294,7 @@ scripts/refresh-dist.sh        # restart wrapped agents with --continue
 
 **File**: `.work/active/stories/story-mobile-extension-command-invocation.md`
 
-**Story**: `story-mobile-extension-command-invocation` (research, in flight;
+**Story**: `story-mobile-extension-command-invocation` (research, done;
 `depends_on: []`)
 
 ```ts
@@ -316,10 +318,10 @@ type ExtensionCommandFinding = {
 - Do not block core restart-fresh implementation on this independent research.
 
 **Acceptance criteria**:
-- [ ] The research child records a verified per-command capability table.
-- [ ] Every proposed implementation result is either rejected with rationale or
-      represented by a dedicated-operation child depending on the research.
-- [ ] No generic slash-command, command-name, or arbitrary-args action enters
+- [x] The research child records a verified per-command capability table.
+- [x] Every proposed implementation result is rejected below with a concrete
+      mobile-need or runtime rationale; no follow-up child is warranted.
+- [x] No generic slash-command, command-name, or arbitrary-args action enters
       the generated protocol.
 
 ## Implementation order
@@ -330,11 +332,13 @@ type ExtensionCommandFinding = {
    fresh successor (done; depends on step 1).
 3. Herdr wrapper fleet adoption — realized operational completion of step 2
    (done; no retroactive child).
-4. `story-mobile-extension-command-invocation` — independent research in flight.
-5. Consume step 4: create a dedicated-operation follow-up child only if the
-   evidence and mobile need warrant it; otherwise record no change.
-6. Run current-state verification, the live wrapped-interactive smoke, and the
-   feature's one standard fresh-context review.
+4. `story-mobile-extension-command-invocation` — independent research done.
+5. Consume step 4 — done with the no-change adjudication below; no command met
+   both the base-context and concrete-mobile-need gates.
+6. Run current-state verification and advance to the feature's one standard
+   fresh-context review. The phone-attached lifecycle smoke remains an operator
+   UAT checkpoint; this headless close-out uses the caller-required owning
+   suites and does not claim that smoke was rerun here.
 
 ## Child-story graph
 
@@ -343,15 +347,89 @@ type ExtensionCommandFinding = {
 - `story-new-session-restart-fresh-restart-mechanism` —
   `depends_on: [story-new-session-restart-fresh-extension-exit]` — done,
   released in `v0.4.0`.
-- `story-mobile-extension-command-invocation` — `depends_on: []` — research in
-  flight under a separate worker.
-- Conditional follow-up — create only after the research warrants a specific
-  dedicated operation; it must depend on
-  `story-mobile-extension-command-invocation`.
+- `story-mobile-extension-command-invocation` — `depends_on: []` — research
+  done.
+- Conditional follow-up — not created: no command passed both eligibility
+  gates.
 
-No new story is spawned by this design pass: the core checkpoints already exist
-and are complete, while pre-creating the conditional research follow-up would
-violate late binding.
+No new story is spawned: the core checkpoints already exist and are complete,
+and the completed research did not establish a concrete mobile need that would
+justify a new dedicated wire operation.
+
+## Research-consumption adjudication (2026-08-26)
+
+**Decision: no protocol or app change.** The research proves that many
+extension-owned handlers can be refactored to run from base context, but that is
+only the runtime half of the gate. The current mobile product contract names
+prompting, compaction, model/thinking control, and session replacement as its
+curated controls; the app already implements those as typed actions. The
+remaining command surface is local setup, host/fleet administration, duplicated
+snapshot information, or a security-sensitive operation without an approved
+mobile journey. Adding any of it now would manufacture product scope from SDK
+reachability rather than consume a demonstrated mobile need.
+
+Per-command result:
+
+- `/outpost-pi` — decline: configured sessions already auto-connect and publish
+  canonical reachability; first-run behavior enters a local interactive setup
+  flow, so there is no distinct mobile operation.
+- `/outpost-pi setup` — decline: requires `ui.select` and edits cwd-local host
+  configuration; it is not callable from a fresh notification-only base
+  context.
+- `/outpost-pi hot-reload` — decline: local development/process-management
+  operation, explicitly unavailable in daemon mode and not a mobile product
+  control.
+- `/outpost-pi status` — decline: base-context-safe, but the app already receives
+  authoritative connection, room, model, thinking, and working snapshots;
+  formatted `ui.notify` status would be a second, weaker authority.
+- `/outpost-pi stop` — decline: base-context-safe but tears down the same mesh
+  and relay path carrying the request; no mobile recovery journey requires it.
+- `/outpost-pi pair` — decline: current daemon/non-TUI execution is rejected
+  without the private pair-code-file seam, and pairing remains the purpose-built
+  local QR flow rather than an already-paired remote action.
+- `/outpost-pi devices` — decline: base-context-safe, but it lists Owner devices
+  known to one extension; the app's Settings already owns its paired-PC roster
+  and no mobile owner-device administration journey is specified.
+- `/outpost-pi revoke` — decline: reverse-side owner revocation is
+  security-sensitive and would conflict with the settled app-owned revoke plus
+  implicit cross-side signaling contract.
+- `/outpost-pi set-relay` — decline: mutates host bootstrap configuration and can
+  cut off the active channel; relay setup remains a local operator action.
+- `/outpost-pi peers` — decline: returns coding-agent mesh addresses, not human
+  app sessions; Home already consumes the room/session inventory needed on
+  mobile.
+- `/outpost-pi create` — decline: filesystem and supervisor administration with
+  host-local cwd trust belongs to CLI/Cockpit, not the session quick-action
+  surface.
+- `/outpost-pi remove` — decline: destructive host registry/process mutation has
+  no approved mobile fleet-management journey.
+- `/outpost-pi daemons` — decline: base-context-safe, but a full host fleet
+  inventory is outside the current session-control mobile contract.
+- `/outpost-pi daemon start` — decline: host fleet mutation is CLI/Cockpit scope;
+  no concrete mobile need is recorded.
+- `/outpost-pi daemon stop` — decline: destructive host fleet mutation lacks a
+  mobile authorization/recovery design.
+- `/outpost-pi daemon restart` — decline: disruptive fleet mutation is distinct
+  from the existing typed `session_new` action for the active session and must
+  not be smuggled in as another restart control.
+- `/outpost-pi daemon status` — decline: fleet-wide operational status has no
+  current mobile journey; active-room reachability already hydrates through the
+  canonical snapshot contract.
+- `/outpost-pi daemon send` — decline: arbitrary supervisor prompt injection
+  would bypass the app's session-scoped `user_message`, durable outbox, and
+  acknowledgement semantics.
+- `/outpost-pi cron` — decline: scheduler CRUD/run/log is a multiplexed host
+  administration surface with prompt-bearing and destructive subcommands; it
+  needs a separately approved product design, not one command-shaped action.
+- `/outpost-pi install` — decline: privileged host-service installation needs
+  local OS/admin interaction and is explicitly unsuitable for mobile remote
+  invocation.
+- `/outpost-pi uninstall` — decline: privileged, destructive host-service
+  removal remains local and has no mobile recovery path.
+
+The generated schema, extension router, and app contain no `extension_command`,
+command-name, or arbitrary-args dispatcher. Late binding therefore terminates
+this conditional branch without children.
 
 ## Simplification
 
@@ -418,6 +496,71 @@ violate late binding.
   require command-only context or local TUI interaction. A verified no-change
   result is valid and must not be converted into a general command action to
   manufacture scope.
+
+## Implementation close-out (2026-08-26)
+
+### Execution and dependency reconciliation
+
+- Scope resolved to this feature and its completed checkpoints. The two
+  restart-fresh children are terminal in `v0.4.0`; the research child is
+  terminal in the active tier; the graph is acyclic and has no unmet external
+  dependency.
+- Execution stayed inline because this delegated host exposes no subagent tool.
+  Worker capability was the caller-selected `openai-codex/gpt-5.6-sol` at
+  `xhigh`; one cohesive owner was appropriate because the only remaining work
+  was research consumption plus verification, not a code wave.
+- Research consumption produced the no-change adjudication above. No child was
+  created, no schema/code/app file changed, and no generic command dispatcher
+  was introduced.
+
+### Current-state contract verification
+
+Direct source inspection on the current tree confirmed:
+
+- `protocol/schema/app-pi-client.schema.json` still enumerates the curated
+  `session_new`, `session_compact`, model/thinking, and model-list operations;
+  searches across schema, extension, and app found no `extension_command` or
+  command-name dispatcher.
+- The extension's `session_new` route still uses a fresh command capability when
+  present. Without it, only a restart-managed, lifecycle-owning runtime may
+  fence ingress, drain accepted delivery, stage sender-scoped `action_ok` plus
+  projection reset, dispose normally, and exit through
+  `EXIT_FRESH_SESSION = 42`.
+- The interactive wrapper and daemon supervisor consume that same exit code and
+  omit `--continue` for exactly the successor launch. Later managed restarts
+  resume normally.
+- The app still sends typed, session-scoped `SessionNew`, correlates
+  `action_ok`/`action_error`, clears only after ACK, and tests successor
+  hydration plus stale-frame rejection.
+
+Verification evidence:
+
+- `pi-extension`: `corepack pnpm typecheck` passed; the final current-tree
+  `corepack pnpm test` passed **60 files / 1098 tests**, with 3 intentional
+  skips; `corepack pnpm build` passed.
+- An earlier full-suite attempt left the seeded 262145-byte audit fixture
+  unchanged at its 40 ms assertion window. This was not waived: the focused
+  `src/session/e2e.test.ts` rerun passed all 34 tests, the restart-fresh focused
+  set passed all 284 tests, and two subsequent full-suite runs passed. No test
+  or production source was changed for the rerun.
+- `app`: `flutter analyze` reported no issues; the relevant action repository,
+  quick-actions sheet, and quick-actions ViewModel tests passed **46/46** with
+  `--exclude-tags e2e --concurrency=2`.
+- `bash -n` passed for `pi-restart-loop.sh`, `herdr-start-agents.sh`,
+  `wrap-agents.sh`, and `refresh-dist.sh`; the item diff passed
+  `git diff --check`.
+- The phone-attached wrapped-interactive smoke was not rerun in this headless
+  worker and remains explicitly unclaimed above. Per the caller's binding
+  close-out procedure, current-tree owning-suite evidence is the implementation
+  gate; phone smoke remains operator UAT evidence for final acceptance.
+
+### Review handoff
+
+Implementation verification is green and every child is done, so the feature
+advances `implementing -> review`. Effective review weight is `standard`
+(caller/autopilot note, matching the project default). This delegated close-out
+has an explicit review boundary: the parent autopilot owns the required single
+fresh-context feature pass and its finding adjudication.
 
 ## Other agent review
 
