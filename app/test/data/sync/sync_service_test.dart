@@ -542,7 +542,9 @@ void main() {
         ),
       );
       await _waitUntil(
-        () => s.conn.activeSessionId == rotatedSession,
+        () =>
+            s.conn.activeSessionId == rotatedSession &&
+            s.sync.activeSessionRef?.sessionId == rotatedSession,
         reason: 'the replacement session boundary to settle',
       );
 
@@ -1626,16 +1628,21 @@ void main() {
   );
 
   test('steer echo confirms row without replacing working turn', () async {
-    final s = await setup();
+    final outbox = _MemoryOwnerDeliveryOutbox();
+    final s = await setup(ownerDeliveryOutbox: outbox);
     s.ch.push(UserInput(id: 'u1', text: 'primary'));
-    await _settle();
+    await _waitUntil(
+      () =>
+          messages(s.epk).singleOrNull?.id == 'u1' &&
+          s.sync.turnProjection.cancelTargetId == 'u1',
+      reason: 'the primary turn row and working target to settle',
+    );
     expect(s.sync.turnProjection.cancelTargetId, 'u1');
 
     await s.sync.sendMessage(
       'refine this',
       streamingBehavior: UserMessageStreamingBehavior.steer,
     );
-    await _settle();
     final sent = s.ch.sent.whereType<UserMessage>().lastWhere(
       (m) => m.text == 'refine this',
     );
@@ -1647,7 +1654,10 @@ void main() {
         streamingBehavior: UserMessageStreamingBehavior.steer,
       ),
     );
-    await _settle();
+    await _waitUntil(
+      () => !outbox.deliveries.containsKey(sent.id),
+      reason: 'the delivery-only steering echo to finish durably',
+    );
 
     expect(s.sync.turnProjection.cancelTargetId, 'u1');
     expect(s.sync.streaming, isNotNull);
@@ -1671,7 +1681,15 @@ void main() {
         ts: DateTime.now().millisecondsSinceEpoch,
       ),
     );
-    await _settle();
+    await _waitUntil(
+      () =>
+          messages(
+                s.epk,
+              ).where((row) => row.id == sent.id).singleOrNull?.pending ==
+              false &&
+          s.sync.steeringProjection is NoSteering,
+      reason: 'the semantic steering pickup to persist',
+    );
 
     rows = messages(s.epk);
     expect(rows.map((row) => row.id), ['u1', sent.id]);
@@ -1800,9 +1818,19 @@ void main() {
   test('agent_done finalizes the streamed message + flips to idle', () async {
     final s = await setup();
     s.ch.push(AgentChunk(inReplyTo: 'r1', delta: 'done text'));
-    await _settle();
+    await _waitUntil(
+      () => s.sync.streaming?.buffer == 'done text',
+      reason: 'the complete stream buffer before agent_done',
+    );
     s.ch.push(AgentDone(inReplyTo: 'r1'));
-    await _settle();
+    await _waitUntil(
+      () =>
+          messages(s.epk).where((m) => m.role == MsgRole.assistant).length ==
+              1 &&
+          !s.sync.turnProjection.working &&
+          index(s.epk)?.status == SessionActivity.idle,
+      reason: 'the finalized assistant row and idle projection',
+    );
 
     final assistant = messages(
       s.epk,
@@ -2611,14 +2639,22 @@ void main() {
     () async {
       final s = await setup();
       s.ch.push(UserInput(id: 'u1', text: 'hi'));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.id == 'u1',
+        reason: 'the live user row to persist before the assistant frame',
+      );
       // Live assistant message carrying the SDK ts (the extension's
       // message_end-driven broadcast). Commits with a deterministic eventId.
       const liveTs = 2000;
       s.ch.push(
         const AgentMessage(inReplyTo: 'u1', text: 'hello back', ts: liveTs),
       );
-      await _settle();
+      await _waitUntil(
+        () =>
+            messages(s.epk).where((r) => r.role == MsgRole.assistant).length ==
+            1,
+        reason: 'the deterministic live assistant row to persist',
+      );
       final afterLive = messages(
         s.epk,
       ).where((r) => r.role == MsgRole.assistant).length;
@@ -2627,8 +2663,9 @@ void main() {
       // Replay the SAME assistant message via session_history. Under the
       // old random-id live scheme this would add a SECOND row (incompatible
       // eventIds). With deterministic identity it must collapse.
-      s.ch.push(
+      await s.sync.debugApplyHistory(
         SessionHistory(
+          sessionId: s.sessionId,
           inReplyTo: 'sync1',
           sessionStartedAt: 0,
           events: const [
@@ -2638,7 +2675,6 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
 
       final assistantRows = messages(
         s.epk,
@@ -2834,7 +2870,10 @@ void main() {
     final s = await setup();
     // Peer A: fixed extension — latches the capability flag.
     s.ch.push(UserInput(id: 'u1', text: 'go'));
-    await _settle();
+    await _waitUntil(
+      () => messages(s.epk).singleOrNull?.id == 'u1',
+      reason: 'peer A user row before capability latch',
+    );
     const priorTs = 1000;
     s.ch.push(
       const AgentMessage(
@@ -2843,9 +2882,16 @@ void main() {
         ts: priorTs,
       ),
     );
-    await _settle();
+    await _waitUntil(
+      () =>
+          messages(s.epk).any((row) => row.text == 'peer A deterministic text'),
+      reason: 'peer A deterministic capability latch',
+    );
     s.ch.push(AgentDone(inReplyTo: 'u1'));
-    await _settle();
+    await _waitUntil(
+      () => !s.sync.turnProjection.working,
+      reason: 'peer A turn completion before session replacement',
+    );
 
     // Switch to peer B (a different session). adopt a channel for epkB so
     // conn.activePeer == epkB (frames are not origin-gated), push a PairOk
@@ -2864,7 +2910,10 @@ void main() {
         pairedAt: '2026-01-01T00:00:00Z',
       ),
     );
-    await _settle();
+    await _waitUntil(
+      () => s.conn.activePeer?.remoteEpk == epkB,
+      reason: 'peer B channel adoption',
+    );
     chB.pushRaw(
       PairOk(
         inReplyTo: 'pairB',
@@ -2874,17 +2923,28 @@ void main() {
         sessionId: 'session-legacy-peer',
       ),
     );
-    await _settle(); // ConnectionManager learns epkB's active session id
+    await _waitUntil(
+      () => s.conn.activeSessionId == 'session-legacy-peer',
+      reason: 'peer B canonical session binding',
+    );
     await s.sync.activate(epkB, 'main');
-    await _settle();
 
     // Peer B: legacy extension — only streams chunks, never agent_message(ts).
     chB.push(UserInput(id: 'u2', text: 'next'));
-    await _settle();
+    await _waitUntil(
+      () => messages(epkB).singleOrNull?.id == 'u2',
+      reason: 'peer B user row before legacy streaming',
+    );
     chB.push(const AgentChunk(inReplyTo: 'u2', delta: 'peer B streamed text'));
-    await _settle();
+    await _waitUntil(
+      () => s.sync.streaming?.buffer == 'peer B streamed text',
+      reason: 'peer B legacy stream buffer',
+    );
     chB.push(AgentDone(inReplyTo: 'u2'));
-    await _settle();
+    await _waitUntil(
+      () => messages(epkB).any((row) => row.text == 'peer B streamed text'),
+      reason: 'peer B legacy fallback commit',
+    );
 
     final narration = messages(
       epkB,
@@ -3055,7 +3115,10 @@ void main() {
           ts: liveTs,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.id == 'local_workstation_turn',
+        reason: 'the cold-replay fixture live row to persist',
+      );
       final afterLive = messages(
         s.epk,
       ).where((r) => r.role == MsgRole.user).length;
@@ -3063,8 +3126,9 @@ void main() {
 
       // After the extension process restarts, SDK backfill no longer has the
       // delivered-user reservation that carried the live app id.
-      s.ch.push(
+      await s.sync.debugApplyHistory(
         SessionHistory(
+          sessionId: s.sessionId,
           inReplyTo: 'sync1',
           sessionStartedAt: 0,
           events: const [
@@ -3077,7 +3141,6 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
 
       final userRows = messages(
         s.epk,
@@ -3104,10 +3167,18 @@ void main() {
     final s = await setup();
     final read = SessionReadRepository(LocalBoxes());
     var emits = 0;
-    final sub = read.watchMessages(refFor(s.epk)).listen((_) => emits++);
-    await _settle();
+    var latestRows = const <MessageRecord>[];
+    final sub = read.watchMessages(refFor(s.epk)).listen((rows) {
+      emits++;
+      latestRows = rows;
+    });
+    await _waitUntil(
+      () => emits == 1,
+      reason: 'the initial empty projection emission',
+    );
 
     SessionHistory hist(String inReplyTo) => SessionHistory(
+      sessionId: s.sessionId,
       inReplyTo: inReplyTo,
       sessionStartedAt: 0,
       events: const [
@@ -3118,8 +3189,11 @@ void main() {
       eos: true,
     );
 
-    s.ch.push(hist('sync1'));
-    await _settle();
+    await s.sync.debugApplyHistory(hist('sync1'));
+    await _waitUntil(
+      () => latestRows.length == 3,
+      reason: 'all first-history watch emissions',
+    );
     final afterFirst = emits;
     expect(afterFirst, greaterThan(1), reason: 'first apply populates rows');
     expect(messages(s.epk).map((r) => r.role), [
@@ -3130,8 +3204,8 @@ void main() {
 
     // Relay re-delivers the SAME history (different in_reply_to, identical
     // events) — the reconcile must write nothing → no watch event → no emit.
-    s.ch.push(hist('sync2'));
-    await _settle();
+    await s.sync.debugApplyHistory(hist('sync2'));
+    await Future<void>.delayed(Duration.zero);
     expect(
       emits,
       afterFirst,
@@ -3246,10 +3320,18 @@ void main() {
       final s = await setup();
       final read = SessionReadRepository(LocalBoxes());
       var emits = 0;
-      final sub = read.watchMessages(refFor(s.epk)).listen((_) => emits++);
-      await _settle();
+      var latestRows = const <MessageRecord>[];
+      final sub = read.watchMessages(refFor(s.epk)).listen((rows) {
+        emits++;
+        latestRows = rows;
+      });
+      await _waitUntil(
+        () => emits == 1,
+        reason: 'the initial empty duplicate-replay projection',
+      );
 
       final history = SessionHistory(
+        sessionId: s.sessionId,
         inReplyTo: 'sync-duplicate-1',
         sessionStartedAt: 0,
         events: const [
@@ -3258,8 +3340,11 @@ void main() {
         ],
         eos: true,
       );
-      s.ch.push(history);
-      await _settle();
+      await s.sync.debugApplyHistory(history);
+      await _waitUntil(
+        () => latestRows.length == 2,
+        reason: 'the first duplicate-replay projection to emit',
+      );
       final afterFirst = emits;
       expect(afterFirst, greaterThan(1));
 
@@ -3268,15 +3353,16 @@ void main() {
             transcriptKeyFor(s.epk),
           )).length;
 
-      s.ch.push(
+      await s.sync.debugApplyHistory(
         SessionHistory(
+          sessionId: s.sessionId,
           inReplyTo: 'sync-duplicate-2',
           sessionStartedAt: history.sessionStartedAt,
           events: history.events,
           eos: history.eos,
         ),
       );
-      await _settle();
+      await Future<void>.delayed(Duration.zero);
 
       final logLengthAfterDuplicate =
           (await s.sync.debugTranscriptEventStore.readSession(
@@ -4237,7 +4323,10 @@ void main() {
       final oldSession = s.sessionId;
       s.ch.push(UserInput(id: 'old-u1', text: 'old session'));
       s.ch.push(AgentMessage(inReplyTo: 'old-u1', text: 'old reply'));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk, oldSession).length == 2,
+        reason: 'the complete old-session projection before replacement',
+      );
       expect(messages(s.epk, oldSession).map((row) => row.text), <String>[
         'old session',
         'old reply',
@@ -4306,7 +4395,10 @@ void main() {
     () async {
       final s = await setup(); // bound to s.epk (peer A)
       s.ch.push(UserInput(id: 'a1', text: 'from chat1'));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.id == 'a1',
+        reason: 'the original-session row to persist before switching',
+      );
       expect(messages(s.epk), hasLength(1));
 
       // Switch the writer to chat 2 (epkB) WITHOUT a new channel — simulates
@@ -4321,7 +4413,10 @@ void main() {
           .watchMessages(refFor(epkB))
           .listen((rows) => seenLens.add(rows.length));
       await s.sync.activate(epkB, 'main');
-      await _settle();
+      await _waitUntil(
+        () => seenLens.isNotEmpty,
+        reason: 'the replacement-session watch to start',
+      );
 
       // Straggler frame on the OLD (peer A) channel.
       s.ch.push(UserInput(id: 'late', text: 'late chat1'));
@@ -4833,9 +4928,11 @@ void main() {
       '(b) echo within the window confirms the row and cancels the timer',
       () async {
         final timers = _PendingTimerScheduler();
+        final outbox = _MemoryOwnerDeliveryOutbox();
         final s = await setup(
           pendingSendTimeout: short,
           pendingSendTimerFactory: timers.schedule,
+          ownerDeliveryOutbox: outbox,
         );
         await s.sync.sendMessage('hello');
         await _settle();
@@ -4844,7 +4941,13 @@ void main() {
 
         // Echo arrives promptly → confirms + disarms.
         s.ch.push(UserInput(id: id, text: 'hello'));
-        await _settle();
+        await _waitUntil(
+          () =>
+              messages(s.epk).singleOrNull?.pending == false &&
+              s.sync.debugPendingSendTimerCount == 0 &&
+              outbox.deliveries.isEmpty,
+          reason: 'the echo confirmation and timer cancellation',
+        );
         expect(messages(s.epk), hasLength(1));
         expect(
           messages(s.epk).first.pending,
@@ -5067,14 +5170,57 @@ void main() {
         // Quick exit then return: the live timer is cancelled on switch-away,
         // but _loadIndex re-arms on return using the saved ts → an already-stale
         // row fires immediately. Covers app-restart + quick-switch orphans.
-        final s = await setup(pendingSendTimeout: short);
+        final timers = _PendingTimerScheduler();
+        final store = _MemoryTranscriptStore();
+        final outbox = _MemoryOwnerDeliveryOutbox();
+        final debugLog = _RecordingDebugLog();
+        final s = await setup(
+          pendingSendTimeout: short,
+          pendingSendTimerFactory: timers.schedule,
+          transcriptEventStore: store,
+          ownerDeliveryOutbox: outbox,
+          debugLog: debugLog,
+        );
         await s.sync.sendMessage('hi');
-        await _settle();
+        final id = s.ch.sent.whereType<UserMessage>().single.id;
         expect(messages(s.epk), hasLength(1));
+
+        // Backdate both durable authorities instead of sleeping. On return the
+        // transcript rebuild arms an immediately-due failure while recovery
+        // still resends the stable id from the outbox.
+        final staleAt = DateTime.now().subtract(short * 2);
+        final key = transcriptKeyFor(s.epk).durableKey;
+        final events = store._events[key]!;
+        final eventIndex = events.indexWhere(
+          (event) =>
+              event is UserMessageSubmitted && event.clientMessageId == id,
+        );
+        final submitted = events[eventIndex] as UserMessageSubmitted;
+        events[eventIndex] = UserMessageSubmitted(
+          eventId: submitted.eventId,
+          sessionId: submitted.sessionId,
+          ts: staleAt,
+          turnId: submitted.turnId,
+          clientMessageId: submitted.clientMessageId,
+          text: submitted.text,
+          image: submitted.image,
+          held: submitted.held,
+          awaitingPickup: submitted.awaitingPickup,
+        );
+        final delivery = outbox.deliveries[id]!;
+        outbox.deliveries[id] = PendingOwnerDelivery(
+          id: delivery.id,
+          peerEpk: delivery.peerEpk,
+          roomId: delivery.roomId,
+          targetSessionId: delivery.targetSessionId,
+          text: delivery.text,
+          createdAt: staleAt,
+          image: delivery.image,
+          awaitingPickup: delivery.awaitingPickup,
+        );
 
         // Leave quickly → live timer cancelled; row stays pending in the box.
         await s.sync.activate('epk_away_${++_counter}', 'main');
-        await _settle();
         expect(
           s.sync.debugPendingSendTimerCount,
           0,
@@ -5086,22 +5232,30 @@ void main() {
           reason: 'orphaned row still in box',
         );
 
-        // Time passes beyond the window while away from the session.
-        await Future<void>.delayed(const Duration(milliseconds: 140));
-        expect(
-          messages(s.epk),
-          hasLength(1),
-          reason: 'no live timer fails it while away',
-        );
-
-        // Return → load re-arms by ts → already stale → fails on arrival.
+        // Return → load re-arms by the stale durable timestamp. Recovery may
+        // resend, but it must not cancel that already-due failure backstop.
         await s.sync.activate(s.epk, 'main');
-        await _settle();
+        timers.elapse(Duration.zero);
+        await _waitUntil(
+          () =>
+              messages(s.epk).singleOrNull?.status == UserMsgStatus.failed &&
+              debugLog.events.whereType<MsgFailedEvent>().any(
+                (event) => event.id == id && event.code == 'send_timeout',
+              ),
+          reason: 'the overdue pending row to fail after recovery resend',
+        );
         final rows = messages(s.epk);
         expect(rows, hasLength(1), reason: 'stale pending fails on return');
         expect(rows.single.role, MsgRole.user);
         expect(rows.single.status, UserMsgStatus.failed);
         expect(rows.single.text, 'hi');
+        expect(
+          s.ch.sent.whereType<UserMessage>().where(
+            (message) => message.id == id,
+          ),
+          hasLength(2),
+          reason: 'durable recovery still resends the stable id once',
+        );
         s.conn.dispose();
         s.sync.dispose();
       },
@@ -5307,7 +5461,11 @@ void main() {
       // (session_id, msg.id) — a re-sent message that already landed is
       // re-echoed without re-waking the agent.
       const short = Duration(milliseconds: 60);
-      final s = await setup(pendingSendTimeout: short);
+      final timers = _PendingTimerScheduler();
+      final s = await setup(
+        pendingSendTimeout: short,
+        pendingSendTimerFactory: timers.schedule,
+      );
       expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
 
       // Mark the room offline (the half-open state) so the send is held.
@@ -5330,13 +5488,17 @@ void main() {
       expect(rows, hasLength(1));
       expect(rows.single.pending, isTrue);
 
-      // Wait for the short send_timeout to fire → row fails.
-      await Future<void>.delayed(const Duration(milliseconds: 140));
-      await _settle();
-      expect(messages(s.epk).single.status, UserMsgStatus.failed);
+      // Cross the short send_timeout deterministically → row fails.
+      timers.elapse(short + const Duration(milliseconds: 1));
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.status == UserMsgStatus.failed,
+        reason: 'the held row to reach visible timeout failure',
+      );
 
       // Reconnect with a fresh, healthy channel (room live again).
       final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
+      final resendStarted = Completer<UserMessage>();
+      reconnect.nextUserMessageStarted = resendStarted;
       s.conn.adopt(
         reconnect,
         PeerRecord(
@@ -5357,13 +5519,12 @@ void main() {
           sessionId: s.sessionId,
         ),
       );
-      await _settle();
+      await resendStarted.future.timeout(const Duration(seconds: 2));
       expect(
         s.conn.isRoomLive(s.epk, 'main'),
         isTrue,
         reason: 'room re-announced on reconnect',
       );
-      await _settle();
 
       // The held-pending message is re-sent on the new channel (with the
       // ORIGINAL id so the echo dedupes). Without option 4, nothing is
@@ -5621,7 +5782,10 @@ void main() {
     test('compaction live event projects idle and clears streaming', () async {
       final s = await setup();
       s.ch.push(AgentChunk(inReplyTo: 'u_compact', delta: 'partial'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'partial',
+        reason: 'the pre-compaction stream to become active',
+      );
       expect(s.sync.turnProjection.working, isTrue);
       expect(s.sync.streaming, isNotNull);
 
@@ -5632,7 +5796,10 @@ void main() {
           ts: 1700000000000,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => !s.sync.turnProjection.working && s.sync.streaming == null,
+        reason: 'the live compaction terminal projection',
+      );
 
       expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.turnProjection.cancelTargetId, isNull);
