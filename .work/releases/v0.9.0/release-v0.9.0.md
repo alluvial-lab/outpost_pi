@@ -96,3 +96,19 @@ projection, done, never claimed by a prior release).
 - **Gate totals**: security 3 (1H bound-fixed) · tests 3 (1H bound-fixed) · cruft 2 (0 blocking) · docs 11 (4H bound-fixed) · patterns 5 cataloged +1 ext · refactor 9 (2H bound-fixed) — 9 medium/low parked unbound
 - **Final verification**: app 979/979 · e2e 17/17 · extension 1103/3 · relay 234 + fmt/clippy · cockpit 316 · site check green · protocol 7/7 · exposure guard PASS
 - **Operator UAT**: run docs/release-uat.md incl. pm verify-app-links checks; site deploy precedes app/extension rollout (assetlinks.json)
+
+## rc UAT record (2026-08-26)
+
+- **rc.1** — field captures (3 analyzed). All transport invariants green
+  (0 swallowed sends, dedup/ordering oracles ok, clean reconnect ladder).
+  Found + fixed: sticky failed-bubble (UserMessageConfirmed never cleared
+  _failedUsers; red badge survived echo until a replay rebuild — the
+  "flakey resync" operator report). Fix 53a9fef99, break-it-proven
+  regressions, suite 981/981. Draft superseded (deleted; tag kept).
+- **rc.2** — operator field-verified the airplane-mode send: message held
+  offline, redelivered on reconnect exactly once, **bubble cleared to
+  delivered** (the fix confirmed live). "Bubble behaved better now."
+- Remaining known-untested in field: force-quit cold-start outbox
+  recovery (covered by suite tests), App Links tap-through (assetlinks
+  live; verified in emulator/merged-manifest; pm check still operator-
+  optional).
