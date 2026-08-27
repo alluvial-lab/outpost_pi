@@ -13,6 +13,7 @@ import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/voice/speech_service.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/dismissed_update_store.dart';
 import 'package:app/domain/contracts/repository.dart';
 import 'package:app/domain/contracts/update_checker.dart';
@@ -52,6 +53,22 @@ final _replacementIdentity = OwnerIdentity(
   ownerPk: Uint8List.fromList(List<int>.filled(32, 1)),
   ownerSk: Uint8List.fromList(List<int>.filled(32, 1)),
 );
+
+class _RecordingDebugLog implements DebugLog {
+  final events = <DebugEvent>[];
+
+  @override
+  void log(DebugEvent event) => events.add(event);
+
+  @override
+  Future<String?> export() async => null;
+
+  @override
+  Future<void> clear() async => events.clear();
+
+  @override
+  void dispose() {}
+}
 
 class _RouterChannel implements IChannel, IControlLink, IActiveRoomTarget {
   final messages = StreamController<ServerMessage>.broadcast();
@@ -860,6 +877,7 @@ void main() {
         tester.view.padding = const FakeViewPadding(top: 24, bottom: 48);
         tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 48);
         final textInputCalls = <MethodCall>[];
+        var imeVisible = false;
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.textInput,
           (call) async {
@@ -867,12 +885,20 @@ void main() {
             return null;
           },
         );
-        addTearDown(
-          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          imeVisibilityChannel,
+          (call) async => call.method == 'isVisible' ? imeVisible : null,
+        );
+        addTearDown(() {
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
             SystemChannels.textInput,
             null,
-          ),
-        );
+          );
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            imeVisibilityChannel,
+            null,
+          );
+        });
 
         final directory = Directory.systemTemp.createTempSync(
           'router_two_pane_keyboard_',
@@ -923,7 +949,9 @@ void main() {
             true,
           );
         final shellLayout = ShellLayout();
+        final debugLog = _RecordingDebugLog();
 
+        injector.addInstance<DebugLog>(debugLog);
         injector.addViewModel<HomeViewModel>(
           () => HomeViewModel(storage, prefs, connection),
         );
@@ -955,6 +983,7 @@ void main() {
         }
 
         Future<void> setKeyboardInset(double inset) async {
+          imeVisible = inset > 0;
           tester.view.padding = FakeViewPadding(
             top: 24,
             bottom: inset == 0 ? 48 : 0,
@@ -1090,6 +1119,37 @@ void main() {
             0,
           );
           expect(tester.getSize(find.byType(ChatPage)), const Size(411, 797));
+
+          FocusManager.instance.primaryFocus?.unfocus();
+          await pumpRouterFrames();
+          textInputCalls.clear();
+          debugLog.events.clear();
+          imeVisible = false;
+          tester.view.padding = const FakeViewPadding(top: 24);
+          tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 3999));
+          expect(
+            textInputCalls.where((call) => call.method == 'TextInput.hide'),
+            isEmpty,
+            reason: 'the stale-inset watchdog must retain its full grace time',
+          );
+          await tester.pump(const Duration(milliseconds: 1));
+          expect(
+            textInputCalls.where((call) => call.method == 'TextInput.hide'),
+            hasLength(1),
+            reason:
+                'the full-screen phone chat must recover even when no pane, '
+                'route, or focus transition clears the stale inset',
+          );
+          final watchdogEvent = debugLog.events
+              .whereType<LayoutModeEvent>()
+              .singleWhere((event) => event.trigger == 'ime-watchdog');
+          expect(watchdogEvent.twoPane, isFalse);
+          expect(watchdogEvent.imeBottomDp, 280);
+          expect(watchdogEvent.widthDp, 411);
+          expect(watchdogEvent.heightDp, 797);
+          await setKeyboardInset(0);
 
           tester.view.padding = const FakeViewPadding(top: 24);
           await pumpRouterFrames();

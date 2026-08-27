@@ -96,7 +96,7 @@ enum LifecycleOperation {
 /// forbidden keys (`body`, `preview`, `image`, `data`, `args`, `result`,
 /// `prompt`, `message`, `ct`) and that all string values are capped
 /// ([kMaxFieldValueChars]). Field values are primitives only
-/// (String/int/bool/null) — never nested objects or untrusted blobs.
+/// (String/num/bool/null) — never nested objects or untrusted blobs.
 sealed class DebugEvent {
   final DebugTag tag;
   final DateTime ts;
@@ -538,7 +538,7 @@ String _routePhaseName(RoutePhase phase) => switch (phase) {
 /// in the hot path). [export] and [clear] work while OFF (read/wipe whatever
 /// is on disk); only NEW capture is gated.
 ///
-/// **Privacy.** Field values are primitives only (String/int/bool/null). The
+/// **Privacy.** Field values are primitives only (String/num/bool/null). The
 /// adapter serializes whatever each variant's [DebugEvent.toJson] emits; the
 /// per-variant scrub (no body/image/args/result) is enforced by the registry
 /// test. Callers pass already-scrubbed fields.
