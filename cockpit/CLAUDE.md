@@ -1,3 +1,9 @@
+
+> **DORMANT (freeze-with-guard, operator 2026-08-27).** Not in active use;
+> excluded from stack migrations and releases. CI compile+test guard runs on
+> frozen Flutter 3.44.4 to catch contract drift. See AGENTS.md § Cockpit
+> dormancy for the full rules and revival checklist.
+
 # Outpost-Pi — Cockpit (Flutter Desktop)
 
 Before editing or reviewing `cockpit/`, read the stack reference in [`../.agents/skills/flutter-desktop-cockpit/SKILL.md`](../.agents/skills/flutter-desktop-cockpit/SKILL.md).
