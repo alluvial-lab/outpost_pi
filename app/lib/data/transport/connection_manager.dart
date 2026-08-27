@@ -150,6 +150,25 @@ final class _ConnectSuperseded implements Exception {
   const _ConnectSuperseded();
 }
 
+final class _ConnectAttemptDeadlineSupervisor {
+  _ConnectAttemptDeadlineSupervisor(this.startedAt);
+
+  final DateTime startedAt;
+  final Completer<IChannel> _resumeExpiry = Completer<IChannel>();
+
+  Future<IChannel> get resumeExpiry => _resumeExpiry.future;
+
+  void expire(Duration deadline) {
+    if (_resumeExpiry.isCompleted) return;
+    _resumeExpiry.completeError(
+      TimeoutException(
+        'Relay connection attempt exceeded its deadline',
+        deadline,
+      ),
+    );
+  }
+}
+
 final class _RoomEmissionState {
   const _RoomEmissionState({
     required this.snapshot,
@@ -238,6 +257,7 @@ class ConnectionManager extends Service {
   CancelToken? _connectCancel;
   Future<void>? _connectInFlight;
   ({String peerEpk, String roomId})? _connectTarget;
+  _ConnectAttemptDeadlineSupervisor? _connectDeadlineSupervisor;
   int _connectGeneration = 0;
   StreamSubscription<ServerMessage>? _channelSub;
   StreamSubscription<ControlInbound>? _controlSub;
@@ -262,6 +282,8 @@ class ConnectionManager extends Service {
   Timer? _roomsEmitTimer;
   final Duration _emitDebounce;
   final Duration _reconnectFallbackDelay;
+  final Duration _connectAttemptDeadline;
+  final DateTime Function() _clock;
   bool _raceNextConnect = false;
 
   ConnectionManager({
@@ -271,12 +293,16 @@ class ConnectionManager extends Service {
     Duration emitDebounce = const Duration(milliseconds: 50),
     Duration legacyRoomRetryDelay = const Duration(milliseconds: 250),
     Duration reconnectFallbackDelay = const Duration(seconds: 3),
+    Duration connectAttemptDeadline = const Duration(seconds: 15),
+    DateTime Function()? clock,
     this.pingInterval = const Duration(seconds: 25),
   }) : _factory = factory,
        _storage = storage,
        _debugLog = debugLog,
        _emitDebounce = emitDebounce,
        _reconnectFallbackDelay = reconnectFallbackDelay,
+       _connectAttemptDeadline = connectAttemptDeadline,
+       _clock = clock ?? DateTime.now,
        _legacyRoomRetryDelay = legacyRoomRetryDelay {
     _startWatchdog();
   }
@@ -473,6 +499,23 @@ class ConnectionManager extends Service {
       return;
     }
     _replaySubscriptions();
+  }
+
+  /// Expire an overdue connection attempt after returning to foreground.
+  ///
+  /// Mobile suspension can postpone the attempt's timer. This clock check
+  /// routes an already-overdue attempt through the same failure and retry path
+  /// without shortening a healthy in-flight connection.
+  Future<void> expireOverdueConnectOnResume() async {
+    final supervisor = _connectDeadlineSupervisor;
+    if (_status is! StatusConnecting || supervisor == null) return;
+    if (_clock().difference(supervisor.startedAt) < _connectAttemptDeadline) {
+      return;
+    }
+
+    final inFlight = _connectInFlight;
+    supervisor.expire(_connectAttemptDeadline);
+    if (inFlight != null) await inFlight;
   }
 
   /// Current online channel cast to its control side, when supported.
@@ -732,6 +775,8 @@ class ConnectionManager extends Service {
 
     final token = CancelToken();
     _connectCancel = token;
+    final deadlineSupervisor = _ConnectAttemptDeadlineSupervisor(_clock());
+    _connectDeadlineSupervisor = deadlineSupervisor;
     _reachability.onConnectRequested();
     final samePeer = _activePeer?.remoteEpk == peer.remoteEpk;
     if (samePeer) {
@@ -751,11 +796,27 @@ class ConnectionManager extends Service {
     }
     _emit(const StatusConnecting());
 
+    var supervisorSettled = false;
     try {
       final raceFallback = _raceNextConnect;
-      final ch = raceFallback
-          ? await _connectWithFreshFallback(peer, token)
-          : await _factory(peer, token);
+      final attempt = raceFallback
+          ? _connectWithFreshFallback(peer, token)
+          : _factory(peer, token);
+      unawaited(
+        attempt.then<void>((lateChannel) async {
+          if (!supervisorSettled) return;
+          await _closeOwned(
+            lateChannel,
+            peerTail: _peerTail(peer.remoteEpk),
+            room: _activeRoomId,
+          );
+        }, onError: (Object _, StackTrace _) {}),
+      );
+      final ch = await Future.any<IChannel>([
+        attempt.timeout(_connectAttemptDeadline),
+        deadlineSupervisor.resumeExpiry,
+      ]);
+      supervisorSettled = true;
       if (token.isCancelled) {
         await ch.close();
         return;
@@ -786,18 +847,31 @@ class ConnectionManager extends Service {
           canRetry: false,
         ),
       );
-    } catch (e) {
+    } on TimeoutException catch (error) {
+      if (token.isCancelled) return;
+      token.cancel();
+      _routeRetryableConnectFailure(peer, error);
+    } catch (error) {
       if (!token.isCancelled) {
-        _logLifecycleFailure(
-          LifecycleOperation.retryConnect,
-          e,
-          peerTail: _peerTail(peer.remoteEpk),
-          room: _activeRoomId,
-          retryScheduled: true,
-        );
-        _scheduleRetry(peer);
+        _routeRetryableConnectFailure(peer, error);
+      }
+    } finally {
+      supervisorSettled = true;
+      if (identical(_connectDeadlineSupervisor, deadlineSupervisor)) {
+        _connectDeadlineSupervisor = null;
       }
     }
+  }
+
+  void _routeRetryableConnectFailure(PeerRecord peer, Object error) {
+    _logLifecycleFailure(
+      LifecycleOperation.retryConnect,
+      error,
+      peerTail: _peerTail(peer.remoteEpk),
+      room: _activeRoomId,
+      retryScheduled: true,
+    );
+    _scheduleRetry(peer);
   }
 
   Future<IChannel> _connectWithFreshFallback(

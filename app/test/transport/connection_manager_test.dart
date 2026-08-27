@@ -15,6 +15,7 @@ import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:cryptography/cryptography.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // ---------------------------------------------------------------------------
@@ -231,6 +232,36 @@ void main() {
         await Future.wait([first, second]);
         expect(cm.channel, same(winningChannel));
         cm.dispose();
+      },
+    );
+
+    test(
+      'never-completing connect reaches the retry ladder at the attempt deadline',
+      () {
+        fakeAsync((async) {
+          final neverCompletes = Completer<IChannel>();
+          final cm = ConnectionManager(
+            factory: (_, _) => neverCompletes.future,
+            storage: _FakeStorage([_fakePeer()]),
+            emitDebounce: Duration.zero,
+          );
+
+          // ignore: discarded_futures
+          cm.connectTo(_fakePeer());
+          async.flushMicrotasks();
+          expect(cm.status, isA<StatusConnecting>());
+
+          async.elapse(const Duration(seconds: 14));
+          expect(cm.status, isA<StatusConnecting>());
+
+          async.elapse(const Duration(seconds: 1));
+          async.flushMicrotasks();
+          final retrying = cm.status as StatusRetrying;
+          expect(retrying.attempt, 0);
+          expect(retrying.nextRetry, const Duration(seconds: 1));
+
+          cm.dispose();
+        });
       },
     );
 
