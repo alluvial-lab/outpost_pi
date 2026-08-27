@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 class _NoopTransport implements PeerTransport {
   @override
@@ -148,6 +149,28 @@ _pumpSettings(
 }
 
 void main() {
+  test('debug-log share preserves the NDJSON file contract', () async {
+    ShareParams? shared;
+
+    await shareDebugLog(
+      '{"tag":"msgSend"}',
+      platformShare: (params) async {
+        shared = params;
+      },
+    );
+
+    expect(shared?.subject, 'Outpost-Pi debug log');
+    expect(shared?.text, 'Outpost-Pi debug log');
+    expect(shared?.files, hasLength(1));
+    final file = shared!.files!.single;
+    expect(shared?.fileNameOverrides, ['outpost_pi_debug.jsonl']);
+    expect(file.mimeType, 'application/x-ndjson');
+    expect(
+      String.fromCharCodes(await file.readAsBytes()),
+      '{"tag":"msgSend"}\n',
+    );
+  });
+
   testWidgets(
     'unconfigured relay is blank, visibly actionable, and has no default action',
     (tester) async {

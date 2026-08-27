@@ -16,20 +16,28 @@ import 'package:share_plus/share_plus.dart';
 /// Test seam for the platform share sheet. Production uses [shareDebugLog].
 typedef DebugLogShare = Future<void> Function(String jsonl);
 
-Future<void> shareDebugLog(String jsonl) async {
+/// Dispatch prepared debug-log share parameters to the platform plugin.
+typedef DebugLogPlatformShare = Future<void> Function(ShareParams params);
+
+Future<void> _openDebugLogShareSheet(ShareParams params) async {
+  await SharePlus.instance.share(params);
+}
+
+/// Share the bounded debug log as an NDJSON file.
+Future<void> shareDebugLog(
+  String jsonl, {
+  DebugLogPlatformShare platformShare = _openDebugLogShareSheet,
+}) async {
   final bytes = Uint8List.fromList(
     utf8.encode(jsonl.endsWith('\n') ? jsonl : '$jsonl\n'),
   );
-  await Share.shareXFiles(
-    [
-      XFile.fromData(
-        bytes,
-        name: 'outpost_pi_debug.jsonl',
-        mimeType: 'application/x-ndjson',
-      ),
-    ],
-    subject: 'Outpost-Pi debug log',
-    text: 'Outpost-Pi debug log',
+  await platformShare(
+    ShareParams(
+      files: [XFile.fromData(bytes, mimeType: 'application/x-ndjson')],
+      fileNameOverrides: const ['outpost_pi_debug.jsonl'],
+      subject: 'Outpost-Pi debug log',
+      text: 'Outpost-Pi debug log',
+    ),
   );
 }
 

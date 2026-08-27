@@ -3299,6 +3299,10 @@ void main() {
       ),
     );
     await _settle();
+    await _waitUntil(
+      () => messages(s.epk).length == 2,
+      reason: 'the older replay prefix to materialize',
+    );
     expect(messages(s.epk).map((row) => row.text), <String>[
       'older row',
       'older answer',
@@ -3313,6 +3317,10 @@ void main() {
       ),
     );
     await _settle();
+    await _waitUntil(
+      () => messages(s.epk).length == 3,
+      reason: 'the replay suffix to materialize',
+    );
 
     expect(messages(s.epk).map((row) => row.text), <String>[
       'older row',
@@ -5778,6 +5786,10 @@ void main() {
         );
         await _settle();
         await _settle();
+        await _waitUntil(
+          () => reconnect2.sent.whereType<UserMessage>().length == 1,
+          reason: 'the healthy reconnect retry to send',
+        );
 
         final resent = reconnect2.sent.whereType<UserMessage>();
         expect(
