@@ -74,7 +74,7 @@ dependencies:
   # Plan 32b — render the agent's Markdown replies (GFM + code blocks),
   # optimized for LLM output. `url_launcher` opens links tapped in the
   # rendered markdown in the system browser.
-  gpt_markdown: ^1.1.8
+  gpt_markdown: ^1.2.1
   url_launcher: ^6.3.0
 
   # Theme — Space Mono is the mono-native display/body/code/wordmark voice.
