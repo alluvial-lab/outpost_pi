@@ -28,10 +28,10 @@ class AgentMarkdown extends StatelessWidget {
       data,
       style: typo.mono,
       onLinkTap: (url, _) => _openLink(context, url),
-      // Inline `code` — subtle highlight, keeps the baseline.
-      highlightBuilder: (context, text, style) => Text(
-        text,
-        style: typo.mono.copyWith(
+      // Inline `code` — subtle highlight, keeps the baseline and selection.
+      inlineCodeBuilder: (_, text, style, _) => TextSpan(
+        text: text,
+        style: style.copyWith(
           color: colors.highlight,
           backgroundColor: colors.codeBg,
         ),
