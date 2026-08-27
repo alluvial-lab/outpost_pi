@@ -112,3 +112,14 @@ projection, done, never claimed by a prior release).
   recovery (covered by suite tests), App Links tap-through (assetlinks
   live; verified in emulator/merged-manifest; pm check still operator-
   optional).
+
+## Final ship record (2026-08-27)
+
+v0.9.0 published as a full (non-prerelease) release at tag v0.9.0
+(app 0.9.0+22): rc.2's field-verified content + the stale-IME-inset fix
+(3dd1c3d62, 984/984) + layout instrumentation. rc UAT loop: rc.1 → defect
+found (sticky failed bubble) → fixed → rc.2 field-verified (airplane send,
+bubble clears) → final. Assets: outpost-0.9.0-22-arm64.apk (31 MB signed
+slim) + fat debug. rc.2 prerelease retained as history. Artifacts built
+with local .tools/flutter 3.44.4 (CI pin 3.41.7 drift noted — stack review
+engagement follows).
