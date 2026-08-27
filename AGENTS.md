@@ -15,6 +15,26 @@ subprojects ship as independent artifacts — `pi-extension/`, `app/`, `relay/`,
   (MIT-licensed); LICENSE and NOTICE preserve that attribution as a factual
   license matter. History is truncated at the import point — see NOTICE.
 
+## Cockpit dormancy (operator decision 2026-08-27)
+
+`cockpit/` is **dormant — freeze-with-guard posture**. The operator does not
+use the cockpit or macOS (workstation is Arch Linux); revival happens when
+the operator wants it (the `linux/` target is the intended revival surface).
+Rules while dormant:
+
+- CI keeps a compile+test guard on the frozen Flutter pin (3.44.4) — its job
+  is to surface contract drift (cockpit-control.schema / extension changes),
+  not to gate releases.
+- No stack-currency migrations apply (no Flutter upgrades, no dependency
+  refreshes, no platform-floor bumps). The freeze version is 3.44.4 = the
+  v0.9.0-tested state.
+- `cockpit-release` workflow stays disabled; no cockpit artifacts ship.
+- Release gates, drains, and scoping exclude cockpit unless the operator
+  reactivates it. Parked cockpit backlog items are dormant by extension.
+- Revival checklist: re-verify against current trunk contracts (control RPC,
+  theme tokens), un-freeze the Flutter pin via a normal stack-currency pass,
+  re-enable the release workflow.
+
 ## Work tracking
 
 This repo carries its own `.work/` queue for Outpost-Pi code/product bugs,
