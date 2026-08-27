@@ -50,7 +50,7 @@ push). The production host runs the local image.
 
 What the script does: builds for the host platform from the
 `Dockerfile` (multi-stage → `next build` with `output: "standalone"`,
-`node:22-alpine` runtime on port 3000 with healthcheck at `/`) and loads the
+`node:24-alpine` runtime on port 3000 with healthcheck at `/`) and loads the
 image into the local Docker daemon (no `--push`, no registry login).
 
 Prerequisites: `docker` with `buildx` (bundled with modern Docker). No Docker
