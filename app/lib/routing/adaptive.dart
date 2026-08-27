@@ -243,7 +243,7 @@ class _PaneCollapseImeDismissalState extends State<PaneCollapseImeDismissal>
   Future<void> _recoverStaleInset() async {
     _watchdog = null;
     if (!mounted || _windowBottomInset < kStaleImeInsetThreshold) return;
-    if (await _isImeVisible()) {
+    if (await _isImeVisible() || _hasActiveTextInputConnection()) {
       if (mounted) _reconcileWatchdog(_windowBottomInset);
       return;
     }
