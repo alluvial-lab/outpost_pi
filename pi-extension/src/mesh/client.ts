@@ -3,7 +3,7 @@ import type { MeshEnvelope } from "./types.js";
 /**
  * HTTP client for the relay's `/mesh/<owner_pk_hash>` endpoints.
  *
- * Uses Node 20+ global `fetch` — no extra dependency. The constructor
+ * Uses the Node 22.19+ global `fetch` — no extra dependency. The constructor
  * expects the **canonical http(s):// form** of the relay URL — the same
  * value returned by `resolveRelayUrl()`. No scheme conversion is done
  * here; ws(s):// URLs would be passed through to `fetch` and fail.

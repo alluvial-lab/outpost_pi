@@ -484,6 +484,7 @@ function actionsSendMessage(
 function contextActions(cwd: string): ExtensionContextActions {
   return {
     getModel: () => undefined,
+    getScopedModels: () => [],
     isIdle: () => true,
     isProjectTrusted: () => true,
     getSignal: () => undefined,
