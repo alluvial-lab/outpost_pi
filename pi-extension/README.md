@@ -171,7 +171,7 @@ the text; text-only messages use the same protection.
 
 ## Install
 
-Requirements: Node 20+, Pi (the host coding agent).
+Requirements: Node 22.19+, Pi (the host coding agent).
 
 ```bash
 pi install npm:outpost-pi

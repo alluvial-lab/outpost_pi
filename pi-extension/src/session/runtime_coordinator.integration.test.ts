@@ -209,6 +209,7 @@ class RealSdkHarness {
   private contextActions(): ExtensionContextActions {
     return {
       getModel: () => undefined,
+      getScopedModels: () => [],
       isIdle: () => true,
       isProjectTrusted: () => true,
       getSignal: () => undefined,

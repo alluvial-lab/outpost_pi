@@ -18,7 +18,7 @@
  *   - `pi.setModel(model)`       — returns `false` if no auth configured
  *   - `pi.setThinkingLevel(lvl)` — synchronous
  *   - `ctx.getModel()`           — optional, undefined before first turn
- *   - `ModelRegistry.{refresh,getAvailable,find}` — see `registry.ts`
+ *   - `ModelRegistry.{refresh,getAvailable,find}` — async refresh; see `registry.ts`
  */
 
 import type {
@@ -105,9 +105,19 @@ export interface ActionCtx {
  * but lets tests fake catalogs without instantiating the real one.
  */
 export interface ActionModelRegistry {
-  refresh(): void;
+  refresh(): Promise<unknown>;
   getAvailable(): Model<any>[];
   find(provider: string, modelId: string): Model<any> | undefined;
+}
+
+/** Resolve the fallback registry only when the live session registry is unavailable. */
+export type ActionModelRegistryProvider = () => Promise<ActionModelRegistry>;
+
+async function resolveModelRegistry(
+  ctx: ActionCtx | null,
+  fallback: ActionModelRegistryProvider,
+): Promise<ActionModelRegistry> {
+  return ctx?.modelRegistry ?? fallback();
 }
 
 /** Project a SDK `Model<Api>` onto the wire schema. Shared by list_models
@@ -256,7 +266,7 @@ export function handleThinkingSet(
 export async function handleModelSet(
   pi: ActionPi,
   ctx: ActionCtx | null,
-  reg: ActionModelRegistry,
+  fallbackRegistry: ActionModelRegistryProvider,
   sender: ActionReplySender,
   msg: ModelSetMsg,
   onPersist?: (provider: string, modelId: string) => void,
@@ -265,9 +275,10 @@ export async function handleModelSet(
     // Prefer Pi's LIVE session registry when available so the app sees models
     // registered dynamically by extensions via `pi.registerProvider(...)`.
     // Fall back to outpost-pi's own disk-backed registry when no ctx exists.
-    const liveReg = ctx?.modelRegistry ?? reg;
-    // Refresh first so a model just-added via `/login` is visible.
-    liveReg.refresh();
+    const liveReg = await resolveModelRegistry(ctx, fallbackRegistry);
+    // Pi 0.80.8+ refreshes models.json asynchronously. Await it so reads cannot
+    // race a just-completed `/login` or `/scoped-models` update.
+    await liveReg.refresh();
     const model = liveReg.find(msg.provider, msg.model_id);
     if (!model) {
       throw new Error(`model "${msg.provider}/${msg.model_id}" not in registry`);
@@ -285,20 +296,20 @@ export async function handleModelSet(
 }
 
 /** Send the available model catalog and current selection to the requesting owner. */
-export function handleListModels(
+export async function handleListModels(
   ctx: ActionCtx | null,
-  reg: ActionModelRegistry,
+  fallbackRegistry: ActionModelRegistryProvider,
   sender: ActionReplySender,
   msg: ListModelsMsg,
-): void {
-  // refresh() can throw if `models.json` is malformed — wrap in try so the
+): Promise<void> {
+  // refresh() can reject if `models.json` is malformed — wrap in try so the
   // app gets an explicit error reply instead of a silent drop.
   try {
     // Prefer Pi's LIVE session registry when available so the app sees models
     // registered dynamically by extensions via `pi.registerProvider(...)`.
     // Fall back to outpost-pi's own disk-backed registry when no ctx exists.
-    const liveReg = ctx?.modelRegistry ?? reg;
-    liveReg.refresh();
+    const liveReg = await resolveModelRegistry(ctx, fallbackRegistry);
+    await liveReg.refresh();
     const models = liveReg.getAvailable().map(wireFromModel);
     const current = ctx?.getModel?.();
     sender.send(sessionReply(msg, {

@@ -3153,10 +3153,11 @@ describe("multi-channel broadcast (W2D)", () => {
     )).toBe(true);
   });
 
-  test("compaction persistence failure suppresses the marker but still converges working false", async () => {
+  test("compaction persistence and SDK failure paths suppress markers and converge working false", async () => {
     await _pairForTest("owner-compaction-failure");
     const onBeforeCompact = captureEventHandler("session_before_compact");
     const onCompact = captureEventHandler("session_compact");
+    const onCompactFailed = captureEventHandler("session_compact_failed");
     _setPiForTest({
       sendMessage: vi.fn(),
       sendUserMessage: vi.fn(),
@@ -3180,6 +3181,25 @@ describe("multi-channel broadcast (W2D)", () => {
 
     expect(sentToPeerSince(sendsBefore, "owner-compaction-failure")
       .some((frame) => frame.inner.type === "compaction")).toBe(false);
+    expectTurnProjectionConvergedIdle();
+
+    onBeforeCompact({ type: "session_before_compact" });
+    expect(_getTurnProjectionForTest().working).toBe(true);
+    const sendsBeforeSdkFailure = relayRef.current!.send.mock.calls.length;
+    const durableBeforeSdkFailure = durableTranscriptEntries.length;
+    onCompactFailed({
+      type: "session_compact_failed",
+      reason: "manual",
+      errorMessage: "provider unavailable",
+      aborted: false,
+      willRetry: false,
+      fromExtension: false,
+    });
+    await flushSecureOutbound();
+
+    expect(sentToPeerSince(sendsBeforeSdkFailure, "owner-compaction-failure")
+      .some((frame) => frame.inner.type === "compaction")).toBe(false);
+    expect(durableTranscriptEntries).toHaveLength(durableBeforeSdkFailure);
     expectTurnProjectionConvergedIdle();
   });
 
