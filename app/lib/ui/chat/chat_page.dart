@@ -15,6 +15,7 @@ import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
 import 'package:app/ui/chat/widgets/attach_sheet.dart';
 import 'package:app/ui/chat/widgets/input_bar.dart';
 import 'package:app/ui/chat/widgets/message_bubble.dart';
+import 'package:app/ui/chat/widgets/settings_link_snack_bar.dart';
 import 'package:app/ui/chat/widgets/streaming_bubble.dart';
 import 'package:app/ui/chat/widgets/tool_request_card.dart';
 import 'package:app_settings/app_settings.dart';
@@ -509,16 +510,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     switch (hint) {
       case AttachHint.cameraPermissionDenied:
         messenger.showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Camera access is off — enable it in Settings to attach a photo.',
-            ),
-            duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'Settings',
-              onPressed: AppSettings.openAppSettings,
-            ),
+          buildSettingsLinkSnackBar(
+            message:
+                'Camera access is off — enable it in Settings to attach a photo.',
+            openSettings: AppSettings.openAppSettings,
           ),
         );
       case AttachHint.pickFailed:
@@ -549,16 +544,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         );
       case VoiceHint.permissionDenied:
         messenger.showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Microphone access is off — enable it in Settings to dictate.',
-            ),
-            duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'Settings',
-              onPressed: AppSettings.openAppSettings,
-            ),
+          buildSettingsLinkSnackBar(
+            message:
+                'Microphone access is off — enable it in Settings to dictate.',
+            openSettings: AppSettings.openAppSettings,
           ),
         );
     }

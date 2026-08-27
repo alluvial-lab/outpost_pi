@@ -2755,6 +2755,14 @@ void main() {
       await _settle();
       s.ch.push(AgentDone(inReplyTo: 'u1'));
       await _settle();
+      await _waitUntil(
+        () =>
+            messages(
+              s.epk,
+            ).where((row) => row.text == 'narration text').length ==
+            1,
+        reason: 'the deterministic agent message commit to materialize',
+      );
 
       final assistantRows = messages(
         s.epk,
@@ -3542,6 +3550,10 @@ void main() {
         ),
       );
       await _settle();
+      await _waitUntil(
+        () => messages(s.epk).length == 3,
+        reason: 'the replay projection to materialize before disposal',
+      );
       final expected = [
         for (final row in messages(s.epk))
           (role: row.role, id: row.id, text: row.text, status: row.status),
