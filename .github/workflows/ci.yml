@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: "3.41.7"
+  FLUTTER_VERSION: "3.44.4"
   PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
 jobs:
@@ -87,6 +87,11 @@ jobs:
               - '.github/workflows/ci.yml'
             cockpit:
               - 'cockpit/**'
+              # dormant-guard: contract drift from the extension side must
+              # still wake the cockpit compile+test check (freeze-with-guard
+              # posture — see AGENTS.md § Cockpit dormancy).
+              - 'protocol/**'
+              - 'pi-extension/src/extension/**'
               - '.mockups/design-system/tokens.css'
               - 'branding/theme-contract.json'
               - '.github/workflows/ci.yml'
