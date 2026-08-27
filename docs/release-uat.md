@@ -52,6 +52,12 @@ Output: `outpost-<version>-<code>.apk` (fat debug) + `outpost-<version>-<code>-a
 (signed slim release) attached to a **draft** prerelease on the tag;
 publishing is the operator gate.
 
+**Pre-phone no-start guard** (mandatory for toolchain-swap candidates):
+`scripts/apk-launch-smoke.sh <apk>` — installs on the e2e emulator (x86_64;
+build an x64 variant with `--target-platform android-x64` for the slim's
+arch) and proves resumed-first-frame + zero FATAL before the phone touches
+the build. Run it on the RELEASE variant (R8/AOT classes) at minimum.
+
 ## App↔Pi release smoke (the common case)
 
 For a release that touches the app↔Pi path, the smoke exercises the pairing →
