@@ -342,7 +342,7 @@ final class LiveDeviceHarness {
       );
       expect(capture?.barcodes.single.rawValue, pairUri);
       scanner.onDetect!(capture!);
-      return eventually<String>(
+      return await eventually<String>(
         tester,
         () async => switch (pairingViewModel.state) {
           PairingError(:final message) => message,

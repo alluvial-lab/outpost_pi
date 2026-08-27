@@ -1,7 +1,6 @@
 // Build overlay for app_settings 9.0.0. The only semantic-neutral carry is
-// spelling its AGP-8 conditional KGP application through pluginManager so
-// Flutter 3.44 does not report the built-in-Kotlin-compatible branch as an
-// unconditional legacy plugin. Remove with the app's AGP-9 migration.
+// spelling its conditional KGP fallback through pluginManager so Flutter's
+// lexical scanner does not report the inactive built-in-Kotlin branch.
 group 'com.spencerccf.app_settings'
 version '1.0-SNAPSHOT'
 

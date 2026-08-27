@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: "3.44.4"
+  APP_FLUTTER_VERSION: "3.47.1"
+  COCKPIT_FLUTTER_VERSION: "3.44.4" # frozen: cockpit dormancy guard
   PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
 jobs:
@@ -207,7 +208,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ env.APP_FLUTTER_VERSION }}
           channel: stable
           cache: true
       - name: Install dependencies
@@ -244,7 +245,7 @@ jobs:
           java-version: "17"
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ env.APP_FLUTTER_VERSION }}
           channel: stable
           cache: true
       - name: Warm pub cache
@@ -298,7 +299,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ env.COCKPIT_FLUTTER_VERSION }}
           channel: stable
           cache: true
       - name: Install dependencies
