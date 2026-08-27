@@ -92,17 +92,18 @@ class OwnerIdentityBridge extends ChangeNotifier {
   /// before it is assigned to [_current].
   Future<OwnerIdentityBootResult> boot() async {
     final transitionPending = await _pairing.hasPendingOwnerTransition();
+    OwnerIdentity? loaded;
     try {
-      final loaded = await _store.load();
-      if (loaded != null) {
-        return _acceptBootCandidate(
-          loaded,
-          generated: false,
-          transitionPending: transitionPending,
-        );
-      }
+      loaded = await _store.load();
     } on SyncUnavailable {
       return const SyncUnavailableResult();
+    }
+    if (loaded != null) {
+      return _acceptBootCandidate(
+        loaded,
+        generated: false,
+        transitionPending: transitionPending,
+      );
     }
 
     if (transitionPending) {
@@ -186,7 +187,7 @@ class OwnerIdentityBridge extends ChangeNotifier {
       while (true) {
         final loaded = await _store.load();
         if (loaded != null) return loaded;
-        if (restoredEvent.isCompleted) return restoredEvent.future;
+        if (restoredEvent.isCompleted) return await restoredEvent.future;
 
         final remaining = deadline.difference(DateTime.now());
         if (remaining <= Duration.zero) return null;
@@ -195,7 +196,7 @@ class OwnerIdentityBridge extends ChangeNotifier {
           restoredEvent.future.then<void>((_) {}),
           Future<void>.delayed(wait),
         ]);
-        if (restoredEvent.isCompleted) return restoredEvent.future;
+        if (restoredEvent.isCompleted) return await restoredEvent.future;
       }
     } finally {
       await subscription?.cancel();

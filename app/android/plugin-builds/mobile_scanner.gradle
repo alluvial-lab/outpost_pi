@@ -1,7 +1,6 @@
 // Build overlay for mobile_scanner 7.4.0. The only carry is spelling its
-// AGP-8 conditional KGP application through pluginManager so Flutter 3.44's
-// lexical warning scan recognizes the migrated plugin posture. Remove with the
-// app's AGP-9 migration.
+// conditional KGP fallback through pluginManager so Flutter's lexical scanner
+// recognizes the inactive built-in-Kotlin branch.
 import com.android.Version
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
