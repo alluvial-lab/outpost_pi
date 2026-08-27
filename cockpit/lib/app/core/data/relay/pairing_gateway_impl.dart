@@ -30,8 +30,8 @@ class PairingGatewayFactoryImpl implements PairingGatewayFactory {
 ///
 /// The gateway gives its child process a Cockpit-owned, private file path through
 /// `OUTPOST_PI_PAIR_CODE_FILE`, then polls that path for the token-bearing pair
-/// code. It only consumes token-free `outpost-pi:paired` custom messages from
-/// the RPC stream and removes the seam file when the attempt ends.
+/// code. It only consumes token-free `outpost-pi:paired` RPC UI status payloads
+/// and removes the seam file when the attempt ends.
 class PairingGatewayImpl implements PairingGateway {
   PairingGatewayImpl(
     PiSpawnConfig config, {
@@ -171,15 +171,34 @@ class PairingGatewayImpl implements PairingGateway {
   }
 
   void _onLine(Map<String, dynamic> json) {
-    final type = json['type'];
-    if (type != 'message_start' && type != 'message_end') return;
-    final message = json['message'];
-    if (message is! Map || message['role'] != 'custom') return;
-    final details = message['details'];
+    final payload = _statusPayload(json);
+    if (payload == null) return;
+    final customType = payload['customType'];
+    final details = payload['details'];
     _handleCustom(
-      message['customType'] as String?,
+      customType is String ? customType : null,
       details is Map ? details : const <dynamic, dynamic>{},
     );
+  }
+
+  /// Unwrap current RPC UI status and legacy custom-message payloads.
+  Map<dynamic, dynamic>? _statusPayload(Map<String, dynamic> json) {
+    final type = json['type'];
+    if (type == 'extension_ui_request' && json['method'] == 'notify') {
+      final message = json['message'];
+      if (message is! String || !message.startsWith('{')) return null;
+      try {
+        final decoded = jsonDecode(message);
+        return decoded is Map ? decoded : null;
+      } on FormatException {
+        return null;
+      }
+    }
+    if (type == 'message_start' || type == 'message_end') {
+      final message = json['message'];
+      return message is Map && message['role'] == 'custom' ? message : null;
+    }
+    return type == null && json['customType'] is String ? json : null;
   }
 
   void _handleCustom(String? customType, Map<dynamic, dynamic> details) {

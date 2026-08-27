@@ -53,6 +53,11 @@ import type {
   ThinkingLevel,
 } from "./protocol/types.js";
 import type { RelayControlFrame } from "./protocol/generated/protocol.generated.js";
+import {
+  emitSystemStatusEvent as emitRpcSystemStatusEvent,
+  type SystemStatusEvent,
+  type SystemStatusEventSourceContext,
+} from "./extension/system_status_event.js";
 import type { DecodedRelayIngress } from "./protocol/relay_ingress.js";
 import type { TranscriptEvent } from "./session/transcript_event.js";
 import type { TranscriptRecordResult } from "./session/transcript_event_log.js";
@@ -166,8 +171,8 @@ let _state: RemoteState = "idle";
 
 /** Relay connectivity as seen by an RPC client (Cockpit). Derived by the relay
  *  transport adapter: "disconnected" = relay off (idle); "connected" = live
- *  WS; "reconnecting" = was on, WS dropped, retrying. Surfaced via the
- *  `outpost-pi:relay-state` custom message (see `_emitRelayState`). */
+ *  WS; "reconnecting" = was on, WS dropped, retrying. Surfaced through the
+ *  RPC UI status channel (see `_emitRelayState`). */
 export type RelayConnectivity = "connected" | "reconnecting" | "disconnected";
 
 /** Sentinel prefix for a transparent control message an RPC client sends on the
@@ -231,7 +236,7 @@ const _relayTransport = createRelayTransportPort({
   now: () => Date.now(),
   setTimer: (cb, delayMs) => setTimeout(cb, delayMs),
   clearTimer: (timer) => clearTimeout(timer),
-  emitRelayState: (snapshot) => _sendRelayStateSnapshot(snapshot),
+  emitRelayState: (snapshot) => _emitRelayStateSnapshot(snapshot),
 });
 
 const _owners: OwnerMultiplexer = new OwnerMultiplexer({
@@ -281,12 +286,10 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
     );
   },
   onOwnerPaired: ({ peerId, peerName, pairedAt }) => {
-    _sendPiMessage({
+    _emitStatusEvent({
       customType: "outpost-pi:paired",
-      content: `Paired with ${peerName}`,
       details: { name: peerName, peerId, pairedAt },
-      display: false,
-    }, undefined, "paired");
+    });
   },
   onOwnerChannelDetached: ({ peerId, channel }) => {
     _captureUploads?.detachChannel(peerId, channel);
@@ -412,8 +415,8 @@ const _pairingCoordinator = new PairingCoordinator({
   getState: () => _state,
   currentUi: () => {
     const ui = _currentUi();
-    return typeof ui?.custom === "function"
-      ? ui as Pick<ExtensionContext["ui"], "custom">
+    return typeof ui?.custom === "function" && typeof ui.notify === "function"
+      ? ui as Pick<ExtensionContext["ui"], "custom" | "notify">
       : undefined;
   },
   startRelay: (ctx) => _startRelayViaTransport(ctx),
@@ -424,7 +427,7 @@ const _pairingCoordinator = new PairingCoordinator({
   ownerHas: (peerId) => _owners.has(peerId),
   refreshPairingsCache: () => { void _owners.refreshPairingsCache(); },
   joinLocalMesh: async (ctx) => { if (!_meshNode) await _cmdJoin(ctx); },
-  sendPiMessage: (message, options, label) => _sendPiMessage(message, options, label),
+  emitStatusEvent: (event) => _emitStatusEvent(event),
   setSiblings: (siblings) => { _meshNode?.setSiblings(siblings); },
 });
 
@@ -533,7 +536,10 @@ type OutpostPiUi = {
   custom?: ExtensionContext["ui"]["custom"];
 };
 
-type OutpostPiUiContext = { ui?: OutpostPiUi } | null | undefined;
+type OutpostPiUiContext = {
+  ui?: OutpostPiUi;
+  mode?: ExtensionContext["mode"];
+} | null | undefined;
 
 /**
  * Safely resolve a ctx.ui reference. Pi intentionally throws when an extension
@@ -562,6 +568,35 @@ function _safeUi(ctx?: OutpostPiUiContext): OutpostPiUi | undefined {
 
 function _currentUi(preferred?: OutpostPiUiContext): OutpostPiUi | undefined {
   return _safeUi(preferred) ?? _safeUi(_lastEventCtx) ?? _safeUi(_lastCtx);
+}
+
+function _safeMode(ctx?: SystemStatusEventSourceContext): ExtensionContext["mode"] | undefined {
+  if (!ctx) return undefined;
+  try {
+    return ctx.mode;
+  } catch (err) {
+    if (_isStaleContextError(err)) {
+      if (ctx === _lastCtx) _lastCtx = null;
+      if (ctx === _lastEventCtx) _lastEventCtx = null;
+    }
+    return undefined;
+  }
+}
+
+/** Route structured status only through Pi's RPC UI protocol, never its message API. */
+function _emitStatusEvent(
+  event: SystemStatusEvent,
+  preferred?: SystemStatusEventSourceContext,
+): boolean {
+  for (const candidate of [preferred, _lastEventCtx, _lastCtx]) {
+    const ui = _safeUi(candidate);
+    if (_safeMode(candidate) !== "rpc" || typeof ui?.notify !== "function") continue;
+    return emitRpcSystemStatusEvent(
+      { mode: "rpc", ui: { notify: ui.notify.bind(ui) } },
+      event,
+    );
+  }
+  return false;
 }
 
 function _currentCwd(): string {
@@ -1131,31 +1166,24 @@ function _relayStatus(): RelayConnectivity {
 }
 
 /**
- * Ask the relay transport to emit the `outpost-pi:relay-state` custom message.
- * The transport owns the dedupe and snapshot shape; index only bridges to Pi's
- * message API.
+ * Ask the relay transport to emit the `outpost-pi:relay-state` UI event.
+ * The transport owns dedupe and snapshot shape; index routes the result through
+ * Pi's RPC notification protocol without creating a session message.
  */
 function _emitRelayState(force = false): void {
   _relayTransport.emitRelayState(force);
 }
 
-function _sendRelayStateSnapshot(snapshot: RelayStateSnapshot): void {
-  // Relay-state is display telemetry, never a load-bearing send. Suppress it
-  // entirely when no Pi session is bound (startup race before session_start,
-  // or during session_shutdown). The replacement instance / withSession rearm
-  // publishes its own fresh state once bound.
-  if (!_sdkSessionProjection.messageApiBinding()) return;
-  _sendPiMessage({
+function _emitRelayStateSnapshot(snapshot: RelayStateSnapshot): void {
+  _emitStatusEvent({
     customType: "outpost-pi:relay-state",
-    content: `Relay ${snapshot.status}`,
     details: {
       status: snapshot.status,
       connected: snapshot.connected,
       ...(snapshot.relayUrl ? { relayUrl: snapshot.relayUrl } : {}),
       ...(snapshot.room ? { room: snapshot.room } : {}),
     },
-    display: false,
-  }, undefined, "relay-state");
+  });
 }
 
 /** Minimal ctx for relay start/stop driven by a control message (no command
@@ -1170,9 +1198,8 @@ function _controlCtx(): Pick<ExtensionContext, "ui" | "cwd"> {
 
 /**
  * `ui.notify` for headless contexts (daemon auto-init + control channel). There
- * is no TUI, and the RPC client (Cockpit) already gets everything it needs via
- * structured events (`outpost-pi:relay-state`, `outpost-pi:name-assigned`,
- * room_meta) — so routine INFO chatter would just pollute the client's captured
+ * is no TUI. Structured Cockpit status uses the live session's RPC UI context;
+ * routine headless INFO chatter would only pollute the client's captured
  * stderr. We drop info and forward only warnings/errors (kept for the
  * supervisor's journal / genuine failures). The interactive Pi keeps its normal
  * footer/notify path — this only affects headless ctxs.
@@ -1269,7 +1296,7 @@ const _HOSTNAME = hostname();
 // NOTE: this is a CAPTURED command ctx — the SDK marks it stale after a
 // session replacement (newSession/fork/switch/reload). We re-capture it via
 // `withSession` when WE drive a newSession (see the session_new dispatch).
-let _lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd"> | null = null;
+let _lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd" | "mode"> | null = null;
 // Freshest base ExtensionContext, re-captured on EVERY `session_start`
 // (startup/new/fork/reload/resume). The session_start ctx is always bound to
 // the CURRENT session, so compact + cancel (base-ctx methods) routed through
@@ -1277,7 +1304,7 @@ let _lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd"> | null = null;
 // (an app Quick Action OR a `/new` typed in the Pi TUI). It carries only
 // base-ctx methods (no newSession — that's command-ctx only), so command ops
 // keep using `_lastCtx`.
-let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui"> | null = null;
+let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "mode"> | null = null;
 const _noopCtx = { ui: { notify: () => undefined }, abort: () => undefined };
 
 type AgentMessageApi = {
@@ -1912,7 +1939,7 @@ const _localMeshCommands = new LocalMeshCommands({
   deliverMeshMessage: _deliverMeshMessageToAgent,
   attachBridgeIfReady: _attachBridgeIfReady,
   notify: _notify,
-  sendPiMessage: _sendPiMessage,
+  emitStatusEvent: _emitStatusEvent,
 });
 
 // ── Command implementations ───────────────────────────────────────────────────

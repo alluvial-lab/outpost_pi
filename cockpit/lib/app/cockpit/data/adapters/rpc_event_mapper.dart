@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
 import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 
@@ -12,6 +14,16 @@ class RpcEventMapper {
 
   RpcEvent fromJson(Map<String, dynamic> json) {
     final type = json['type'] as String?;
+    final directControlType = RpcControlOverlayEventType.fromWire(
+      _str(json['customType']),
+    );
+    if (type == null && directControlType != null) {
+      return _fromControlOverlayEvent(
+        json,
+        directControlType,
+        source: 'status_event',
+      );
+    }
     switch (type) {
       case 'agent_start':
         return const RpcAgentStart();
@@ -89,14 +101,32 @@ class RpcEventMapper {
     }
     if (message['role'] != 'custom') return const RpcUnknown('message_start');
 
-    final customType = message['customType'] as String?;
-    final details = RpcJsonObject.tryFromWire(message['details']);
+    final eventType = RpcControlOverlayEventType.fromWire(
+      _str(message['customType']),
+    );
+    if (eventType == null) {
+      return const RpcUnknown('<unknown-custom-message>');
+    }
+    return _fromControlOverlayEvent(
+      message,
+      eventType,
+      source: 'message_start',
+    );
+  }
+
+  /// Project a schema-owned control payload from either supported RPC wrapper.
+  RpcEvent _fromControlOverlayEvent(
+    Map<String, dynamic> payload,
+    RpcControlOverlayEventType eventType, {
+    required String source,
+  }) {
+    final details = RpcJsonObject.tryFromWire(payload['details']);
     final detailValues = details?.values;
 
-    switch (RpcControlOverlayEventType.fromWire(customType)) {
+    switch (eventType) {
       case RpcControlOverlayEventType.relayState:
         if (detailValues == null) {
-          return const RpcUnknown('message_start:relay-state:no-details');
+          return RpcUnknown('$source:relay-state:no-details');
         }
         final statusStr = detailValues['status'] as String?;
         return RpcRelayState(
@@ -111,11 +141,11 @@ class RpcEventMapper {
         );
       case RpcControlOverlayEventType.nameAssigned:
         if (detailValues == null) {
-          return const RpcUnknown('message_start:name-assigned:no-details');
+          return RpcUnknown('$source:name-assigned:no-details');
         }
         final assigned = _nonEmptyString(detailValues['assigned']);
         if (assigned == null) {
-          return const RpcUnknown('message_start:name-assigned:no-assigned');
+          return RpcUnknown('$source:name-assigned:no-assigned');
         }
         return RpcNameAssigned(
           requested: _nonEmptyString(detailValues['requested']),
@@ -124,19 +154,17 @@ class RpcEventMapper {
         );
       case RpcControlOverlayEventType.paired:
         if (detailValues == null) {
-          return const RpcUnknown('message_start:paired:no-details');
+          return RpcUnknown('$source:paired:no-details');
         }
         final name = _nonEmptyString(detailValues['name']);
         final peerId = _nonEmptyString(detailValues['peerId']);
         final pairedAt = _int(detailValues['pairedAt']);
         if (name == null || peerId == null || pairedAt == null) {
-          return const RpcUnknown('message_start:paired:invalid-details');
+          return RpcUnknown('$source:paired:invalid-details');
         }
         return RpcPaired(name: name, peerId: peerId, pairedAt: pairedAt);
       case RpcControlOverlayEventType.meshRevoked:
         return RpcMeshRevoked(details: details);
-      case null:
-        return const RpcUnknown('<unknown-custom-message>');
     }
   }
 
@@ -178,6 +206,8 @@ class RpcEventMapper {
     final method = json['method'] as String?;
     switch (method) {
       case 'notify':
+        final statusEvent = _statusEventFromNotice(json['message']);
+        if (statusEvent != null) return statusEvent;
         return RpcNotice(
           _str(json['message']) ?? '',
           switch (json['notifyType']) {
@@ -209,6 +239,26 @@ class RpcEventMapper {
         );
       default:
         return const RpcUnknown('<unknown-ui-request>');
+    }
+  }
+
+  /// Decode status payloads carried by Pi's non-context RPC notification path.
+  RpcEvent? _statusEventFromNotice(Object? message) {
+    if (message is! String || !message.startsWith('{')) return null;
+    try {
+      final decoded = jsonDecode(message);
+      if (decoded is! Map<String, dynamic>) return null;
+      final eventType = RpcControlOverlayEventType.fromWire(
+        _str(decoded['customType']),
+      );
+      if (eventType == null) return null;
+      return _fromControlOverlayEvent(
+        decoded,
+        eventType,
+        source: 'status_event',
+      );
+    } on FormatException {
+      return null;
     }
   }
 
