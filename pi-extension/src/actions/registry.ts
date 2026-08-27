@@ -1,34 +1,28 @@
 /**
- * Plan/28 — ModelRegistry instance shared by the action handlers.
+ * Fallback model registry shared by action handlers when no live session
+ * context is available.
  *
- * pi-extension creates its **own** `ModelRegistry` instance alongside the
- * one `AgentSession` instantiates internally. Both read the same on-disk
- * sources (`~/.pi/auth/*`, `~/.pi/models.json`), so they stay in sync —
- * we just call `refresh()` before each `list_models` request to capture
- * changes the user makes via `/login` or `/scoped-models` in the TUI.
- *
- * Why a fresh instance instead of accessing Pi's: the `ExtensionAPI`
- * surface does not expose `AgentSession`'s registry, and the public
- * factories (`ModelRegistry.create`, `AuthStorage.create`) are the
- * documented way for extensions to read the same catalog. No deep
- * imports, no internal-state coupling — see the probe note in
- * `plan/28-pi-commands.md` Wave 0.
+ * Pi 0.84 exposes `ModelRuntime` as the canonical SDK model/auth owner and
+ * keeps `ModelRegistry` as the synchronous extension-facing facade. Normal
+ * actions prefer `ctx.modelRegistry` so extension-registered providers remain
+ * visible; this lazily-created runtime covers the brief lifecycle windows in
+ * which no session context is bound.
  */
 
-import { ModelRegistry, AuthStorage } from "@earendil-works/pi-coding-agent";
+import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 
-let _registry: ModelRegistry | null = null;
+let _registry: Promise<ModelRegistry> | null = null;
 
-/**
- * Lazily instantiate the shared `ModelRegistry`. Subsequent calls return
- * the same instance — keep it cached so `refresh()` cycles are cheap and
- * the underlying `models.json` parse is amortized across requests.
- */
-export function ensureModelRegistry(): ModelRegistry {
-  if (!_registry) {
-    _registry = ModelRegistry.create(AuthStorage.create());
-  }
-  return _registry;
+/** Lazily create and cache the SDK's asynchronous model runtime and registry facade. */
+export function ensureModelRegistry(): Promise<ModelRegistry> {
+  if (_registry) return _registry;
+
+  const pending = ModelRuntime.create().then((runtime) => new ModelRegistry(runtime));
+  _registry = pending;
+  void pending.catch(() => {
+    if (_registry === pending) _registry = null;
+  });
+  return pending;
 }
 
 /** Test seam — drop the cached registry so tests can rebuild with fakes. */

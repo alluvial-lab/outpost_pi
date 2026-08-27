@@ -1,13 +1,13 @@
 ---
 name: pi-extension-typescript
 description: Outpost-Pi pi-extension TypeScript/Pi SDK reference. Read before editing or reviewing pi-extension/ code, session lifecycle hooks, relay/room metadata, mesh tools, pairing, or Pi SDK integration.
-updated: 2026-08-16
+updated: 2026-08-27
 ---
 
 # Pi Extension TypeScript Reference
 
 > Local scope: `pi-extension/`
-> Versions: Node >=20, TypeScript `^7.0.2`, `@earendil-works/pi-coding-agent` 0.80.x, `ws` 8.x, Vitest 4.x
+> Versions: Node >=22.19, TypeScript `^7.0.2`, `@earendil-works/pi-coding-agent` 0.84.3, `ws` 8.x, Vitest 4.x
 > Canonical local docs: `pi-extension/CLAUDE.md`, `PROTOCOL.md`, Pi docs at `/home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md` [pi-docs-extensions]{1}
 > Source basis: `pi-extension/package.json`, `src/index.ts`, `src/actions/handlers.ts`, `src/transport/relay_client.ts`, `src/pairing/storage.ts`, `src/protocol/{types,codec}.ts`, `src/session/*`, and matching tests. [remote-pi-package-config]{1} [remote-pi-index-lifecycle]{1}
 
@@ -103,7 +103,7 @@ Hooks actually used across the extension include: [remote-pi-index-lifecycle]{1}
 - `agent_end` — finalizes `agent_done`.
 - `agent_settled` — flushes admitted mesh ingress after retries, compaction, and queued continuations settle; it is also the hot-reload restart boundary.
 - `turn_start` / `turn_end` — publish `room_meta.working`.
-- `session_before_compact` / `session_compact` — bracket compact working-state and record the durable `compaction_recorded` transcript entry before live visibility.
+- `session_before_compact` / `session_compact` / `session_compact_failed` — bracket compact working-state on success, failure, and abort, and record the durable `compaction_recorded` transcript entry before successful live visibility.
 - `session_start` / `session_shutdown` — capture the freshest session-bound context and tear down stale outgoing instance. These are registered in `pi-extension/src/extension/composition_root.ts` via `registerLifecycleHooks(pi, ports, ...)`, not directly in `src/index.ts`; `index.ts` is the composition entrypoint that wires the `OutpostPiRuntimePorts` seam and invokes `registerLifecycleHooks`.
 
 Session action helpers use `ctx.compact()`, `ctx.newSession({ withSession })`, `ctx.getModel()`, `ctx.abort()`, `pi.setModel(model)`, `pi.setThinkingLevel(level)`, and `SettingsManager.create(cwd)`. `ctx.getModel()` is used defensively in source even though it is less prominently documented than core lifecycle hooks; verify SDK types before changing that call path. [remote-pi-index-lifecycle]{1}
@@ -163,7 +163,7 @@ Rules:
 `room_meta.working` should be authoritative and convergent:
 
 - publish `working: true` on `turn_start` and compaction-start paths;
-- publish `working: false` on `turn_end`, compaction completion, abort/error cleanup, and session teardown/reconnect hydration where applicable;
+- publish `working: false` on `turn_end`, compaction success/failure/abort, agent abort/error cleanup, and session teardown/reconnect hydration where applicable;
 - remember that `compact()` does not run a normal turn, so compaction needs manual `working` brackets;
 - remember that `session_compact` does not flow through `message_end`; record a durable `compaction_recorded` v1 transcript entry so `session_sync` and process reopen replay the same marker;
 - in daemon/RPC or restart-wrapper mode, `session_new` can acknowledge, reset the mirror, and exit with `EXIT_FRESH_SESSION` (`42`) so the supervisor or wrapper respawns a fresh Pi session without `--continue`; do not accidentally turn this into an in-process session switch without preserving the restart contract; [remote-pi-index-lifecycle]{1} [remote-pi-rpc-child]{1}

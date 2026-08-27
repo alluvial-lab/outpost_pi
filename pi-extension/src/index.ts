@@ -1615,6 +1615,12 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   ownerPi.on("session_before_compact", () => {
     _applyTurnAndPublish({ type: "compaction_start", turnId: `compact_${randomUUID()}` });
   });
+  const finishCompaction = () => {
+    _applyTurnAndPublish({ type: "compaction_done" });
+    _applyTurnAndPublish({ type: "turn_end" });
+    _publishWorking(false);
+    _maybeSendLateAttachSessionSync();
+  };
   ownerPi.on("session_compact", (event) => {
     const entry = event?.compactionEntry as {
       summary?: unknown;
@@ -1641,11 +1647,11 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
       _owners.broadcast(_withCurrentSession({ type: "compaction", summary, tokens_before: tokensBefore, ts }));
     }
     // (3) Working ends independently of transcript persistence.
-    _applyTurnAndPublish({ type: "compaction_done" });
-    _applyTurnAndPublish({ type: "turn_end" });
-    _publishWorking(false);
-    _maybeSendLateAttachSessionSync();
+    finishCompaction();
   });
+  // Pi 0.84 exposes the terminal failure/abort path explicitly. It has no
+  // compaction transcript fact, but it must close the working-state bracket.
+  ownerPi.on("session_compact_failed", finishCompaction);
 
   // Ownership is claimed at session_start and released at session_shutdown.
   // Only the exact owner lease may publish/clear process-global SDK state or
@@ -2051,7 +2057,7 @@ async function _startRelayViaTransportInner(ctx: Pick<ExtensionContext, "ui" | "
         const provider = sm.getDefaultProvider();
         const modelId = sm.getDefaultModel();
         if (modelId) {
-          const found = provider ? ensureModelRegistry().find(provider, modelId) : undefined;
+          const found = provider ? (await ensureModelRegistry()).find(provider, modelId) : undefined;
           _currentModel = found?.name ?? modelId;
         }
       }
@@ -3329,7 +3335,7 @@ export function _routeClientMessageFrom(
       void handleModelSet(
         pi,
         _sdkSessionProjection.freshActionCtx(),
-        ensureModelRegistry(),
+        ensureModelRegistry,
         sender,
         msg,
         _persistModelDefault,
@@ -3346,9 +3352,9 @@ export function _routeClientMessageFrom(
       break;
     }
     case "list_models":
-      handleListModels(
+      void handleListModels(
         _sdkSessionProjection.freshActionCtx(),
-        ensureModelRegistry(),
+        ensureModelRegistry,
         {
           send: (reply) => {
             if (reply.type === "error" && reply.code === "internal_error") {

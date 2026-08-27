@@ -21,6 +21,7 @@ import {
   type ActionCtx,
   type ActionPi,
   type ActionModelRegistry,
+  type ActionModelRegistryProvider,
   type SdkModelLike,
 } from "./handlers.js";
 import type { ServerMessage } from "../protocol/types.js";
@@ -54,13 +55,17 @@ const sampleModel: SdkModelLike = {
 function fakeRegistry(catalog: SdkModelLike[]): ActionModelRegistry {
   let refreshed = 0;
   return {
-    refresh: () => { refreshed += 1; },
+    refresh: async () => { refreshed += 1; },
     getAvailable: () => catalog,
     find: (provider, modelId) =>
       catalog.find((m) => m.provider === provider && m.id === modelId),
     // expose refresh counter via a closure read for tests that care
     get _refreshes() { return refreshed; },
   } as ActionModelRegistry & { _refreshes: number };
+}
+
+function registryProvider(registry: ActionModelRegistry): ActionModelRegistryProvider {
+  return async () => registry;
 }
 
 // ── session_compact ────────────────────────────────────────────────────────
@@ -190,7 +195,7 @@ describe("handleModelSet", () => {
       setModel: async (m) => { setModelArgs.push(m as SdkModelLike); return true; },
     });
     const sender = makeSender();
-    await handleModelSet(pi, null, reg, sender, {
+    await handleModelSet(pi, null, registryProvider(reg), sender, {
       type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7",
     });
     expect(setModelArgs).toHaveLength(1);
@@ -203,7 +208,7 @@ describe("handleModelSet", () => {
   test("unknown model → action_error", async () => {
     const reg = fakeRegistry([sampleModel]);
     const sender = makeSender();
-    await handleModelSet(fakePi(), null, reg, sender, {
+    await handleModelSet(fakePi(), null, registryProvider(reg), sender, {
       type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "nope-3",
     });
     expect(sender.sent[0]).toMatchObject({
@@ -216,7 +221,7 @@ describe("handleModelSet", () => {
     const reg = fakeRegistry([sampleModel]);
     const pi = fakePi({ setModel: async () => false });
     const sender = makeSender();
-    await handleModelSet(pi, null, reg, sender, {
+    await handleModelSet(pi, null, registryProvider(reg), sender, {
       type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7",
     });
     expect(sender.sent[0]).toMatchObject({
@@ -231,7 +236,7 @@ describe("handleModelSet", () => {
     const sender = makeSender();
     const persisted: Array<{ provider: string; modelId: string }> = [];
     await handleModelSet(
-      pi, null, reg, sender,
+      pi, null, registryProvider(reg), sender,
       { type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7" },
       (provider, modelId) => persisted.push({ provider, modelId }),
     );
@@ -245,7 +250,7 @@ describe("handleModelSet", () => {
     const sender = makeSender();
     let persistCalls = 0;
     await handleModelSet(
-      pi, null, reg, sender,
+      pi, null, registryProvider(reg), sender,
       { type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7" },
       () => { persistCalls += 1; },
     );
@@ -258,7 +263,7 @@ describe("handleModelSet", () => {
     const sender = makeSender();
     let persistCalls = 0;
     await handleModelSet(
-      fakePi(), null, reg, sender,
+      fakePi(), null, registryProvider(reg), sender,
       { type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "nope-3" },
       () => { persistCalls += 1; },
     );
@@ -269,11 +274,11 @@ describe("handleModelSet", () => {
 // ── list_models ────────────────────────────────────────────────────────────
 
 describe("handleListModels", () => {
-  test("returns wire-shaped catalog with current echo when ctx.getModel is set", () => {
+  test("returns wire-shaped catalog with current echo when ctx.getModel is set", async () => {
     const reg = fakeRegistry([sampleModel]);
     const ctx: ActionCtx = { getModel: () => sampleModel };
     const sender = makeSender();
-    handleListModels(ctx, reg, sender, { type: "list_models", id: "r5", session_id: "s1" });
+    await handleListModels(ctx, registryProvider(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
     const reply = sender.sent[0];
     expect(reply.type).toBe("models_list");
     if (reply.type !== "models_list") throw new Error("type guard");
@@ -291,17 +296,17 @@ describe("handleListModels", () => {
     expect(reply.current).toEqual(reply.models[0]);
   });
 
-  test("omits `current` when ctx.getModel is undefined", () => {
+  test("omits `current` when ctx.getModel is undefined", async () => {
     const reg = fakeRegistry([sampleModel]);
     const sender = makeSender();
-    handleListModels(null, reg, sender, { type: "list_models", id: "r5", session_id: "s1" });
+    await handleListModels(null, registryProvider(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
     const reply = sender.sent[0];
     expect(reply.type).toBe("models_list");
     if (reply.type !== "models_list") throw new Error("type guard");
     expect(reply.current).toBeUndefined();
   });
 
-  test("prefers ctx.modelRegistry over the fallback registry", () => {
+  test("prefers ctx.modelRegistry over the fallback registry", async () => {
     const fallback = fakeRegistry([sampleModel]);
     const liveModel: SdkModelLike = {
       id: "gpt-oss-20b",
@@ -313,7 +318,12 @@ describe("handleListModels", () => {
     const live = fakeRegistry([liveModel]);
     const ctx: ActionCtx = { modelRegistry: live };
     const sender = makeSender();
-    handleListModels(ctx, fallback, sender, { type: "list_models", id: "r5", session_id: "s1" });
+    let fallbackRequested = false;
+    await handleListModels(ctx, async () => {
+      fallbackRequested = true;
+      return fallback;
+    }, sender, { type: "list_models", id: "r5", session_id: "s1" });
+    expect(fallbackRequested).toBe(false);
     const reply = sender.sent[0];
     expect(reply.type).toBe("models_list");
     if (reply.type !== "models_list") throw new Error("type guard");
@@ -329,14 +339,14 @@ describe("handleListModels", () => {
     ]);
   });
 
-  test("registry refresh failure surfaces as error envelope", () => {
+  test("registry refresh failure surfaces as error envelope", async () => {
     const reg: ActionModelRegistry = {
-      refresh: () => { throw new Error("models.json malformed"); },
+      refresh: async () => { throw new Error("models.json malformed"); },
       getAvailable: () => [],
       find: () => undefined,
     };
     const sender = makeSender();
-    handleListModels(null, reg, sender, { type: "list_models", id: "r5", session_id: "s1" });
+    await handleListModels(null, registryProvider(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
     expect(sender.sent[0]).toMatchObject({
       type: "error",
       in_reply_to: "r5",
