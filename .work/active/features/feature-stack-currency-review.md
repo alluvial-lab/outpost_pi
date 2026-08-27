@@ -126,9 +126,13 @@ The numbered statements are the only web-source claims used by the synthesis.
 - **`pub-share`** — [pub API](https://pub.dev/api/packages/share_plus) and
   [changelog](https://pub.dev/packages/share_plus/changelog): {1} latest is
   13.3.0; 13.2.0 added built-in-Kotlin support.
-- **`pub-speech`** — [pub API](https://pub.dev/api/packages/speech_to_text) and
-  its linked 7.4.0 archive: {1} 7.4.0 is latest and its Android build still
-  directly applies `kotlin-android`; no built-in-Kotlin release exists.
+- **`pub-speech`** — [pub API](https://pub.dev/api/packages/speech_to_text),
+  [7.5.0-beta.1 archive](https://pub.dev/api/archives/speech_to_text-7.5.0-beta.1.tar.gz),
+  and [upstream main](https://github.com/csdcorp/speech_to_text): {1} 7.4.0 is
+  still the latest stable and directly applies `kotlin-android`; {2} the versions
+  list also contains 7.5.0-beta.1, whose Android build removes KGP and uses
+  `kotlin.compilerOptions` with Flutter 3.44/Dart 3.12 floors (correction
+  2026-08-28: the original pass checked only the API's latest-stable object).
 - **`pub-url-launcher`** — [pub API](https://pub.dev/api/packages/url_launcher_android)
   and [changelog](https://pub.dev/packages/url_launcher_android/changelog):
   {1} latest is 6.3.32; 6.3.31 migrated to built-in Kotlin.
@@ -276,14 +280,14 @@ AGP-9/true path on 3.47.1.[flutter-plugin-bik]{4}
 | `mobile_scanner` | 7.4.0 (`app/pubspec.lock:594-601`) | latest conditionally supports built-in Kotlin[pub-mobile-scanner]{1} | no blocker; APK/device smoke |
 | `package_info_plus` | 9.0.1 (`app/pubspec.lock:641-648`) | support in 10.2.0; 10.2.1 latest[pub-package-info]{1} | major-package migration |
 | `share_plus` | 10.1.4 (`app/pubspec.lock:785-792`) | support in 13.2.0; 13.3.0 latest[pub-share]{1} | major-package migration |
-| `speech_to_text` | 7.4.0 (`app/pubspec.lock:814-821`) | latest still applies KGP; no migrated release[pub-speech]{1} | upstream-blocked: fork/replace/wait |
+| `speech_to_text` | 7.5.0-beta.1 (`app/pubspec.lock`) | latest stable remains unmigrated, but upstream beta removes KGP[pub-speech]{2} | resolved by exact upstream prerelease pin |
 | `url_launcher_android` | 6.3.30 (`app/pubspec.lock:902-917`) | migration in 6.3.31; 6.3.32 latest[pub-url-launcher]{1} | compatible lock refresh |
 
-{inferred: aggregate} Across the matrix, two locked third-party plugins are
-already compatible, two can clear by transitive patch refresh, three need
-deliberate major upgrades, and `speech_to_text` is the hard upstream blocker.
-Do not flip the app to built-in
-Kotlin until that last row has a verified resolution.
+{inferred: aggregate} Across the matrix, two third-party plugins were already
+compatible, two cleared by transitive patch refresh, three required deliberate
+major upgrades, and `speech_to_text` cleared through its exact migrated upstream
+prerelease. The third-party KGP chain now has a verified resolution; the app
+itself remains deliberately unflipped for the next AGP-9 story.
 
 ### 4. Dependency freshness
 
@@ -395,8 +399,9 @@ separately from majors so failures remain attributable.
 
 ### Tracked upstream / evidence gates
 
-- `speech_to_text` has no built-in-Kotlin release and is the only hard plugin
-  blocker.[pub-speech]{1}
+- `speech_to_text` 7.5.0-beta.1 is the first upstream built-in-Kotlin release;
+  retain its exact prerelease pin until stable 7.5+ carries the migration.
+  [pub-speech]{2}
 - Flutter 3.47 has no attested Android stale-IME/inset fix; keep the watchdog and
   require physical Pixel Fold UAT before considering removal.
 - The Flutter breaking-change index lists `describeEnum` removal under 3.47,
@@ -458,3 +463,14 @@ separately from majors so failures remain attributable.
 10 stories spawned (pins story pre-completed at dormancy setup). Scope
 revision recorded: 3.47 upgrade is app-only per cockpit dormancy
 (freeze-with-guard, operator 2026-08-27). Quick wins dispatched same-day.
+
+## KGP dependency-chain outcome (2026-08-28)
+
+The four dependency stories are done. A Flutter 3.44.4 debug APK builds with no
+**plugin** KGP warning; the one remaining warning names the app project itself,
+which is intentionally reserved for `story-migrate-app-agp9-built-in-kotlin`.
+Three hosted plugins were already dual-mode compatible but triggered Flutter
+3.44's lexical scanner on their conditional AGP-8 fallback. Checked-in build
+overlays preserve those conditions while using a scanner-safe `pluginManager`
+spelling; `app/android/plugin-builds/README.md` owns the short-lived carry and
+removal condition.

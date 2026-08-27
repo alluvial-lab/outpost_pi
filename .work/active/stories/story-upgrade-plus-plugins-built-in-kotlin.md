@@ -36,9 +36,10 @@ Note: story-unify-flutter-3-44-4-pins was completed at dormancy-setup time
   adapter, and all debug-log share parameters are assembled at one tested seam.
 - Discrepancies from design: package_info_plus 10 and share_plus 13 require
   win32 6, while the unused Windows adapter pulled by flutter_secure_storage 9
-  constrains win32 5. Because this app ships only Android/iOS, a documented
-  win32 6 override resolves the mobile graph until a deliberate secure-storage
-  major migration removes the conflict.
+  constrains win32 5. Because this app ships only Android/iOS, documented
+  overrides move that adapter and its API-compatible platform interface
+  together until a deliberate secure-storage major migration removes the
+  conflict.
 - Adjacent issues parked: none.
 
 ## Closure evidence
@@ -48,3 +49,4 @@ Note: story-unify-flutter-3-44-4-pins was completed at dormancy-setup time
 - `flutter analyze`: no issues.
 - Targeted version/share tests: 7 passed across their test files.
 - Full app suite (`--exclude-tags e2e --concurrency=2`): 987 passed.
+- A clean debug APK compiles with the upgraded plus plugins.
