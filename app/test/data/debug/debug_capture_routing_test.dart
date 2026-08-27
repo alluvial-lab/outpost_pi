@@ -32,6 +32,13 @@ const _peer = PeerRecord(
 
 final Set<DebugTag> _assertedRoutingTags = <DebugTag>{};
 
+/// UI-composition capture sites exercised at their production widget seams.
+///
+/// `layoutMode` requires `MediaQuery`, router DI, and window metrics; its real
+/// emission is asserted in `test/routing/app_router_test.dart` rather than
+/// duplicating that composition harness in this data-routing suite.
+const Set<DebugTag> _externallyAssertedRoutingTags = {DebugTag.layoutMode};
+
 /// Every event ever asserted by _assertEvent, for the site-coverage registry
 /// test to confirm each required capture site's discriminant actually matched
 /// a recorded event (not just a tag mention).
@@ -1377,10 +1384,14 @@ void main() {
     }
     // Backstop: every DebugTag must still appear (catches a tag with no
     // required sites at all).
+    final assertedSiteTags = requiredSites.map((s) => s.$1).toSet()
+      ..addAll(_externallyAssertedRoutingTags);
     expect(
-      requiredSites.map((s) => s.$1).toSet(),
+      assertedSiteTags,
       containsAll(DebugTag.values),
-      reason: 'Every DebugTag must have at least one required capture site.',
+      reason:
+          'Every DebugTag must have a required capture site in this suite or '
+          'a named production-seam routing test.',
     );
   });
 }
