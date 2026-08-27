@@ -12,6 +12,7 @@
 
 ### Fixes
 
+- Stale-keyboard-inset recovery: the app no longer wedges into half-screen layout when Android retains an IME inset after the keyboard is gone (generalized dismissal + watchdog; instrumented via layoutMode capture events).
 - Transcript reordering on the phone after backlog flush + reconnects (ordering convergence, duplicate-replay safe).
 - Hydration truncation notice now surfaced in the transcript.
 - Identity boot restore race: bounded restore grace — cloud-key restore no longer misread as first run (also fixes the PairingPage test hang it introduced).
