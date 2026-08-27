@@ -5,6 +5,7 @@ import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/main.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeStorage extends PairingStorage {
@@ -134,6 +135,53 @@ void main() {
       connectionManager.dispose();
     },
   );
+
+  test('resume expires a connecting attempt older than its deadline', () {
+    fakeAsync((async) {
+      var now = DateTime.utc(2026, 8, 27, 23, 15);
+      final neverCompletes = Completer<IChannel>();
+      final connectionManager = ConnectionManager(
+        factory: (_, _) => neverCompletes.future,
+        storage: _FakeStorage([_peer]),
+        emitDebounce: Duration.zero,
+        clock: () => now,
+      );
+      final sync = _FakeSyncService();
+
+      // ignore: discarded_futures
+      connectionManager.connectTo(_peer);
+      async.flushMicrotasks();
+      expect(connectionManager.status, isA<StatusConnecting>());
+
+      // Advance the injected wall clock without advancing fake timers. This
+      // models a doze-suspended deadline when the app resumes much later.
+      now = now.add(const Duration(seconds: 14));
+      unawaited(
+        reconcileOnAppResume(
+          connectionManager: connectionManager,
+          requestSessionSync: sync.requestSync,
+        ),
+      );
+      async.flushMicrotasks();
+      expect(connectionManager.status, isA<StatusConnecting>());
+
+      now = now.add(const Duration(seconds: 2));
+      var reconciliationCompleted = false;
+      reconcileOnAppResume(
+        connectionManager: connectionManager,
+        requestSessionSync: sync.requestSync,
+      ).whenComplete(() => reconciliationCompleted = true);
+      async.flushMicrotasks();
+
+      expect(reconciliationCompleted, isTrue);
+      final retrying = connectionManager.status as StatusRetrying;
+      expect(retrying.attempt, 0);
+      expect(retrying.nextRetry, const Duration(seconds: 1));
+      expect(sync.sessionSyncCalls, isZero);
+
+      connectionManager.dispose();
+    });
+  });
 
   test(
     'resume while retrying reconnects the active peer without sync',
