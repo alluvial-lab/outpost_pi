@@ -697,7 +697,8 @@ class _BootSplash extends StatelessWidget {
 void _logLayoutModeTransition(BuildContext ctx, bool twoPane) {
   final size = MediaQuery.sizeOf(ctx);
   final dpr = MediaQuery.devicePixelRatioOf(ctx);
-  final key = (twoPane, size.width, size.height, dpr);
+  final ime = MediaQuery.viewInsetsOf(ctx).bottom;
+  final key = (twoPane, size.width, size.height, dpr, ime);
   if (identical(_lastLayoutKey.value, key)) return;
   final changed = !identical(_lastLayoutKey.value, key);
   _lastLayoutKey.value = key;
@@ -712,6 +713,7 @@ void _logLayoutModeTransition(BuildContext ctx, bool twoPane) {
         heightDp: size.height.round(),
         shortestSideDp: size.shortestSide.round(),
         devicePixelRatio: dpr,
+        imeBottomDp: ime.round(),
         trigger: 'shell-builder',
       ));
 }
