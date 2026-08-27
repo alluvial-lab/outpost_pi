@@ -9,7 +9,7 @@ app/extension/relay, read `../.agents/skills/mobile-remote-coding/SKILL.md`.
 
 ## Stack
 
-- Flutter 3.41+ / Dart 3.11+
+- Flutter 3.47.1 / Dart 3.13.1
 - Platforms: iOS, Android
 - State management: `ChangeNotifier` + `provider` (reactive ViewModels)
 - DI: `auto_injector` (registry in `lib/config/`)

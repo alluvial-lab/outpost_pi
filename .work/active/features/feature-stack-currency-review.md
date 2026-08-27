@@ -241,9 +241,11 @@ AGP 9 built-in Kotlin means Kotlin source is compiled by AGP without applying
 `org.jetbrains.kotlin.android`; Flutter 3.44 temporarily keeps old projects
 building with `android.builtInKotlin=false`, and Flutter 3.47 can enable the new
 path only when the app and all plugins are compatible.[flutter-bik]{1}
-[flutter-bik]{2} The repo is explicitly still opted out of both built-in Kotlin
-and the new DSL (`app/android/gradle.properties:8-12`). These are related but
-not identical migrations: the Android AGP 10 warning is for
+[flutter-bik]{2} The app now enables built-in Kotlin on AGP 9.1 and removes
+legacy KGP application. The separate `android.newDsl=false` opt-out remains
+because Flutter 3.47.1's Gradle plugin still casts AGP's legacy application DSL;
+setting it true fails while applying `dev.flutter.flutter-gradle-plugin`. These
+are related but not identical migrations: the Android AGP 10 warning is for
 `android.newDsl=false`, not proof that AGP 10 removes the built-in-Kotlin
 opt-out.[android-agp9]{2}
 
@@ -286,8 +288,8 @@ AGP-9/true path on 3.47.1.[flutter-plugin-bik]{4}
 {inferred: aggregate} Across the matrix, two third-party plugins were already
 compatible, two cleared by transitive patch refresh, three required deliberate
 major upgrades, and `speech_to_text` cleared through its exact migrated upstream
-prerelease. The third-party KGP chain now has a verified resolution; the app
-itself remains deliberately unflipped for the next AGP-9 story.
+prerelease. The app capstone now builds on AGP 9.1/Gradle 9.3.1 with built-in
+Kotlin enabled and zero legacy-KGP warnings.
 
 ### 4. Dependency freshness
 
@@ -466,11 +468,13 @@ revision recorded: 3.47 upgrade is app-only per cockpit dormancy
 
 ## KGP dependency-chain outcome (2026-08-28)
 
-The four dependency stories are done. A Flutter 3.44.4 debug APK builds with no
-**plugin** KGP warning; the one remaining warning names the app project itself,
-which is intentionally reserved for `story-migrate-app-agp9-built-in-kotlin`.
-Three hosted plugins were already dual-mode compatible but triggered Flutter
-3.44's lexical scanner on their conditional AGP-8 fallback. Checked-in build
-overlays preserve those conditions while using a scanner-safe `pluginManager`
-spelling; `app/android/plugin-builds/README.md` owns the short-lived carry and
-removal condition.
+All dependency stories and the app capstone are done. The app applies no legacy
+KGP, uses the `kotlin.compilerOptions` JVM-17 DSL, and builds debug plus signed
+release APKs on Flutter 3.47.1/AGP 9.1/Gradle 9.3.1 with built-in Kotlin enabled.
+Debug build output contains zero app or plugin legacy-KGP warnings.
+
+The three hosted plugins remain dual-mode compatible but still trigger Flutter
+3.47's lexical scanner on their inactive fallback spelling. The checked-in build
+overlays therefore remain: they preserve the conditions while spelling the
+fallback through scanner-safe `pluginManager.apply`. `app/android/plugin-builds/README.md`
+owns the version pins and evidence-based removal condition.
