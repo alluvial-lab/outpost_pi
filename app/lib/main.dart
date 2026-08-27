@@ -19,7 +19,8 @@ import 'package:provider/provider.dart';
 /// Reconcile connection and session state when the app returns to foreground.
 ///
 /// An online connection rehydrates authoritative relay snapshots before asking
-/// SyncService for history. Retrying/offline connections resume their active
+/// SyncService for history. An overdue connecting attempt is expired so its
+/// retry ladder can restart; retrying/offline connections resume their active
 /// peer or boot discovery, so cached UI state never substitutes for live state.
 @visibleForTesting
 Future<void> reconcileOnAppResume({
@@ -30,6 +31,11 @@ Future<void> reconcileOnAppResume({
   if (status is StatusOnline) {
     await connectionManager.requestResumeHydration();
     requestSessionSync();
+    return;
+  }
+
+  if (status is StatusConnecting) {
+    await connectionManager.expireOverdueConnectOnResume();
     return;
   }
 
