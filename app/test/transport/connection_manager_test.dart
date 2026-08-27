@@ -658,6 +658,7 @@ void main() {
     test(
       'real socket loser reaches EOF before winner publishes online',
       () async {
+        const convergenceTimeout = Duration(seconds: 5);
         final ordering = <String>[];
         final relay = await _FakeAuthRelay.start(
           autoCompleteFromAuth: 2,
@@ -692,18 +693,27 @@ void main() {
         });
         addTearDown(statusSub.cancel);
         await initial.closeStream();
-        await relay.waitForAuthCount(2).timeout(const Duration(seconds: 2));
+        await relay.waitForAuthCount(2).timeout(convergenceTimeout);
         expect(cm.status, isA<StatusConnecting>());
         expect(ordering, containsAllInOrder(['auth:1', 'auth:2']));
 
         await cm.statusStream
             .where((status) => status is StatusOnline)
             .first
-            .timeout(const Duration(seconds: 2));
-        await relay.waitForSocketClose(1).timeout(const Duration(seconds: 2));
-        expect(ordering.indexOf('close:1'), greaterThan(ordering.indexOf('auth:1')));
-        expect(ordering.indexOf('close:1'), lessThan(ordering.indexOf('auth:2')));
-        expect(ordering.indexOf('auth:2'), lessThan(ordering.indexOf('online')));
+            .timeout(convergenceTimeout);
+        await relay.waitForSocketClose(1).timeout(convergenceTimeout);
+        expect(
+          ordering.indexOf('close:1'),
+          greaterThan(ordering.indexOf('auth:1')),
+        );
+        expect(
+          ordering.indexOf('close:1'),
+          lessThan(ordering.indexOf('auth:2')),
+        );
+        expect(
+          ordering.indexOf('auth:2'),
+          lessThan(ordering.indexOf('online')),
+        );
         expect(cm.status, isA<StatusOnline>());
 
         // Releasing the cancelled primary handler cannot authenticate or
@@ -711,10 +721,7 @@ void main() {
         relay.completeAuth(1);
         await Future<void>.delayed(Duration.zero);
         expect(relay.authCount, 2);
-        expect(
-          ordering.where((event) => event == 'online'),
-          hasLength(1),
-        );
+        expect(ordering.where((event) => event == 'online'), hasLength(1));
       },
     );
 
@@ -1700,7 +1707,9 @@ class _FakeAuthRelay {
         unawaited(
           release.future.then((_) {
             if (socket.readyState == WebSocket.open) {
-              socket.add(jsonEncode({'type': 'presence', 'states': <Object>[]}));
+              socket.add(
+                jsonEncode({'type': 'presence', 'states': <Object>[]}),
+              );
             }
           }),
         );

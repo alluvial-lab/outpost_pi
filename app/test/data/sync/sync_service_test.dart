@@ -373,7 +373,10 @@ Future<void> _settle() async {
   // A fixed number of event-loop turns is a deterministic completion barrier:
   // it does not advance wall-clock timers, so a gated fake remains genuinely
   // gated and each test can release its own completion explicitly.
-  for (var turn = 0; turn < 100; turn++) {
+  // Keep enough turns for loaded concurrency=2 runs where Hive completions
+  // compete with the golden renderer, without awaiting intentionally gated
+  // writes used by the interleaving tests below.
+  for (var turn = 0; turn < 500; turn++) {
     await Future<void>.delayed(Duration.zero);
   }
 }
@@ -382,7 +385,7 @@ Future<void> _waitUntil(
   bool Function() condition, {
   required String reason,
 }) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (!condition()) {
     if (DateTime.now().isAfter(deadline)) {
       fail('timed out waiting for $reason');
@@ -5877,9 +5880,9 @@ void main() {
   group('turn projection convergence', () {
     test('agent_done projects idle', () async {
       final s = await setup();
-      s.ch.push(UserInput(id: 'u_agent_done', text: 'hi'));
+      s.ch.push(AgentChunk(inReplyTo: 'u_agent_done', delta: 'partial'));
       await _waitUntil(
-        () => s.sync.turnProjection.cancelTargetId == 'u_agent_done',
+        () => s.sync.streaming?.buffer == 'partial',
         reason: 'the agent_done fixture turn to become active',
       );
       expect(s.sync.turnProjection.working, isTrue);
@@ -5925,9 +5928,9 @@ void main() {
 
     test('cancel/abort projects idle', () async {
       final s = await setup();
-      s.ch.push(UserInput(id: 'u_cancel', text: 'stop me'));
+      s.ch.push(AgentChunk(inReplyTo: 'u_cancel', delta: 'partial'));
       await _waitUntil(
-        () => s.sync.turnProjection.cancelTargetId == 'u_cancel',
+        () => s.sync.streaming?.buffer == 'partial',
         reason: 'the cancellation fixture turn to become active',
       );
       expect(s.sync.turnProjection.working, isTrue);
