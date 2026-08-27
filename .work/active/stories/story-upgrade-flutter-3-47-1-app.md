@@ -19,3 +19,13 @@ Findings, versions, and citations: feature-stack-currency-review.md (the
 research item is the single source of truth for this migration program).
 Note: story-unify-flutter-3-44-4-pins was completed at dormancy-setup time
 (commit 80d9d8903: all four pins → 3.44.4) and is not spawned separately.
+
+## Status (2026-08-27)
+
+Mechanical scope COMPLETE via the AGP 9 capstone (3d4b0e9df): Flutter
+3.47.1/Dart 3.13.1 + AGP 9.1.0/Gradle 9.3.1 + builtInKotlin=true + pins
+moved (app CI/release/E2E; cockpit stays frozen 3.44.4). Verification:
+987 tests, speech 33, zero build warnings, signed release+slim, badging ok.
+newDsl=false retained (Flutter 3.47.1 vs AGP new-DSL failure — tracked).
+REMAINING: operator Pixel Fold UAT (v0.10.0-rc.1 artifact), evidence gate
+incl. stale-IME behavior on 3.47.
