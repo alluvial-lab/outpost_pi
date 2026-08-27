@@ -84,14 +84,21 @@ dependencies:
   # Plan 44 — read the running app version (CFBundleShortVersionString /
   # versionName) so the Android-only in-app update notice can compare it
   # against the release manifest's semver.
-  package_info_plus: ^9.0.1
+  package_info_plus: ^10.2.1
 
   # Debug ring log — persistent, privacy-scrubbed retroactive capture for
   # intermittent mobile bugs (closes the app-side half of
   # idea-cross-side-logging-for-debug). path_provider gives the on-device
   # file location; share_plus drives the export share sheet.
   path_provider: ^2.1.6
-  share_plus: ^10.1.4
+  share_plus: ^13.3.0
+
+# This app ships only Android/iOS. package_info_plus 10 requires win32 6, while
+# the unbuilt Windows adapter pulled by flutter_secure_storage 9 constrains
+# win32 5. Keep mobile resolution unblocked until a deliberate
+# flutter_secure_storage 11 migration removes this conflict.
+dependency_overrides:
+  win32: ^6.0.1
 
 dev_dependencies:
   flutter_test:
