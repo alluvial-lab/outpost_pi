@@ -1,7 +1,6 @@
 // Build overlay for flutter_image_compress_common 1.1.1. The only carry is
-// spelling its AGP-8 conditional KGP application through pluginManager so
-// Flutter 3.44's lexical warning scan recognizes the migrated plugin posture.
-// Remove with the app's AGP-9 migration.
+// spelling its conditional KGP fallback through pluginManager so Flutter's
+// lexical scanner recognizes the inactive built-in-Kotlin branch.
 group 'com.fluttercandies.flutter_image_compress'
 version '1.0-SNAPSHOT'
 

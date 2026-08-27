@@ -1,13 +1,13 @@
 ---
 name: flutter-mobile
 description: Outpost-Pi Flutter mobile app reference. Read before editing or reviewing app/ code, mobile lifecycle, provider/ViewModels, routing, relay WebSocket reconnect, room/session state, secure storage, Hive cache, or UI async safety.
-updated: 2026-08-16
+updated: 2026-08-28
 ---
 
 # Flutter Mobile App Reference
 
 > Local scope: `app/`
-> Versions/context: Flutter 3.41+ / Dart 3.11+ by project guidance, Dart SDK `^3.11.5`; key package pins include `provider ^6.1.2`, `go_router ^17.5.0`, `web_socket_channel ^3.0.1`, `flutter_secure_storage ^9.0.0`, and Hive 2.x. [remote-pi-app-guidance]{1} [remote-pi-app-pubspec]{1}
+> Versions/context: Flutter 3.47.1 / Dart 3.13.1, Dart SDK `^3.11.5`; key package pins include `provider ^6.1.2`, `go_router ^17.5.0`, `web_socket_channel ^3.0.1`, `flutter_secure_storage ^9.0.0`, and Hive 2.x. [remote-pi-app-guidance]{1} [remote-pi-app-pubspec]{1}
 > Source basis: `app/CLAUDE.md`, `app/pubspec.yaml`, `ConnectionManager`, `WsTransport`, `SyncService`, and Flutter/package docs attested in `.research/attestation/`.
 
 ## When to load
@@ -42,17 +42,21 @@ installed and persisted; these notes are so a fresh agent does not re-derive it.
 
 **Toolchain (already installed as root, persisted in `/etc/profile.d/android.sh`):**
 
-- Flutter 3.44.4 at `~/projects/outpost_pi/.tools/flutter` (Dart 3.12.2). Not on `PATH`; call the binary directly. Pub cache is repo-local at `~/projects/outpost_pi/.pub-cache` (gitignored); always `export PUB_CACHE=~/projects/outpost_pi/.pub-cache` because the default `/home/agent/.pub-cache` is mounted read-only. `app/` has no git-overridden deps, so `flutter pub get` works online (or `--offline` once seeded).
+- Flutter 3.47.1 at `~/projects/outpost_pi/.tools/flutter` (Dart 3.13.1). Not on `PATH`; call the binary directly. Pub cache is repo-local at `~/projects/outpost_pi/.pub-cache` (gitignored); always `export PUB_CACHE=~/projects/outpost_pi/.pub-cache` because the default `/home/agent/.pub-cache` is mounted read-only. `app/` has no git-overridden deps, so online `flutter pub get` works (or `--offline` once seeded).
 - JDK `openjdk-21-jdk-headless`. Debian 13/trixie ships no `openjdk-17`; JDK 21
-  compiles the app's pinned Java 17 target and is within AGP 8.11.1's supported
-  range. `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`.
+  compiles the app's Java 17 target and is supported by AGP 9.1.
+  `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`.
+- Android build logic uses AGP 9.1.0, Gradle 9.3.1, and built-in Kotlin with
+  compiler target JVM 17. Flutter 3.47's Gradle plugin still casts the legacy
+  AGP DSL implementation, so `android.newDsl=false` remains a required,
+  separate opt-out even though `android.builtInKotlin=true`.
 - Android SDK at `/opt/android-sdk`: cmdline-tools 12.0, `platform-tools`
-  (adb), `build-tools;35.0.0`, `platforms;android-36`, CMake 3.22.1, and
+  (adb), `build-tools;36.0.0`, `platforms;android-36`, CMake 3.22.1, and
   Flutter's default NDK (auto-fetched on first build).
 - `flutter config --android-sdk /opt/android-sdk` is set.
 
   Why **API 36**, not 35: `app/android/app/build.gradle.kts` sets
-  `compileSdk = flutter.compileSdkVersion`, and Flutter 3.44.4's
+  `compileSdk = flutter.compileSdkVersion`, and Flutter 3.47.1's
   `FlutterExtension.kt` pins `compileSdkVersion = 36`. Install `platforms;android-36`.
   `minSdk = 34` is a floor and needs no separate platform install.
 
@@ -87,7 +91,7 @@ same-package build signed with a different key first to avoid
    in any sh/dash context. Foreground bash sessions accept both.
 2. **Corrupt Gradle Kotlin-DSL workspace after a failed/disk-full build.** An
    interrupted first build can leave `metadata.bin` unreadable under
-   `~/.gradle/caches/8.14/kotlin-dsl/accessors/<hash>/`; Gradle refuses to
+   `~/.gradle/caches/<gradle-version>/kotlin-dsl/accessors/<hash>/`; Gradle refuses to
    overwrite it and reproduces `Could not read workspace metadata ...` on every
    run. Wiping only `~/.gradle/caches` is insufficient — stale state also lives
    in sibling `daemon/`, `native/`, `.tmp/`, and the project `app/android/.gradle`.
