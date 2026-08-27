@@ -33,7 +33,7 @@ describe("system status event boundary", () => {
     const notify = vi.fn();
 
     expect(emitSystemStatusEvent(
-      { mode: "rpc", ui: { notify } } as never,
+      { mode: "rpc", ui: { notify } },
       {
         customType: "outpost-pi:name-assigned",
         details: { requested: "outpost_pi", assigned: "outpost_pi", changed: false },
@@ -55,7 +55,7 @@ describe("system status event boundary", () => {
     const notify = vi.fn();
 
     expect(emitSystemStatusEvent(
-      { mode: "tui", ui: { notify } } as never,
+      { mode: "tui", ui: { notify } },
       { customType: "outpost-pi:relay-state", details: { status: "connected", connected: true } },
     )).toBe(false);
 
