@@ -100,7 +100,7 @@ dev_dependencies:
     sdk: flutter
 
   # Test-only QR rasterization for the device-gated mobile_scanner boundary smoke.
-  qr: ^3.0.2
+  qr: ^4.0.0
 
   # Test-only local byte client keeps google_fonts on bundled fixtures in
   # golden tests; it never reaches the network.
