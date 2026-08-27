@@ -1,3 +1,16 @@
+## v0.10.0 — 2026-08-27
+
+### Platform & toolchain
+
+- **Flutter 3.47.1 + AGP 9 with built-in Kotlin** — the full KGP chain retired: our `outpost_pi_identity` plugin migrated, `app_settings` 9, `package_info_plus` 10, `share_plus` 13 (ShareParams), `speech_to_text` 7.5.0-beta.1 (upstream built-in-Kotlin). Zero legacy-KGP build warnings; no-start launch guard added (`scripts/apk-launch-smoke.sh`).
+- **Pi SDK 0.84.3** (ModelRuntime adapter migration; Node floor corrected to the real ≥22.19 requirement) · **Rust 1.94** pinned + 75 lock refreshes, audit clean · **site on Node 24** everywhere + Next 16.3.3 · all CI pins unified with the actual release-builder.
+- **Cockpit dormant** (freeze-with-guard): excluded from migrations, CI guard watches contract drift; revival path documented.
+
+### Fixes
+
+- System status events no longer enter agent context (`sendMessage` custom messages always reach the model — status moved to a UI-only boundary; verified live post-restart).
+- Stale-IME half-screen recovery (generalized dismissal + watchdog) and layout instrumentation, from v0.9.0's rc loop.
+
 ## v0.9.0 — 2026-08-26
 
 ### Features
