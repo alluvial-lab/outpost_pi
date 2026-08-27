@@ -16,8 +16,11 @@ class InMemoryOwnerIdentityStore implements OwnerIdentityStore {
   InMemoryOwnerIdentityStore({
     OwnerIdentity? initial,
     bool syncAvailable = true,
-  })  : _current = initial,
-        _syncAvailable = syncAvailable;
+  }) : _current = initial,
+       // Keep the public fixture option readable instead of exposing the
+       // private mutable field as a named initializing formal.
+       // ignore: prefer_initializing_formals
+       _syncAvailable = syncAvailable;
 
   /// Toggle sync availability at runtime — useful to exercise the
   /// "user just disabled iCloud Keychain" branch in tests.
@@ -26,7 +29,9 @@ class InMemoryOwnerIdentityStore implements OwnerIdentityStore {
   @override
   Future<OwnerIdentity?> load() async {
     if (!_syncAvailable) {
-      throw IdentityStoreError.syncUnavailable('test fixture: syncAvailable=false');
+      throw IdentityStoreError.syncUnavailable(
+        'test fixture: syncAvailable=false',
+      );
     }
     return _current;
   }
@@ -34,7 +39,9 @@ class InMemoryOwnerIdentityStore implements OwnerIdentityStore {
   @override
   Future<void> save(OwnerIdentity identity) async {
     if (!_syncAvailable) {
-      throw IdentityStoreError.syncUnavailable('test fixture: syncAvailable=false');
+      throw IdentityStoreError.syncUnavailable(
+        'test fixture: syncAvailable=false',
+      );
     }
     _current = identity;
     _controller.add(identity);
@@ -46,7 +53,9 @@ class InMemoryOwnerIdentityStore implements OwnerIdentityStore {
   @override
   Future<void> delete() async {
     if (!_syncAvailable) {
-      throw IdentityStoreError.syncUnavailable('test fixture: syncAvailable=false');
+      throw IdentityStoreError.syncUnavailable(
+        'test fixture: syncAvailable=false',
+      );
     }
     _current = null;
   }
