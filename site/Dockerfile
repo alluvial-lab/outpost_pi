@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Dependencies stage ─────────────────────────────────────────────────────
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 
 RUN apk add --no-cache libc6-compat
 RUN corepack enable
@@ -12,7 +12,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 
 # ── Build stage ────────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 
 RUN apk add --no-cache libc6-compat
 RUN corepack enable
@@ -26,7 +26,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
 # ── Runtime stage ──────────────────────────────────────────────────────────
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 
 RUN apk add --no-cache curl
 
