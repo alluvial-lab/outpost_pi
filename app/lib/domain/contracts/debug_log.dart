@@ -574,6 +574,7 @@ final class LayoutModeEvent extends DebugEvent {
     required this.heightDp,
     required this.shortestSideDp,
     required this.devicePixelRatio,
+    required this.imeBottomDp,
     this.trigger,
   }) : super(tag: DebugTag.layoutMode);
 
@@ -582,6 +583,10 @@ final class LayoutModeEvent extends DebugEvent {
   final int heightDp;
   final int shortestSideDp;
   final double devicePixelRatio;
+
+  /// Current bottom view inset (keyboard) in dp. A value that stays large
+  /// after the IME is gone is the stuck-inset signature.
+  final int imeBottomDp;
   final String? trigger; // builder / resume / zero-state flip
 
   @override
@@ -593,6 +598,7 @@ final class LayoutModeEvent extends DebugEvent {
     'heightDp': heightDp,
     'shortestSideDp': shortestSideDp,
     'dpr': devicePixelRatio,
+    'imeDp': imeBottomDp,
     if (trigger != null) 'trigger': _cap(trigger!),
   };
 }
