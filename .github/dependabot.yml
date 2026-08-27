@@ -103,9 +103,14 @@ updates:
       prefix: deps
       include: scope
 
-  - package-ecosystem: pub
-    directory: /cockpit
-    schedule:
+  # DORMANT (freeze-with-guard, 2026-08-27): cockpit gets no dependency
+  # refreshes while dormant — re-enable this entry at revival (see AGENTS.md
+  # § Cockpit dormancy). Kept as a comment, not deleted, for that reason.
+  # - package-ecosystem: pub
+  #   directory: /cockpit
+  #   schedule:
+      # interval: weekly
+    # open-pull-requests-limit: 5
       interval: weekly
     open-pull-requests-limit: 5
     # flutter_local_notifications majors deferred (18->22 needs v22 API migration
