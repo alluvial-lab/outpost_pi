@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Raises the minimum supported SDK versions to Flutter 3.44 and Dart 3.12.
+- Removes the plugin's legacy Kotlin Gradle Plugin application and migrates
+  compiler configuration to `kotlin.compilerOptions` for AGP built-in Kotlin.
+- Migrates the example app to the compiler-options DSL, retaining a conditional
+  KGP fallback only while its checked-in AGP 8 build exercises legacy mode.
+
 ## 0.2.0
 
 ### BREAKING
