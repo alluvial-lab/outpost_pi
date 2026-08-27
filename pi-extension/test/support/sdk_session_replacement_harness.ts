@@ -112,6 +112,7 @@ export type HarnessSession = {
   sessionManager: SessionManager;
   sessionFile: string | undefined;
   agent: { state: { messages: unknown[] } };
+  abort(): Promise<void>;
   dispose(): void;
   createReplacedSessionContext(): ReplacedSessionContext;
 };
@@ -434,6 +435,7 @@ export class SdkSessionReplacementHarness {
   private makeContextActions(label: string, cwd: string): ExtensionContextActions {
     return {
       getModel: () => undefined,
+      getScopedModels: () => [],
       isIdle: () => true,
       isProjectTrusted: () => true,
       getSignal: () => undefined,
@@ -481,6 +483,9 @@ export class SdkSessionReplacementHarness {
       sessionManager,
       sessionFile: sessionManager.getSessionFile(),
       agent: { state: { messages: sessionManager.buildSessionContext().messages } },
+      // Pi 0.84 settles an active outgoing turn before replacement teardown.
+      // This harness has no agent loop, so there is nothing to abort or persist.
+      abort: async () => undefined,
       dispose: () => {
         // This is the real SDK stale-ctx invalidation path: runner.invalidate()
         // installs the stale message consumed by ExtensionRunner.assertActive(),
