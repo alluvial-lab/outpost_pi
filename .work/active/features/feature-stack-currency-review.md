@@ -1,7 +1,7 @@
 ---
 id: feature-stack-currency-review
 kind: feature
-stage: drafting
+stage: implementing
 tags: [research, workflow]
 parent: null
 depends_on: []
@@ -450,5 +450,11 @@ separately from majors so failures remain attributable.
 - No unresolved contradiction blocks the recommendations; `describeEnum` is
   recorded above as a non-blocking source contradiction.
 - Research findings are complete. Per the operator's explicit contract, this
-  item **stays `stage: drafting`** so the orchestrator can review the proposal
+  item **stays `stage: implementing`** so the orchestrator can review the proposal
   and spawn stories.
+
+## Decomposition executed (2026-08-27)
+
+10 stories spawned (pins story pre-completed at dormancy setup). Scope
+revision recorded: 3.47 upgrade is app-only per cockpit dormancy
+(freeze-with-guard, operator 2026-08-27). Quick wins dispatched same-day.
