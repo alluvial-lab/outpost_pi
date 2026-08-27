@@ -162,15 +162,20 @@ agent_end
 | `{"type":"tool_execution_start","toolCallId":"…","toolName":"bash","args":{…}}` | `RpcToolStart` | tool card (spinner) |
 | `{"type":"tool_execution_end","toolCallId":"…","toolName":"…","isError":false,"result":{"content":[{"type":"text","text":"…"}]}}` | `RpcToolEnd` | tool result |
 | `{"type":"response","command":"prompt","success":true}` | `RpcCommandResponse` | ACK; shows error if `success:false` |
-| `message_start` with `role:"custom"` + `customType:"outpost-pi:relay-state"` | `RpcRelayState` | relay button/indicator status |
-| `message_start` with `role:"custom"` + `customType:"outpost-pi:name-assigned"` | `RpcNameAssigned` | renames the tab when the broker resolves a collision |
-| `message_start` with `role:"custom"` + `customType:"outpost-pi:paired"` | `RpcPaired` | schema-mapped event; the session UI ignores it for now |
-| `message_start` with `role:"custom"` + `customType:"outpost-pi:mesh-revoked"` | `RpcMeshRevoked` | schema-mapped event; the session UI ignores it for now |
+| `extension_ui_request` `method:"notify"` with a schema-owned `outpost-pi:relay-state` JSON payload | `RpcRelayState` | relay button/indicator status; never model context |
+| `extension_ui_request` `method:"notify"` with an `outpost-pi:name-assigned` JSON payload | `RpcNameAssigned` | renames the tab when the broker resolves a collision; never model context |
+| `extension_ui_request` `method:"notify"` with an `outpost-pi:paired` JSON payload | `RpcPaired` | schema-mapped event; the session UI ignores it for now |
+| `extension_ui_request` `method:"notify"` with an `outpost-pi:mesh-revoked` JSON payload | `RpcMeshRevoked` | schema-mapped event; the session UI ignores it for now |
 | `{"type":"message_end","message":{"stopReason":"error","errorMessage":"Connection error."}}` | `RpcStreamError` | shows the turn error (provider down, etc.) |
 | `{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"…"}` | `RpcAutoRetry` | "retrying (1/3…)" line |
 | *(stderr, non-JSON)* | `RpcDiagnostic` | diagnostic line |
 | *(process exited)* | `RpcProcessExit` | "terminated (code=N)" banner |
 | any other `type` | `RpcUnknown` | **ignored** (never crashes) |
+
+The mapper also accepts the older `message_start`/`role:"custom"` wrapper so a
+frozen Cockpit binary can observe status from an older extension during a local
+upgrade. New extension status uses the RPC UI channel because `pi.sendMessage`
+custom messages always participate in model context, even with `display:false`.
 
 Types emitted but **ignored** in the MVP (become `RpcUnknown`): other
 `message_start`, `message_end`, `tool_execution_update`, and the deltas

@@ -40,6 +40,32 @@ void main() {
       await gateway.cancel();
     });
 
+    test('maps paired status from the non-context RPC UI channel', () async {
+      final rpc = _FakeEphemeralPiRpc();
+      final timers = _FakeTimers();
+      final gateway = _gateway(rpc, timers);
+      final paired = _nextEvent<PairDevicePaired>(gateway.events);
+
+      await gateway.start();
+      rpc.emit(<String, dynamic>{
+        'type': 'extension_ui_request',
+        'id': 'paired-status',
+        'method': 'notify',
+        'message': jsonEncode(<String, Object?>{
+          'customType': 'outpost-pi:paired',
+          'details': <String, Object?>{
+            'name': 'Phone',
+            'peerId': 'owner-peer',
+            'pairedAt': 1760000000001,
+          },
+        }),
+        'notifyType': 'info',
+      });
+
+      expect((await paired).name, 'Phone');
+      await gateway.cancel();
+    });
+
     test(
       'boot timeout finalizes the process, bearer-token seam, and timers',
       () async {
@@ -126,6 +152,7 @@ final class _FakeEphemeralPiRpc implements EphemeralPiRpcSession {
   final Completer<void> disposeCompleted = Completer<void>();
   final Completer<void> _startRelease = Completer<void>();
   String? pairCodeFile;
+  void Function(Map<String, dynamic> json)? _onLine;
   var disposeCalls = 0;
 
   @override
@@ -142,12 +169,15 @@ final class _FakeEphemeralPiRpc implements EphemeralPiRpcSession {
     Map<String, String> additionalEnvironment = const <String, String>{},
   }) async {
     pairCodeFile = additionalEnvironment['OUTPOST_PI_PAIR_CODE_FILE'];
+    _onLine = onLine;
     if (!exitDuringStart) return;
 
     startEntered.complete();
     onExit!(17);
     await _startRelease.future;
   }
+
+  void emit(Map<String, dynamic> event) => _onLine!(event);
 
   void releaseStart() {
     if (!_startRelease.isCompleted) _startRelease.complete();

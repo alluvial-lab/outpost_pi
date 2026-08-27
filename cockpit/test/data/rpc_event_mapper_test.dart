@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cockpit/app/cockpit/data/adapters/rpc_event_mapper.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
 import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
@@ -39,6 +41,55 @@ void main() {
       expect(nameAssigned.requested, 'desk-agent');
       expect(nameAssigned.assigned, 'desk-agent#2');
       expect(nameAssigned.changed, isTrue);
+    });
+
+    test('maps status events from the non-context RPC UI channel', () {
+      final relayEvent = mapper.fromJson(<String, dynamic>{
+        'type': 'extension_ui_request',
+        'id': 'status-1',
+        'method': 'notify',
+        'message': jsonEncode(<String, Object?>{
+          'customType': 'outpost-pi:relay-state',
+          'details': <String, Object?>{
+            'status': 'reconnecting',
+            'connected': false,
+            'relayUrl': 'https://relay.example',
+          },
+        }),
+        'notifyType': 'info',
+      });
+
+      expect(relayEvent, isA<RpcRelayState>());
+      final relayState = relayEvent as RpcRelayState;
+      expect(relayState.status, RelayStatus.reconnecting);
+      expect(relayState.connected, isFalse);
+      expect(relayState.relayUrl, 'https://relay.example');
+
+      final nameEvent = mapper.fromJson(<String, dynamic>{
+        'customType': 'outpost-pi:name-assigned',
+        'details': <String, Object?>{
+          'requested': 'desk-agent',
+          'assigned': 'desk-agent#2',
+          'changed': true,
+        },
+      });
+      expect(nameEvent, isA<RpcNameAssigned>());
+      expect((nameEvent as RpcNameAssigned).assigned, 'desk-agent#2');
+    });
+
+    test('ordinary RPC notifications remain visible notices', () {
+      final event = mapper.fromJson(<String, dynamic>{
+        'type': 'extension_ui_request',
+        'id': 'notice-1',
+        'method': 'notify',
+        'message': 'Relay setup needs attention',
+        'notifyType': 'warning',
+      });
+
+      expect(event, isA<RpcNotice>());
+      final notice = event as RpcNotice;
+      expect(notice.message, 'Relay setup needs attention');
+      expect(notice.level, RpcNoticeLevel.warning);
     });
 
     test('preserves tool arguments and uses an empty object fallback', () {

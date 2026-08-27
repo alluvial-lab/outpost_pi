@@ -2,12 +2,12 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { qrSession } from "../../pairing/qr.js";
 import { PairingCoordinator } from "./pairing_coordinator.js";
 import type { SelfRevokeOptions } from "../../mesh/self_revoke.js";
+import type { SystemStatusEvent } from "../system_status_event.js";
 
-type CustomMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 type PairingDialogFactory = (
   tui: never,
   theme: never,
@@ -15,11 +15,11 @@ type PairingDialogFactory = (
   done: (result: void) => void,
 ) => { render(width: number): string[] };
 
-class FakeSession {
-  readonly customMessages: CustomMessage[] = [];
+class FakeStatusSink {
+  readonly events: SystemStatusEvent[] = [];
 
-  sendMessage(message: CustomMessage): void {
-    this.customMessages.push(message);
+  emit(event: SystemStatusEvent): void {
+    this.events.push(event);
   }
 }
 
@@ -43,7 +43,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      sendPiMessage: () => true,
+      emitStatusEvent: () => true,
       setSiblings: () => undefined,
     });
     const ui = { notify: vi.fn(() => { throw new Error("stale after session replacement or reload"); }) };
@@ -57,7 +57,7 @@ describe("PairingCoordinator.showPairQr", () => {
     let release!: () => void;
     const detachGate = new Promise<void>((resolve) => { release = resolve; });
     const detach = vi.fn(() => detachGate);
-    const sendPiMessage = vi.fn(() => true);
+    const emitStatusEvent = vi.fn(() => true);
     const poller = { start: vi.fn(), stop: vi.fn() };
     const coordinator = new PairingCoordinator({
       getState: () => "started",
@@ -69,7 +69,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => true,
       refreshPairingsCache: vi.fn(),
       joinLocalMesh: async () => undefined,
-      sendPiMessage,
+      emitStatusEvent,
       setSiblings: () => undefined,
     }, (options) => {
       onRevoke = options.onRevoke!;
@@ -85,11 +85,11 @@ describe("PairingCoordinator.showPairQr", () => {
 
     expect(detach).toHaveBeenCalledOnce();
     expect(detach).toHaveBeenCalledWith("owner-epk", "session_replaced");
-    expect(sendPiMessage).not.toHaveBeenCalled();
+    expect(emitStatusEvent).not.toHaveBeenCalled();
 
     release();
     await revoking;
-    expect(sendPiMessage).toHaveBeenCalledOnce();
+    expect(emitStatusEvent).toHaveBeenCalledOnce();
   });
 
   test("self-revoke detach rejection stays on the awaited callback chain", async () => {
@@ -105,7 +105,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => true,
       refreshPairingsCache: vi.fn(),
       joinLocalMesh: async () => undefined,
-      sendPiMessage: vi.fn(() => true),
+      emitStatusEvent: vi.fn(() => true),
       setSiblings: () => undefined,
     }, (options) => {
       onRevoke = options.onRevoke!;
@@ -120,10 +120,10 @@ describe("PairingCoordinator.showPairQr", () => {
     await expect(onRevoke("owner-epk")).rejects.toBe(detachError);
   });
 
-  test("renders pairing only in the TUI without sending model-context messages", async () => {
-    const session = new FakeSession();
-    const sendPiMessage = vi.fn((message: CustomMessage) => {
-      session.sendMessage(message);
+  test("renders pairing only in the TUI without emitting status events", async () => {
+    const sink = new FakeStatusSink();
+    const emitStatusEvent = vi.fn((event: SystemStatusEvent) => {
+      sink.emit(event);
       return true;
     });
     let rendered = "";
@@ -149,7 +149,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      sendPiMessage,
+      emitStatusEvent,
       setSiblings: () => undefined,
     });
     coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
@@ -166,8 +166,8 @@ describe("PairingCoordinator.showPairQr", () => {
     const token = new URLSearchParams(new URL(uri!).hash.slice(1)).get("t");
     expect(token).toBeTruthy();
 
-    expect(sendPiMessage).not.toHaveBeenCalled();
-    expect(session.customMessages).toEqual([]);
+    expect(emitStatusEvent).not.toHaveBeenCalled();
+    expect(sink.events).toEqual([]);
   });
 
   test("reacquires the live session UI after asynchronous pair-code publication", async () => {
@@ -188,7 +188,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      sendPiMessage: () => true,
+      emitStatusEvent: () => true,
       setSiblings: () => undefined,
     });
     coordinator.recordCurrentKeypair({
@@ -211,9 +211,9 @@ describe("PairingCoordinator.showPairQr", () => {
   });
 
   test("narrow terminal still shows the copyable pairing URI when the QR won't fit", async () => {
-    const session = new FakeSession();
-    const sendPiMessage = vi.fn((message: CustomMessage) => {
-      session.sendMessage(message);
+    const sink = new FakeStatusSink();
+    const emitStatusEvent = vi.fn((event: SystemStatusEvent) => {
+      sink.emit(event);
       return true;
     });
     let renderedNarrow = "";
@@ -241,7 +241,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      sendPiMessage,
+      emitStatusEvent,
       setSiblings: () => undefined,
     });
     coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
@@ -259,15 +259,15 @@ describe("PairingCoordinator.showPairQr", () => {
       ?? renderedNarrow.split("\n").find((line) => line.includes("https://outpost-pi.kevoun.com"));
     expect(uri).toBeDefined();
     expect(renderedNarrow).not.toContain("widen to");
-    expect(sendPiMessage).not.toHaveBeenCalled();
-    expect(session.customMessages).toEqual([]);
+    expect(emitStatusEvent).not.toHaveBeenCalled();
+    expect(sink.events).toEqual([]);
   });
 
   test("non-TUI pairing without the seam warns without issuing or displaying a token", async () => {
     delete process.env["OUTPOST_PI_PAIR_CODE_FILE"];
     const notify = vi.fn();
     const custom = vi.fn();
-    const sendPiMessage = vi.fn(() => true);
+    const emitStatusEvent = vi.fn(() => true);
     const coordinator = new PairingCoordinator({
       getState: () => "started",
       startRelay: async () => undefined,
@@ -278,7 +278,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      sendPiMessage,
+      emitStatusEvent,
       setSiblings: () => undefined,
     });
     coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
@@ -294,7 +294,7 @@ describe("PairingCoordinator.showPairQr", () => {
     expect(notify).toHaveBeenCalledWith(expect.stringMatching(/requires an interactive TUI/i), "warning");
     expect(issueToken).not.toHaveBeenCalled();
     expect(custom).not.toHaveBeenCalled();
-    expect(sendPiMessage).not.toHaveBeenCalled();
+    expect(emitStatusEvent).not.toHaveBeenCalled();
   });
 
   test("writes the production pair code to the headless E2E seam with owner-only permissions", async () => {
@@ -306,7 +306,7 @@ describe("PairingCoordinator.showPairQr", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const notify = vi.fn();
-    const sendPiMessage = vi.fn(() => true);
+    const emitStatusEvent = vi.fn(() => true);
     const coordinator = new PairingCoordinator({
       getState: () => "started",
       startRelay: async () => undefined,
@@ -317,7 +317,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      sendPiMessage,
+      emitStatusEvent,
       setSiblings: () => undefined,
     });
     coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
@@ -342,7 +342,7 @@ describe("PairingCoordinator.showPairQr", () => {
         expiresAt: expect.any(Number),
       });
       expect((await stat(pairCodeFile)).mode & 0o777).toBe(0o600);
-      expect(sendPiMessage).not.toHaveBeenCalled();
+      expect(emitStatusEvent).not.toHaveBeenCalled();
       expect(notify).not.toHaveBeenCalled();
       expect(JSON.stringify([
         ...log.mock.calls,
@@ -375,7 +375,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      sendPiMessage: vi.fn(() => true),
+      emitStatusEvent: vi.fn(() => true),
       setSiblings: () => undefined,
     });
     coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
