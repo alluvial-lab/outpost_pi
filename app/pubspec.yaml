@@ -96,11 +96,12 @@ dependencies:
   share_plus: ^13.3.0
 
 # This app ships only Android/iOS. package_info_plus 10 requires win32 6, while
-# the unbuilt Windows adapter pulled by flutter_secure_storage 9 constrains
-# win32 5. Keep mobile resolution unblocked until a deliberate
-# flutter_secure_storage 11 migration removes this conflict.
+# flutter_secure_storage 9 pins its unused Windows adapter to win32 5. Resolve
+# that adapter and its API-compatible interface together until a deliberate
+# flutter_secure_storage 11 migration removes these overrides.
 dependency_overrides:
-  win32: ^6.0.1
+  flutter_secure_storage_platform_interface: ^2.0.3
+  flutter_secure_storage_windows: ^4.2.2
 
 dev_dependencies:
   flutter_test:
