@@ -1,7 +1,7 @@
 ---
 id: story-upgrade-flutter-3-47-1-app
 kind: story
-stage: implementing
+stage: done
 tags: [app, deps]
 parent: feature-stack-currency-review
 depends_on: [story-migrate-app-agp9-built-in-kotlin]
@@ -29,3 +29,10 @@ moved (app CI/release/E2E; cockpit stays frozen 3.44.4). Verification:
 newDsl=false retained (Flutter 3.47.1 vs AGP new-DSL failure — tracked).
 REMAINING: operator Pixel Fold UAT (v0.10.0-rc.1 artifact), evidence gate
 incl. stale-IME behavior on 3.47.
+
+## Closure (2026-08-27)
+
+Operator published v0.10.0 from the rc.1 build ("Publish") after field
+verdict on the rc build + the full pre-phone battery (no-start guard, 7-lane
+e2e incl. 600s chaos soak — zero unexpected findings, capture-delivery
+green). UAT gate satisfied by operator decision.
