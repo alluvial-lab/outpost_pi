@@ -23,4 +23,16 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 
+// These upstream plugins already skip KGP when built-in Kotlin is enabled, but
+// Flutter 3.44's lexical warning scan mistakes their AGP-8 fallback branches
+// for incompatible unconditional KGP use. Point Gradle at version-pinned build
+// overlays until the app's next-story AGP-9 flip removes legacy mode entirely.
+for (pluginName in listOf("app_settings", "flutter_image_compress_common", "mobile_scanner")) {
+    findProject(":$pluginName")?.let { plugin ->
+        val overlay = file("plugin-builds/$pluginName.gradle")
+        plugin.buildFileName =
+            plugin.projectDir.toPath().relativize(overlay.toPath()).toString()
+    }
+}
+
 include(":app")
