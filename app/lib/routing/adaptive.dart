@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show FlutterView;
 
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:flutter/services.dart';
@@ -111,7 +112,24 @@ class MasterPaneHomeSurface extends StatelessWidget {
   }
 }
 
-/// Dismiss the detail IME without overriding routed system-bar insets.
+/// Native query for whether Android currently considers the IME visible.
+const MethodChannel imeVisibilityChannel = MethodChannel(
+  'dev.kevoun.outpostpi/ime-visibility',
+);
+
+/// Grace period before treating a keyboard-sized inset as stale.
+///
+/// Four seconds is well beyond Android's normal IME close animation while
+/// remaining short enough to recover the field-observed half-screen layout.
+const Duration kStaleImeWatchdogDelay = Duration(seconds: 4);
+
+/// Minimum bottom inset that can arm stale-IME recovery.
+///
+/// This deliberately excludes small transient/system overlays; the affected
+/// Pixel Fold reports a keyboard-sized inset hundreds of logical pixels tall.
+const double kStaleImeInsetThreshold = 100.0;
+
+/// Dismiss a departed IME without overriding routed system-bar insets.
 ///
 /// Flutter moves focus away when the detail branch leaves the rendered shell,
 /// but that focus transition does not send `TextInput.hide`. Pixel Fold's
@@ -119,36 +137,157 @@ class MasterPaneHomeSurface extends StatelessWidget {
 /// resize. Android 15+ always lays Flutter out edge-to-edge, so the routed
 /// subtree must receive Flutter's platform [MediaQueryData.padding] unchanged;
 /// its own [SafeArea] remains the sole owner of system-bar layout padding.
+///
+/// The same retention also occurs without a pane transition. Flutter 3.44 has
+/// no public global `TextInput.isConnected` or IME-visibility getter: only an
+/// individual [TextInputConnection.attached] is public, while [EditableText]
+/// keeps that connection private. The Android host therefore exposes the
+/// platform's `WindowInsets.Type.ime()` visibility through
+/// [imeVisibilityChannel]. A four-second watchdog checks that independent
+/// signal before sending the same cheap, idempotent command. Focus loss still
+/// reasserts immediately, and a focused [EditableText] is the conservative
+/// fallback on platforms without the host channel. The timer and binding/focus
+/// observers are owned by this widget.
 class PaneCollapseImeDismissal extends StatefulWidget {
   const PaneCollapseImeDismissal({
     super.key,
     required this.twoPane,
     required this.child,
+    this.onWatchdogRecovery,
   });
 
   final bool twoPane;
   final Widget child;
+
+  /// Emit field diagnostics when fallback stale-inset recovery acts.
+  final VoidCallback? onWatchdogRecovery;
 
   @override
   State<PaneCollapseImeDismissal> createState() =>
       _PaneCollapseImeDismissalState();
 }
 
-class _PaneCollapseImeDismissalState extends State<PaneCollapseImeDismissal> {
+class _PaneCollapseImeDismissalState extends State<PaneCollapseImeDismissal>
+    with WidgetsBindingObserver {
+  Timer? _watchdog;
+  FlutterView? _view;
+  bool _watchdogActedForInset = false;
+  bool _hadTextInputConnection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hadTextInputConnection = _hasActiveTextInputConnection();
+    FocusManager.instance.addListener(_handleFocusChange);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _view = View.of(context);
+    _reconcileWatchdog(MediaQuery.viewInsetsOf(context).bottom);
+  }
+
+  @override
+  void didChangeMetrics() {
+    _reconcileWatchdog(_windowBottomInset);
+  }
+
   @override
   void didUpdateWidget(PaneCollapseImeDismissal oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.twoPane || widget.twoPane) return;
-    if (View.of(context).viewInsets.bottom <= 0) return;
+    if (oldWidget.twoPane && !widget.twoPane && _windowBottomInset > 0) {
+      _scheduleHide(requireDisconnected: false, requireSinglePane: true);
+    }
+    _reconcileWatchdog(_windowBottomInset);
+  }
 
+  void _handleFocusChange() {
+    final connected = _hasActiveTextInputConnection();
+    final connectionClosed = _hadTextInputConnection && !connected;
+    _hadTextInputConnection = connected;
+    if (connectionClosed && _windowBottomInset > 0) {
+      _scheduleHide(requireDisconnected: true, requireSinglePane: false);
+    }
+    _reconcileWatchdog(_windowBottomInset);
+  }
+
+  void _scheduleHide({
+    required bool requireDisconnected,
+    required bool requireSinglePane,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || widget.twoPane) return;
+      if (!mounted || _windowBottomInset <= 0) return;
+      if (requireSinglePane && widget.twoPane) return;
+      if (requireDisconnected && _hasActiveTextInputConnection()) return;
       unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
     });
   }
 
+  void _reconcileWatchdog(double bottomInset) {
+    if (!mounted) return;
+    if (bottomInset < kStaleImeInsetThreshold) {
+      _watchdog?.cancel();
+      _watchdog = null;
+      _watchdogActedForInset = false;
+      return;
+    }
+    if (_watchdog != null || _watchdogActedForInset) return;
+    _watchdog = Timer(
+      kStaleImeWatchdogDelay,
+      () => unawaited(_recoverStaleInset()),
+    );
+  }
+
+  Future<void> _recoverStaleInset() async {
+    _watchdog = null;
+    if (!mounted || _windowBottomInset < kStaleImeInsetThreshold) return;
+    if (await _isImeVisible()) {
+      if (mounted) _reconcileWatchdog(_windowBottomInset);
+      return;
+    }
+    if (!mounted || _windowBottomInset < kStaleImeInsetThreshold) return;
+    _watchdogActedForInset = true;
+    widget.onWatchdogRecovery?.call();
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+  }
+
+  double get _windowBottomInset {
+    final view = _view;
+    if (view == null) return 0;
+    return view.viewInsets.bottom / view.devicePixelRatio;
+  }
+
+  @override
+  void dispose() {
+    _watchdog?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    FocusManager.instance.removeListener(_handleFocusChange);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+Future<bool> _isImeVisible() async {
+  try {
+    return await imeVisibilityChannel.invokeMethod<bool>('isVisible') ??
+        _hasActiveTextInputConnection();
+  } on MissingPluginException {
+    return _hasActiveTextInputConnection();
+  } on PlatformException {
+    return true;
+  }
+}
+
+bool _hasActiveTextInputConnection() {
+  final focus = FocusManager.instance.primaryFocus;
+  if (focus == null || !focus.hasFocus) return false;
+  final focusContext = focus.context;
+  return focusContext?.widget is EditableText ||
+      focusContext?.findAncestorStateOfType<EditableTextState>() != null;
 }
 
 /// Maximum single-column content width for onboarding and empty states.
