@@ -699,10 +699,11 @@ class _BootSplash extends StatelessWidget {
   }
 }
 
-/// Emit a layoutMode debug event when the two-pane verdict or its driving
-/// metrics change. Field diagnosis for phantom half-screen layouts on
-/// phone-class displays (Fold display-switch timing): the capture shows the
-/// exact window metrics the shell believed at the transition.
+/// Emit a layoutMode debug event when shell metrics change or recovery acts.
+///
+/// Field diagnosis for phantom half-screen layouts on phone-class displays:
+/// the capture shows the exact window metrics at a shell transition or a
+/// forced stale-IME watchdog event.
 void _logLayoutModeTransition(
   BuildContext ctx,
   bool twoPane, {
