@@ -1,7 +1,7 @@
 ---
 id: story-system-status-events-in-agent-turn-stream
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug, workflow]
 parent: null
 depends_on: []
@@ -118,3 +118,30 @@ capture-delivery prompts still use explicit turn-triggering message delivery.
   startup status both times, and `get_messages` returned zero messages before
   and after resume (`statusContextLeaks: 0`).
 - Shared mobile protocol was not changed; the mobile app suite was not required.
+
+## Closure
+
+Diagnosis → the startup banner was the adjacent `name-assigned` and relay-state
+`sendMessage` custom entries; `display:false` hid rendering but not model context.
+Emitters → mesh join, relay transitions, owner-paired, and self-revoke all used
+the same unsafe message boundary. Fix → those four schema-owned status types now
+use RPC `ui.notify` payloads, with Cockpit consumers updated and ordinary TUI
+notices/footer behavior retained. Evidence → the boundary regression, break-it
+proof, full extension/Cockpit suites, and persisted restart/`--continue` smoke all
+show zero status entries in agent context.
+
+## Review (2026-08-27)
+
+**Verdict**: Approve
+
+**Blockers**: none
+**Important**: none
+**Nits**: removed two unnecessary test-only casts during the bounded pass
+**Rejected**: none
+
+**Notes**: Standalone-story bounded inline review; effective weight `standard`
+(project default), with no independent/fresh-context reviewer by policy. Reviewed
+correctness, regression strength, lifecycle/stale-context routing, Cockpit and
+ephemeral pairing consumer compatibility, docs/comments, and the narrow security
+surface. Foundation-doc, auth, persistence-migration, and mobile-wire lenses were
+not applicable because those contracts did not change.
