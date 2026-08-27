@@ -1,3 +1,9 @@
+## v0.10.1 — 2026-08-27
+
+### Fixes
+
+- **Hung connect wedge cured** — WebSocket connect attempts now carry a 15s deadline routed into the retry ladder. Previously, a silently-blackholed connect (WiFi associated-but-dead / NAT drop) parked the app in `connecting` forever — "everything offline until force-close" (capture-diagnosed). Foreground resume additionally expires stale `connecting` states, covering doze-suspended timers.
+
 ## v0.10.0 — 2026-08-27
 
 ### Platform & toolchain
