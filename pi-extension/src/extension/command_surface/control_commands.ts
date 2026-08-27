@@ -1,7 +1,11 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { MeshNode } from "../../session/mesh_node.js";
 import type { ByeReason } from "../../protocol/types.js";
 import { saveLocalConfig } from "../../session/local_config.js";
+import type {
+  SystemStatusEvent,
+  SystemStatusEventSourceContext,
+} from "../system_status_event.js";
 
 /** Supply the lifecycle-owned relay and UI operations used by transparent control commands. */
 export interface ControlCommandsDeps {
@@ -17,10 +21,9 @@ export interface ControlCommandsDeps {
     type?: "info" | "warning" | "error",
     ctx?: { ui?: { notify?: (message: string, type?: "info" | "warning" | "error") => void } } | null,
   ) => void;
-  readonly sendPiMessage: (
-    message: Parameters<ExtensionAPI["sendMessage"]>[0],
-    options?: Parameters<ExtensionAPI["sendMessage"]>[1],
-    label?: string,
+  readonly emitStatusEvent: (
+    event: SystemStatusEvent,
+    ctx?: SystemStatusEventSourceContext,
   ) => boolean;
 }
 
@@ -108,13 +111,9 @@ export class ControlCommands {
 
     if (wasStarted && !this.deps.isDisposed()) await this.deps.startRelay(ctx);  // relay back up → roomIdFor(cwd, assigned)
 
-    this.deps.sendPiMessage({
+    this.deps.emitStatusEvent({
       customType: "outpost-pi:name-assigned",
-      content: assigned === newName
-        ? `Mesh name: ${assigned}`
-        : `Mesh name reassigned: "${newName}" → "${assigned}" (collision)`,
       details: { requested: newName, assigned, changed: assigned !== newName },
-      display: false,
-    }, undefined, "name-assigned");
+    }, ctx);
   }
 }

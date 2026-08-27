@@ -108,6 +108,18 @@ Hooks actually used across the extension include: [remote-pi-index-lifecycle]{1}
 
 Session action helpers use `ctx.compact()`, `ctx.newSession({ withSession })`, `ctx.getModel()`, `ctx.abort()`, `pi.setModel(model)`, `pi.setThinkingLevel(level)`, and `SettingsManager.create(cwd)`. `ctx.getModel()` is used defensively in source even though it is less prominently documented than core lifecycle hooks; verify SDK types before changing that call path. [remote-pi-index-lifecycle]{1}
 
+### Status output is not a Pi message
+
+`pi.sendMessage()` always creates a `custom_message` session entry that participates
+in model context; `display:false` only hides its TUI bubble, and omitting
+`triggerTurn` only defers agent processing until a later prompt. Extension system
+status (`outpost-pi:relay-state`, `name-assigned`, `paired`, `mesh-revoked`) must
+use `src/extension/system_status_event.ts`: RPC mode serializes the schema-owned
+payload through `ctx.ui.notify`, while interactive mode keeps human notices and
+footer state. Cockpit unwraps those RPC UI notices as typed status events. Reserve
+`sendMessage`/`sendUserMessage` for content intentionally delivered to the agent,
+such as admitted mesh messages or capture-delivery prompts.
+
 Session replacement order from Pi docs:
 
 ```text

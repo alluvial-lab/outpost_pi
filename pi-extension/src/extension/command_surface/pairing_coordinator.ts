@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { lstat, open, rename, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Ed25519Keypair } from "../../pairing/crypto.js";
 import { buildQRUri, clampPairTtlMs, qrSession, renderQRAscii, TOKEN_TTL_MS } from "../../pairing/qr.js";
 import { listOwnerPubkeys, listPeers, removePeer } from "../../pairing/storage.js";
@@ -11,6 +11,7 @@ import { SelfRevoke, type SelfRevokeOptions, type SiblingInfo } from "../../mesh
 import { roomIdFor } from "../../rooms.js";
 import { localConfigExists } from "../../session/local_config.js";
 import type { OwnerMultiplexerPort } from "../ports.js";
+import type { SystemStatusEvent } from "../system_status_event.js";
 
 export type PairingCoordinatorState = "idle" | "started";
 
@@ -93,7 +94,7 @@ function wrapForTui(text: string, width: number): string[] {
 export interface PairingCoordinatorDeps {
   getState(): PairingCoordinatorState;
   /** Resolve the live session UI after asynchronous pairing setup. */
-  currentUi?(): Pick<PairingUiContext["ui"], "custom"> | undefined;
+  currentUi?(): Pick<PairingUiContext["ui"], "custom" | "notify"> | undefined;
   startRelay(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void>;
   isRelayConnected(): boolean;
   roomId(): string | null;
@@ -102,11 +103,7 @@ export interface PairingCoordinatorDeps {
   ownerHas(peerId: string): boolean;
   refreshPairingsCache(): void;
   joinLocalMesh(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void>;
-  sendPiMessage(
-    message: Parameters<ExtensionAPI["sendMessage"]>[0],
-    options?: Parameters<ExtensionAPI["sendMessage"]>[1],
-    label?: string,
-  ): boolean;
+  emitStatusEvent(event: SystemStatusEvent): boolean;
   setSiblings(siblings: SiblingInfo[]): void;
 }
 
@@ -404,14 +401,19 @@ export class PairingCoordinator {
           await this.deps.owners.detach(ownerEpk, "session_replaced");
         }
         const short = ownerEpk.slice(0, 8);
-        this.deps.sendPiMessage({
+        const message =
+          `Revoked by Owner ${short}…\n\n` +
+          `The mobile app for this Owner removed this PC from the mesh. ` +
+          `Re-pair via /outpost-pi pair if this was unexpected.`;
+        try {
+          this.deps.currentUi?.()?.notify(message, "warning");
+        } catch {
+          // A replacement may invalidate the UI between lookup and notification.
+        }
+        this.deps.emitStatusEvent({
           customType: "outpost-pi:mesh-revoked",
-          content:
-            `🔒 Revoked by Owner ${short}…\n\n` +
-            `The mobile app for this Owner removed this PC from the mesh. ` +
-            `Re-pair via /outpost-pi pair if this was unexpected.`,
-          display: true,
-        }, undefined, "mesh-revoked");
+          details: { owner: short },
+        });
       },
       onMembersChanged: (siblings) => {
         this.verifiedSiblingsForTest = [...siblings];

@@ -203,7 +203,7 @@ enum RpcControlOverlayEventType {
   }
 }
 
-/// `message_start` with `role:"custom"` and `customType:"outpost-pi:relay-state"`.
+/// RPC UI status payload with `customType:"outpost-pi:relay-state"`.
 ///
 /// Emitted for every relay transition: enabled, dropped into reconnecting,
 /// disabled, or reconnected. Also emitted in response to `relay:status` control.
@@ -221,7 +221,7 @@ final class RpcRelayState extends RpcEvent {
   final String? room;
 }
 
-/// `message_start` with `role:"custom"` and `customType:"outpost-pi:name-assigned"`.
+/// RPC UI status payload with `customType:"outpost-pi:name-assigned"`.
 ///
 /// Emitted by the broker when joining the mesh. The broker may assign a name
 /// different from the requested `agent_name` to avoid a collision, such as
@@ -244,7 +244,7 @@ final class RpcNameAssigned extends RpcEvent {
   final bool changed;
 }
 
-/// `message_start` with `customType:"outpost-pi:paired"`.
+/// RPC UI status payload with `customType:"outpost-pi:paired"`.
 final class RpcPaired extends RpcEvent {
   const RpcPaired({
     required this.name,
@@ -257,7 +257,7 @@ final class RpcPaired extends RpcEvent {
   final int pairedAt;
 }
 
-/// `message_start` with `customType:"outpost-pi:mesh-revoked"`.
+/// RPC UI status payload with `customType:"outpost-pi:mesh-revoked"`.
 final class RpcMeshRevoked extends RpcEvent {
   const RpcMeshRevoked({this.details});
 

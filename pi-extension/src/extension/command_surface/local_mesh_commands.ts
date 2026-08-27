@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import type { ByeReason } from "../../protocol/types.js";
@@ -21,6 +21,10 @@ import { usesNamedPipe } from "../../session/ipc.js";
 import { MeshNode } from "../../session/mesh_node.js";
 import { formatPeerInventory } from "../../session/peer_inventory.js";
 import { runSetupWizard, type WizardUI } from "../../session/setup_wizard.js";
+import type {
+  SystemStatusEvent,
+  SystemStatusEventSourceContext,
+} from "../system_status_event.js";
 import { ControlCommands } from "./control_commands.js";
 
 /** Describe the minimal UI capability accepted by local-mesh command adapters. */
@@ -31,7 +35,10 @@ export type OutpostPiUi = {
 };
 
 /** Allow command helpers to receive an optional Pi UI context without retaining stale session state. */
-export type OutpostPiUiContext = { ui?: OutpostPiUi } | null | undefined;
+export type OutpostPiUiContext = {
+  ui?: OutpostPiUi;
+  mode?: ExtensionContext["mode"];
+} | null | undefined;
 
 type MeshEnvelope = { id: string; from: string; re: string | null; body: unknown };
 
@@ -56,10 +63,9 @@ export interface LocalMeshCommandsDeps {
     type?: "info" | "warning" | "error",
     ctx?: OutpostPiUiContext,
   ) => void;
-  readonly sendPiMessage: (
-    message: Parameters<ExtensionAPI["sendMessage"]>[0],
-    options?: Parameters<ExtensionAPI["sendMessage"]>[1],
-    label?: string,
+  readonly emitStatusEvent: (
+    event: SystemStatusEvent,
+    ctx?: SystemStatusEventSourceContext,
   ) => boolean;
 }
 
@@ -79,7 +85,7 @@ export class LocalMeshCommands {
       stopRelay: deps.stopRelay,
       emitRelayState: deps.emitRelayState,
       notify: deps.notify,
-      sendPiMessage: deps.sendPiMessage,
+      emitStatusEvent: deps.emitStatusEvent,
     });
   }
 
@@ -365,9 +371,9 @@ export class LocalMeshCommands {
       this.deps.refreshSessionPeerCount(peer, ctx);
       // Tell RPC clients (e.g. Cockpit) the EFFECTIVE mesh name. The broker
       // appends a `#N` suffix only on a same-(cwd,name) collision, so the name we
-      // requested and the one actually assigned can differ. Emit a pure-data event
-      // (display:false) carrying both + a `changed` flag so the client can rename
-      // the agent in its own UI to match what the mesh/relay will show. Fired on
+      // requested and the one actually assigned can differ. Emit a structured
+      // RPC UI status event carrying both + a `changed` flag so the client can
+      // rename the agent without adding status text to model context. Fired on
       // every join (incl. failover re-elect, which can re-assign the name), so the
       // client always reflects the live name, not just the first one.
       //
@@ -376,14 +382,10 @@ export class LocalMeshCommands {
       // accident and causes cross-folder name ping-pong across restarts. The clean
       // name (wizard / explicit `agent_name`) already lives in config or re-derives
       // from `basename(cwd)`; the event above carries the live `#N` for the UI.
-      this.deps.sendPiMessage({
+      this.deps.emitStatusEvent({
         customType: "outpost-pi:name-assigned",
-        content: assigned === requestedName
-          ? `Mesh name: ${assigned}`
-          : `Mesh name reassigned: "${requestedName}" → "${assigned}" (collision)`,
         details: { requested: requestedName, assigned, changed: assigned !== requestedName },
-        display: false,
-      }, undefined, "name-assigned");
+      }, ctx);
       ctx.ui.notify(
         `[outpost-pi] Joined local mesh as "${assigned}" (${peer.currentRole()})`,
         "info",

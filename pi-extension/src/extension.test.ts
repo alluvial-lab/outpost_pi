@@ -5616,10 +5616,10 @@ describe("outpost-pi:name-assigned event", () => {
     await stop("", makeMockCtx());
   });
 
-  // Contract for the Cockpit: on join the extension emits a pure-data
-  // (display:false) custom message carrying the requested + effective mesh
-  // name, so the client can rename the agent when the broker appended a `#N`.
-  test("join emits outpost-pi:name-assigned with requested + assigned + changed", async () => {
+  // Contract for the Cockpit: on join the extension emits a structured RPC UI
+  // event carrying the requested + effective mesh name. The same status must
+  // never cross Pi's sendMessage boundary into the model context.
+  test("join emits name-assigned through RPC UI without enqueueing a Pi message", async () => {
     const sendMessage = vi.fn();
     const spyPi = {
       on: () => undefined, registerCommand: () => undefined,
@@ -5628,25 +5628,29 @@ describe("outpost-pi:name-assigned event", () => {
       registerMessageRenderer: () => undefined,
       sendMessage, sendUserMessage: () => undefined,
     } as unknown as ExtensionAPI;
-    captureHandler("outpost-pi");   // factory side-effects (matches other connect tests)
-    _setPiForTest(spyPi);          // …then route sendMessage through the spy
+    captureHandler("outpost-pi");
+    _setPiForTest(spyPi);
     expect(_hasMeshNodeForTest()).toBe(false);
 
     const ctx = makeMockCtx(
       `/tmp/outpost-pi-name-assigned-${process.pid}-${Date.now()}`,
     );
+    ctx.mode = "rpc";
     await outpostPiTestHarness.connect(ctx);
-    expect(_hasMeshNodeForTest()).toBe(true); // join succeeded → emit ran
+    expect(_hasMeshNodeForTest()).toBe(true);
 
-    const ev = sendMessage.mock.calls
-      .map((c) => c[0] as { customType?: string; display?: boolean; details?: Record<string, unknown> })
-      .find((m) => m?.customType === "outpost-pi:name-assigned");
+    const ev = ctx.ui.notify.mock.calls
+      .map((call) => {
+        try { return JSON.parse(call[0] as string) as Record<string, unknown>; }
+        catch { return null; }
+      })
+      .find((event) => event?.["customType"] === "outpost-pi:name-assigned");
     expect(ev).toBeDefined();
-    expect(ev!.display).toBe(false);
-    expect(ev!.details).toMatchObject({ changed: false });
-    expect(typeof ev!.details!["requested"]).toBe("string");
-    // No collision in this isolated broker → assigned === requested.
-    expect(ev!.details!["assigned"]).toBe(ev!.details!["requested"]);
+    expect(ev?.["details"]).toMatchObject({ changed: false });
+    const details = ev?.["details"] as Record<string, unknown>;
+    expect(typeof details["requested"]).toBe("string");
+    expect(details["assigned"]).toBe(details["requested"]);
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -5662,11 +5666,23 @@ describe("relay control channel + relay-state event", () => {
       sendMessage, sendUserMessage: () => undefined,
     } as unknown as ExtensionAPI;
   }
-  const lastRelayState = (sendMessage: ReturnType<typeof vi.fn>) =>
-    sendMessage.mock.calls
-      .map((c) => c[0] as { customType?: string; display?: boolean; details?: Record<string, unknown> })
+  const lastRelayState = (ctx: ReturnType<typeof makeMockCtx>) =>
+    ctx.ui.notify.mock.calls
+      .map((call) => {
+        try { return JSON.parse(call[0] as string) as Record<string, unknown>; }
+        catch { return null; }
+      })
       .reverse()
-      .find((m) => m?.customType === "outpost-pi:relay-state");
+      .find((event) => event?.["customType"] === "outpost-pi:relay-state");
+
+  async function bindRpcStatusContext(): Promise<ReturnType<typeof makeMockCtx>> {
+    const ctx = makeMockCtx();
+    ctx.mode = "rpc";
+    const status = captureHandler("outpost-pi status");
+    await status("", ctx);
+    ctx.ui.notify.mockClear();
+    return ctx;
+  }
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -5693,17 +5709,18 @@ describe("relay control channel + relay-state event", () => {
     expect(result).toEqual({ action: "handled" });
   });
 
-  test("legacy CTRL_PREFIX input dispatches relay status through the control path", async () => {
+  test("legacy CTRL_PREFIX input dispatches relay status through RPC UI only", async () => {
     const sendMessage = vi.fn();
-    captureHandler("outpost-pi");
+    const ctx = await bindRpcStatusContext();
     const input = captureEventHandler("input");
     _setPiForTest(makeSpyPi(sendMessage));
 
     const result = input({ type: "input", text: `${CTRL_PREFIX}relay:status`, source: "rpc" });
 
     expect(result).toEqual({ action: "handled" });
-    await vi.waitFor(() => expect(lastRelayState(sendMessage)).toBeDefined());
-    expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
+    await vi.waitFor(() => expect(lastRelayState(ctx)).toBeDefined());
+    expect(lastRelayState(ctx)?.["details"]).toMatchObject({ status: "disconnected", connected: false });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   test("control dispatch observes unexpected async command rejection without rethrowing", async () => {
@@ -5728,7 +5745,7 @@ describe("relay control channel + relay-state event", () => {
 
   test("structured outpost_pi_control input is swallowed and dispatches relay status", async () => {
     const sendMessage = vi.fn();
-    captureHandler("outpost-pi");
+    const ctx = await bindRpcStatusContext();
     const input = captureEventHandler("input");
     _setPiForTest(makeSpyPi(sendMessage));
     const payload = JSON.stringify({ type: "outpost_pi_control", command: "relay_status" });
@@ -5736,8 +5753,9 @@ describe("relay control channel + relay-state event", () => {
     const result = input({ type: "input", text: payload, source: "rpc" });
 
     expect(result).toEqual({ action: "handled" });
-    await vi.waitFor(() => expect(lastRelayState(sendMessage)).toBeDefined());
-    expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
+    await vi.waitFor(() => expect(lastRelayState(ctx)).toBeDefined());
+    expect(lastRelayState(ctx)?.["details"]).toMatchObject({ status: "disconnected", connected: false });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   test("structured outpost_pi_control rename parses to the legacy command path", () => {
@@ -5764,33 +5782,34 @@ describe("relay control channel + relay-state event", () => {
     expect(result).toBeUndefined();
   });
 
-  test("relay:status emits outpost-pi:relay-state 'disconnected' while idle", async () => {
+  test("relay:status emits outpost-pi:relay-state 'disconnected' through RPC UI", async () => {
     const sendMessage = vi.fn();
-    captureHandler("outpost-pi");
+    const ctx = await bindRpcStatusContext();
     _setPiForTest(makeSpyPi(sendMessage));
     expect(outpostPiTestHarness.state()).toBe("idle");
 
     await _handleControl("relay:status");
 
-    const ev = lastRelayState(sendMessage);
+    const ev = lastRelayState(ctx);
     expect(ev).toBeDefined();
-    expect(ev!.display).toBe(false);
-    expect(ev!.details).toMatchObject({ status: "disconnected", connected: false });
+    expect(ev?.["details"]).toMatchObject({ status: "disconnected", connected: false });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   test("relay:on → relay up + 'connected'; relay:off → relay down + 'disconnected'", async () => {
     const sendMessage = vi.fn();
-    captureHandler("outpost-pi");
+    const ctx = await bindRpcStatusContext();
     _setPiForTest(makeSpyPi(sendMessage));
 
     await _handleControl("relay:on");
     expect(outpostPiTestHarness.state()).toBe("started");
-    expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "connected", connected: true });
+    expect(lastRelayState(ctx)?.["details"]).toMatchObject({ status: "connected", connected: true });
 
-    sendMessage.mockClear();
+    ctx.ui.notify.mockClear();
     await _handleControl("relay:off");
     expect(outpostPiTestHarness.state()).toBe("idle");
-    expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
+    expect(lastRelayState(ctx)?.["details"]).toMatchObject({ status: "disconnected", connected: false });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   test("relay:toggle flips idle → started → idle", async () => {
@@ -5805,26 +5824,29 @@ describe("relay control channel + relay-state event", () => {
 
   test("rename:<name> renames live (broker re-register + relay swap), process/session survive", async () => {
     const sendMessage = vi.fn();
-    captureHandler("outpost-pi");
+    const ctx = await bindRpcStatusContext();
     _setPiForTest(makeSpyPi(sendMessage));
-    await outpostPiTestHarness.connect(makeMockCtx());
+    await outpostPiTestHarness.connect(ctx);
     expect(outpostPiTestHarness.state()).toBe("started");
     expect(_hasMeshNodeForTest()).toBe(true);
 
-    sendMessage.mockClear();
+    ctx.ui.notify.mockClear();
     await _handleControl("rename:Renamed");
 
     // The mesh node + relay survive (no process restart); relay back up.
     expect(_hasMeshNodeForTest()).toBe(true);
     expect(outpostPiTestHarness.state()).toBe("started");
-    // Cockpit is told the new effective name via outpost-pi:name-assigned.
-    const ev = sendMessage.mock.calls
-      .map((c) => c[0] as { customType?: string; display?: boolean; details?: Record<string, unknown> })
+    // Cockpit is told the new effective name without a Pi session message.
+    const ev = ctx.ui.notify.mock.calls
+      .map((call) => {
+        try { return JSON.parse(call[0] as string) as Record<string, unknown>; }
+        catch { return null; }
+      })
       .reverse()
-      .find((m) => m?.customType === "outpost-pi:name-assigned");
+      .find((event) => event?.["customType"] === "outpost-pi:name-assigned");
     expect(ev).toBeDefined();
-    expect(ev!.display).toBe(false);
-    expect(ev!.details).toMatchObject({ requested: "Renamed", assigned: "Renamed", changed: false });
+    expect(ev?.["details"]).toMatchObject({ requested: "Renamed", assigned: "Renamed", changed: false });
+    expect(sendMessage).not.toHaveBeenCalled();
 
     // Clean up: rename churns the real UDS broker (leave+rejoin) and leaves the
     // mesh/relay live — tear down so it can't leak into later tests (an orphaned
