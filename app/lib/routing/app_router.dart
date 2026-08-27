@@ -474,7 +474,16 @@ AppRouterOwner buildRouter(
                     ),
                   ],
                 );
-          return PaneCollapseImeDismissal(twoPane: twoPane, child: content);
+          return PaneCollapseImeDismissal(
+            twoPane: twoPane,
+            onWatchdogRecovery: () => _logLayoutModeTransition(
+              ctx,
+              twoPane,
+              trigger: 'ime-watchdog',
+              force: true,
+            ),
+            child: content,
+          );
         },
         branches: [
           StatefulShellBranch(
@@ -694,33 +703,30 @@ class _BootSplash extends StatelessWidget {
 /// metrics change. Field diagnosis for phantom half-screen layouts on
 /// phone-class displays (Fold display-switch timing): the capture shows the
 /// exact window metrics the shell believed at the transition.
-void _logLayoutModeTransition(BuildContext ctx, bool twoPane) {
+void _logLayoutModeTransition(
+  BuildContext ctx,
+  bool twoPane, {
+  String trigger = 'shell-builder',
+  bool force = false,
+}) {
   final size = MediaQuery.sizeOf(ctx);
   final dpr = MediaQuery.devicePixelRatioOf(ctx);
   final ime = MediaQuery.viewInsetsOf(ctx).bottom;
   final key = (twoPane, size.width, size.height, dpr, ime);
-  if (identical(_lastLayoutKey.value, key)) return;
-  final changed = !identical(_lastLayoutKey.value, key);
-  _lastLayoutKey.value = key;
-  if (!changed && _lastLayoutModeLogged) return;
-  _lastLayoutModeLogged = true;
-  injector
-      .get<DebugLog>()
-      .log(LayoutModeEvent(
-        ts: DateTime.now().toUtc(),
-        twoPane: twoPane,
-        widthDp: size.width.round(),
-        heightDp: size.height.round(),
-        shortestSideDp: size.shortestSide.round(),
-        devicePixelRatio: dpr,
-        imeBottomDp: ime.round(),
-        trigger: 'shell-builder',
-      ));
+  if (!force && _lastLayoutKey == key) return;
+  _lastLayoutKey = key;
+  injector.get<DebugLog>().log(
+    LayoutModeEvent(
+      ts: DateTime.now().toUtc(),
+      twoPane: twoPane,
+      widthDp: size.width.round(),
+      heightDp: size.height.round(),
+      shortestSideDp: size.shortestSide.round(),
+      devicePixelRatio: dpr,
+      imeBottomDp: ime.round(),
+      trigger: trigger,
+    ),
+  );
 }
 
-final _lastLayoutKey = ValueTupleKey();
-bool _lastLayoutModeLogged = false;
-
-class ValueTupleKey {
-  Object? value;
-}
+Object? _lastLayoutKey;

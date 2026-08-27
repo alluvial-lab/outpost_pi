@@ -9,6 +9,7 @@
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -246,6 +247,150 @@ void main() {
         expect(find.text('DETAIL'), findsNothing);
       },
     );
+  });
+
+  group('IME inset convergence', () {
+    void configurePhoneView(WidgetTester tester, {double inset = 0}) {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(411, 797);
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+    }
+
+    List<MethodCall> recordTextInputCalls(
+      WidgetTester tester, {
+      required bool imeVisible,
+    }) {
+      final calls = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.textInput,
+        (call) async {
+          calls.add(call);
+          return null;
+        },
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        imeVisibilityChannel,
+        (call) async => call.method == 'isVisible' ? imeVisible : null,
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.textInput,
+          null,
+        );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          imeVisibilityChannel,
+          null,
+        );
+      });
+      return calls;
+    }
+
+    testWidgets(
+      'single-pane stale inset reasserts hide at the watchdog deadline',
+      (tester) async {
+        configurePhoneView(tester, inset: 280);
+        final calls = recordTextInputCalls(tester, imeVisible: false);
+
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: PaneCollapseImeDismissal(
+              twoPane: false,
+              child: SizedBox.expand(),
+            ),
+          ),
+        );
+        await tester.pump();
+        calls.clear();
+
+        await tester.pump(const Duration(milliseconds: 3999));
+        expect(
+          calls.where((call) => call.method == 'TextInput.hide'),
+          isEmpty,
+          reason: 'normal inset animation gets the complete grace interval',
+        );
+
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(
+          calls.where((call) => call.method == 'TextInput.hide'),
+          hasLength(1),
+          reason:
+              'a keyboard-sized inset with no text-input connection must not '
+              'pin the single-pane viewport indefinitely',
+        );
+      },
+    );
+
+    testWidgets('focused real keyboard is never dismissed by the watchdog', (
+      tester,
+    ) async {
+      configurePhoneView(tester);
+      final calls = recordTextInputCalls(tester, imeVisible: true);
+      final focusNode = FocusNode();
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaneCollapseImeDismissal(
+            twoPane: false,
+            child: Scaffold(body: TextField(focusNode: focusNode)),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      expect(focusNode.hasFocus, isTrue);
+      calls.clear();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 5));
+
+      expect(
+        calls.where((call) => call.method == 'TextInput.hide'),
+        isEmpty,
+        reason:
+            'a nonzero inset plus platform-visible focused editable is a real '
+            'IME, not stale WindowManager state',
+      );
+    });
+
+    testWidgets('focus loss reasserts hide while the inset remains', (
+      tester,
+    ) async {
+      configurePhoneView(tester);
+      final calls = recordTextInputCalls(tester, imeVisible: false);
+      final focusNode = FocusNode();
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaneCollapseImeDismissal(
+            twoPane: false,
+            child: Scaffold(body: TextField(focusNode: focusNode)),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      await tester.pump();
+      calls.clear();
+
+      focusNode.unfocus();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        calls.where((call) => call.method == 'TextInput.hide'),
+        hasLength(2),
+        reason:
+            'EditableText sends its ordinary close hide; inset hygiene must '
+            'reassert it after focus leaves so Android republishes insets',
+      );
+    });
   });
 
   group('zero-state collapse', () {

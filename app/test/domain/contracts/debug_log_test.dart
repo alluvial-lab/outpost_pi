@@ -39,6 +39,15 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
     'sessionIdTail',
     'retryScheduled',
   },
+  DebugTag.layoutMode: {
+    'twoPane',
+    'widthDp',
+    'heightDp',
+    'shortestSideDp',
+    'dpr',
+    'imeDp',
+    'trigger',
+  },
 };
 
 /// Universal keys every variant emits.
@@ -173,6 +182,16 @@ void main() {
         sessionIdTail: huge,
         retryScheduled: true,
       ),
+      LayoutModeEvent(
+        ts: now,
+        twoPane: false,
+        widthDp: 411,
+        heightDp: 797,
+        shortestSideDp: 411,
+        devicePixelRatio: 2.625,
+        imeBottomDp: 280,
+        trigger: huge,
+      ),
     ];
   }
 
@@ -269,13 +288,13 @@ void main() {
     }
   });
 
-  test('field values are primitives only (String/int/bool/null)', () {
+  test('field values are primitives only (String/num/bool/null)', () {
     for (final event in allVariants()) {
       final json = event.toJson();
       for (final entry in json.entries) {
         final v = entry.value;
         expect(
-          v is String || v is int || v is bool || v == null,
+          v is String || v is num || v is bool || v == null,
           isTrue,
           reason:
               '${event.runtimeType}.toJson field "${entry.key}" is '
