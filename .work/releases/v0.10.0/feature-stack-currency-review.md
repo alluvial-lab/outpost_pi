@@ -1,7 +1,7 @@
 ---
 id: feature-stack-currency-review
 kind: feature
-stage: implementing
+stage: done
 tags: [research, workflow]
 parent: null
 depends_on: []
@@ -478,3 +478,10 @@ The three hosted plugins remain dual-mode compatible but still trigger Flutter
 overlays therefore remain: they preserve the conditions while spelling the
 fallback through scanner-safe `pluginManager.apply`. `app/android/plugin-builds/README.md`
 owns the version pins and evidence-based removal condition.
+
+## Program closure (2026-08-27)
+
+All 10 stories done (pins story pre-completed at dormancy setup; 3.47 closed
+on operator publish). Shipped as v0.10.0. Release hygiene note: draft→API
+publish does not move the GitHub latest marker — fresh `gh release create
+--latest` required (recorded for future cuts).
