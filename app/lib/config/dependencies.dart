@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:app/config/app_version.dart';
 import 'package:app/config/utils/injector.dart';
 import 'package:app/data/actions/actions_repository.dart';
 import 'package:app/data/debug/debug_capture_uploader.dart';
@@ -48,7 +49,6 @@ import 'package:app/ui/pairing/viewmodels/pairing_viewmodel.dart';
 import 'package:app/ui/settings/viewmodels/settings_viewmodel.dart';
 import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
 import 'package:cryptography/cryptography.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
@@ -256,8 +256,7 @@ Future<void> setupDependencies() async {
   // from package_info; the manifest fetch + gating live in the ViewModel
   // (silent on iOS via `enabled` and on any fetch failure). Stateless
   // collaborators → addOther (lazy singleton, no dispose hook).
-  final packageInfo = await PackageInfo.fromPlatform();
-  final appVersion = packageInfo.version;
+  final appVersion = await loadAppVersion();
   _injector.addOther<UpdateChecker>(() => UpdateCheckerImpl());
   _injector.addOther<DismissedUpdateStore>(() => SecureDismissedUpdateStore());
   _injector.addOther<UrlOpener>(() => const UrlLauncherOpener());
