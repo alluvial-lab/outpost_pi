@@ -52,8 +52,10 @@ Not a correctness blocker; the reconnect machinery is proven sound
   `WebSocketChannelException` (transport-level) is distinguishable from
   relay close codes / auth rejection; failure classification lives here.
 - `app/lib/ui/chat/viewmodels/chat_viewmodel.dart` (`statusProjection`) and
-  the `_nlIndicator` widget in `app/lib/ui/chat/chat_page.dart` — the
+  the `_ChatStatusIndicator` widget in `app/lib/ui/chat/chat_page.dart` — the
   connection status surface the liveness/countdown/hint renders into.
+  (Seam names corrected 2026-08-27: an earlier grep artifact recorded
+  `_nlIndicator`; the real widget is `_ChatStatusIndicator`.)
 
 ## Simplification opportunity
 
