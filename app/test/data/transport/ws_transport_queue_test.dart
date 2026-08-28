@@ -1,10 +1,37 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app/data/transport/ws_transport.dart';
+import 'package:app/domain/value_objects/reachability.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('classifies socket failures without parsing exception text', () {
+    expect(
+      classifyWsTransportFailure(WebSocketChannelException('TCP refused')),
+      ReachabilityFailureKind.transport,
+    );
+    expect(
+      classifyWsTransportFailure(const SocketException('TCP refused')),
+      ReachabilityFailureKind.transport,
+    );
+    expect(
+      classifyWsTransportFailure(
+        const WsTransportError(
+          'WS closed during auth',
+          kind: ReachabilityFailureKind.relayRejected,
+        ),
+      ),
+      ReachabilityFailureKind.relayRejected,
+    );
+    expect(
+      classifyWsTransportFailure(StateError('unrelated')),
+      ReachabilityFailureKind.unknown,
+    );
+  });
+
   test('bounds buffered data frames and counts drop-new overflow', () async {
     final droppedBytes = <int>[];
     final queue = WsInboundMessageQueue(

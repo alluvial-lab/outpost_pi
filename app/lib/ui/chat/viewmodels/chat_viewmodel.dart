@@ -408,10 +408,22 @@ class ChatViewModel extends ViewModel<ChatState> {
         attempt: 0,
         nextRetry: Duration.zero,
       ),
-      StatusRetrying(:final attempt, :final nextRetry) => ChatTransportRetrying(
-        attempt: attempt,
-        nextRetry: nextRetry,
-      ),
+      StatusRetrying(
+        :final attempt,
+        :final nextRetry,
+        :final lastAttemptAt,
+        :final nextRetryAt,
+        :final failureKind,
+        :final failureStreak,
+      ) =>
+        ChatTransportRetrying(
+          attempt: attempt,
+          nextRetry: nextRetry,
+          lastAttemptAt: lastAttemptAt,
+          nextRetryAt: nextRetryAt,
+          failureKind: failureKind,
+          failureStreak: failureStreak,
+        ),
       StatusOffline(:final reason) => ChatTransportOffline(reason: reason),
       StatusNoPeer() => const ChatTransportOffline(
         reason: 'No paired Pi selected',

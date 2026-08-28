@@ -92,6 +92,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       media.size.height - media.viewInsets.bottom,
     );
 
+    final status = _projectedStatus(state, vm);
+
     return Scaffold(
       backgroundColor: context.colors.bg,
       body: SafeArea(
@@ -101,6 +103,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         child: Column(
           children: [
             _buildTopBar(context, state),
+            _buildConnectionStatusSurface(status),
             // Pairing revocation is the only banner kept — it's a hard
             // failure (can't proceed without re-pairing), red, with an
             // explicit action. Plain offline / Pi-gone / presence-off
@@ -144,6 +147,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return _compactComposer!;
   }
 
+  ChatStatusProjection _projectedStatus(ChatState state, ChatViewModel vm) {
+    final projectedStatus = state is ChatReady
+        ? state.status
+        : vm.statusProjection;
+    // Keep the stable Home navigation hint until the first live runtime read,
+    // so a cold chat mount does not flash a false reconnecting banner.
+    if (!vm.connectionResolved && initialOnline) {
+      return ChatStatusProjection(
+        transport: const ChatTransportOnline(roomId: 'main'),
+        turn: projectedStatus.turn,
+        steering: projectedStatus.steering,
+      );
+    }
+    return projectedStatus;
+  }
+
+  Widget _buildConnectionStatusSurface(ChatStatusProjection status) {
+    final transport = status.transport;
+    if (transport is! ChatTransportRetrying ||
+        (!transport.showsLiveness && transport.retryHint == null)) {
+      return const SizedBox.shrink();
+    }
+    return _ConnectionStatusBanner(retrying: transport);
+  }
+
   Widget _buildTopBar(BuildContext context, ChatState state) {
     // Plan-17 follow-up — two-line AppBar:
     //   Line 1: ROOM name (cwd basename / room.name / fallback).
@@ -155,16 +183,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final room = vm.activeRoom;
     // The navigation hint is used only until the first runtime snapshot. Once
     // resolved, every label/control consumes the ViewModel's composed status.
-    final projectedStatus = state is ChatReady
-        ? state.status
-        : vm.statusProjection;
-    final status = !vm.connectionResolved && initialOnline
-        ? ChatStatusProjection(
-            transport: const ChatTransportOnline(roomId: 'main'),
-            turn: projectedStatus.turn,
-            steering: projectedStatus.steering,
-          )
-        : projectedStatus;
+    final status = _projectedStatus(state, vm);
 
     // Plan/24-fix-title: pass the navigation hint into the helpers so
     // either line of the AppBar (room or peer) shows it instead of
@@ -562,6 +581,128 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 }
 
 // ---------------------------------------------------------------------------
+
+/// Keep retry progress visible when a connection has failed repeatedly.
+///
+/// The retry deadline is owned by [ConnectionManager]. This widget only ticks
+/// its presentation clock, so rebuilding the status surface cannot alter the
+/// reconnect schedule.
+class _ConnectionStatusBanner extends StatefulWidget {
+  const _ConnectionStatusBanner({required this.retrying});
+
+  final ChatTransportRetrying retrying;
+
+  @override
+  State<_ConnectionStatusBanner> createState() =>
+      _ConnectionStatusBannerState();
+}
+
+class _ConnectionStatusBannerState extends State<_ConnectionStatusBanner> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final retrying = widget.retrying;
+    final remaining = retrying.retryRemainingAt(DateTime.now());
+    final retryText = remaining == Duration.zero
+        ? 'Next retry now'
+        : 'Next retry in ${_formatRetryDuration(remaining)}';
+
+    return Container(
+      key: const Key('chat-connection-status-banner'),
+      width: double.infinity,
+      color: colors.warning.withValues(alpha: 0.1),
+      padding: const EdgeInsets.fromLTRB(16, 7, 16, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(LucideIcons.refreshCw, color: colors.warning, size: 15),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 3,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Reconnecting',
+                  style: TextStyle(
+                    fontFamily: kMonoFamily,
+                    fontSize: 12,
+                    color: colors.text,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (retrying.showsLiveness) ...[
+                  Text(
+                    'Last attempt ${_formatAttemptTime(retrying.lastAttemptAt!)}',
+                    key: const Key('chat-last-attempt'),
+                    style: TextStyle(
+                      fontFamily: kMonoFamily,
+                      fontSize: 11,
+                      color: colors.muted2,
+                    ),
+                  ),
+                  Text(
+                    retryText,
+                    key: const Key('chat-next-retry-countdown'),
+                    style: TextStyle(
+                      fontFamily: kMonoFamily,
+                      fontSize: 11,
+                      color: colors.warning,
+                    ),
+                  ),
+                ],
+                if (retrying.retryHint case final hint?)
+                  Text(
+                    hint,
+                    key: const Key('chat-connection-hint'),
+                    style: TextStyle(
+                      fontFamily: kMonoFamily,
+                      fontSize: 11,
+                      color: colors.muted2,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatRetryDuration(Duration duration) {
+    final seconds = (duration.inMilliseconds / 1000).ceil();
+    if (seconds < 60) return '${seconds}s';
+    final minutes = seconds ~/ 60;
+    final remainder = seconds % 60;
+    return remainder == 0 ? '${minutes}m' : '${minutes}m ${remainder}s';
+  }
+
+  static String _formatAttemptTime(DateTime attempt) {
+    final local = attempt.toLocal();
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
+    return '${twoDigits(local.hour)}:${twoDigits(local.minute)}:${twoDigits(local.second)}';
+  }
+}
 
 /// Render transport health, agent phase, and steering as independent labels.
 class _ChatStatusIndicator extends StatelessWidget {

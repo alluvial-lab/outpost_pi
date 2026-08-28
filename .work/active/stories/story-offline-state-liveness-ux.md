@@ -1,7 +1,7 @@
 ---
 id: story-offline-state-liveness-ux
 kind: story
-stage: implementing
+stage: review
 tags: [app, ux, bug]
 parent: null
 depends_on: []
@@ -70,3 +70,32 @@ surface.
 `flutter analyze && flutter test --exclude-tags e2e` from `app/`; add
 widget/viewmodel tests for the countdown projection and the
 transport-vs-auth hint split.
+
+## Implementation notes
+
+- Landed retry liveness through the existing `ReachabilityAdapter` attempt
+  ladder: `StatusRetrying` now carries the last-attempt time, absolute retry
+  deadline, failure classification, and classified failure streak. The chat
+  ViewModel projects those fields and the chat status surface renders a
+  ticking countdown plus the last-attempt time.
+- Thresholds are deliberately two consecutive failures: liveness appears
+  after two failed attempts, and the Tailscale/VPN hint appears after two
+  consecutive transport failures. A relay rejection/authentication failure
+  gets its pairing/auth hint after the first classified rejection because it
+  is actionable immediately. WebSocket/TCP classification remains in
+  `ws_transport.dart`; the connection manager only consumes the result.
+- The manual “retry now” affordance was cut. The existing retry ladder remains
+  the sole reconnect owner, keeping the status surface focused and avoiding a
+  second path that could race the scheduled attempt.
+- Files touched: `app/lib/domain/value_objects/reachability.dart`,
+  `app/lib/data/transport/reachability_adapter.dart`,
+  `app/lib/data/transport/ws_transport.dart`,
+  `app/lib/data/transport/connection_manager.dart`,
+  `app/lib/domain/session_state.dart`,
+  `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`,
+  `app/lib/ui/chat/chat_page.dart`, and the corresponding transport/chat tests
+  under `app/test/`.
+- Verification: `flutter analyze` passed; `flutter test
+  --exclude-tags e2e --concurrency=2` passed with 994 tests. Targeted
+  transport/ViewModel/widget tests also passed. Dart format was run only on
+  the touched Dart files.

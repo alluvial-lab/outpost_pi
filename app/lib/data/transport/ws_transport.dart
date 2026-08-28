@@ -14,12 +14,14 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_cancellation.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/relay_frame_decoder.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/domain/value_objects/reachability.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
@@ -43,10 +45,36 @@ Uint8List relayAuthSigningBytes(List<int> nonce) =>
 /// Describe WebSocket transport failure at the relay boundary.
 class WsTransportError implements Exception {
   final String message;
-  const WsTransportError(this.message);
+
+  /// Classification assigned by the WebSocket adapter, not inferred by the
+  /// connection manager from an exception string.
+  final ReachabilityFailureKind kind;
+
+  const WsTransportError(
+    this.message, {
+    this.kind = ReachabilityFailureKind.unknown,
+  });
 
   @override
   String toString() => 'WsTransportError: $message';
+}
+
+/// Classify one WebSocket failure without exposing raw exception text to UI.
+///
+/// Socket exceptions can be wrapped by [WebSocketChannelException], while a
+/// clean close during the handshake is the relay's rejection shape. A null
+/// error represents a clean close after admission and is therefore transport
+/// loss. The connection manager consumes this result but does not duplicate
+/// this logic.
+ReachabilityFailureKind classifyWsTransportFailure(Object? error) {
+  if (error == null) return ReachabilityFailureKind.transport;
+  return switch (error) {
+    WsTransportError(:final kind) => kind,
+    WebSocketChannelException() ||
+    SocketException() ||
+    TimeoutException() => ReachabilityFailureKind.transport,
+    _ => ReachabilityFailureKind.unknown,
+  };
 }
 
 /// Maximum data-plane frames buffered while a peer channel is busy.
@@ -323,12 +351,18 @@ class WsTransport
       onDone: () {
         if (!challengeCompleter.isCompleted) {
           challengeCompleter.completeError(
-            const WsTransportError('WS closed during auth'),
+            const WsTransportError(
+              'WS closed during auth',
+              kind: ReachabilityFailureKind.relayRejected,
+            ),
           );
         }
         if (authDone && !authenticatedFrameCompleter.isCompleted) {
           authenticatedFrameCompleter.completeError(
-            const WsTransportError('WS closed before auth completion'),
+            const WsTransportError(
+              'WS closed before auth completion',
+              kind: ReachabilityFailureKind.relayRejected,
+            ),
           );
         }
         transport._queue.close();
@@ -707,12 +741,22 @@ final class WsInboundMessageQueue {
   }
 
   void close() {
-    error(const WsTransportError('transport closed'));
+    error(
+      const WsTransportError(
+        'transport closed',
+        kind: ReachabilityFailureKind.transport,
+      ),
+    );
   }
 
   Future<Uint8List> next() {
     if (_closed) {
-      return Future.error(const WsTransportError('transport closed'));
+      return Future.error(
+        const WsTransportError(
+          'transport closed',
+          kind: ReachabilityFailureKind.transport,
+        ),
+      );
     }
     if (_buf.isNotEmpty) {
       final message = _buf.removeAt(0);

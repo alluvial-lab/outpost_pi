@@ -8,6 +8,21 @@ library;
 /// UI imports.
 enum ReachabilityState { connecting, online, degraded, offline, retrying }
 
+/// Classify a failed relay connection at the transport boundary.
+///
+/// The adapter records this classification so retry policy and UI projection
+/// consume the same consecutive-failure streak instead of maintaining their
+/// own counters.
+enum ReachabilityFailureKind { transport, relayRejected, unknown }
+
+/// Keep the connection status quiet for one transient failure, then expose
+/// liveness once the retry loop has demonstrated that it is still active.
+const reachabilityLivenessFailureThreshold = 2;
+
+/// Require two consecutive transport failures before suggesting a local
+/// Tailscale/VPN check; a single transient socket error is not enough signal.
+const reachabilityTransportHintFailureThreshold = 2;
+
 /// Provide user-facing labels from the canonical reachability state set.
 extension ReachabilityStateLabel on ReachabilityState {
   String get displayName => switch (this) {
