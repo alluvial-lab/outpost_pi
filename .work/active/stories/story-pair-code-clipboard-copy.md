@@ -1,7 +1,7 @@
 ---
 id: story-pair-code-clipboard-copy
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, app, ux]
 parent: null
 depends_on: []
