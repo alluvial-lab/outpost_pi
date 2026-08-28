@@ -107,6 +107,52 @@ void main() {
       },
     );
 
+    test(
+      'room_meta_updated preserves and updates background independently',
+      () async {
+        final ch = _ControllableChannel();
+        final cm = await _connected(ch);
+
+        ch.pushControl(
+          ControlInbound.tryFromJson(const {
+            'type': 'room_announced',
+            'peer': 'epk_test',
+            'room_id': 'r1',
+            'started_at': 1,
+            'background': true,
+          })!,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        expect(cm.roomsFor('epk_test').single.background, isTrue);
+
+        // An update without background must preserve the current value, just as
+        // a model-only update preserves working.
+        ch.pushControl(
+          ControlInbound.tryFromJson(const {
+            'type': 'room_meta_updated',
+            'peer': 'epk_test',
+            'room_id': 'r1',
+            'meta': {'model': 'gpt-4o'},
+          })!,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        expect(cm.roomsFor('epk_test').single.background, isTrue);
+
+        ch.pushControl(
+          ControlInbound.tryFromJson(const {
+            'type': 'room_meta_updated',
+            'peer': 'epk_test',
+            'room_id': 'r1',
+            'meta': {'background': false},
+          })!,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        expect(cm.roomsFor('epk_test').single.background, isFalse);
+
+        cm.dispose();
+      },
+    );
+
     test('room_meta_updated flips working on then off', () async {
       final ch = _ControllableChannel();
       final cm = await _connected(ch);

@@ -131,7 +131,19 @@ class ChatViewModel extends ViewModel<ChatState> {
       steering: transport is ChatTransportOnline
           ? steering
           : const NoSteering(),
+      background: _backgroundProjection(),
     );
+  }
+
+  /// Project background activity only from the fresh active-room snapshot.
+  /// Cached room metadata is not trusted while disconnected or before the
+  /// relay has confirmed the room is live, matching the room turn authority.
+  bool _backgroundProjection() {
+    final peer = _activePeer;
+    if (peer == null || !_conn.isRoomLive(peer.remoteEpk, _activeRoomId)) {
+      return false;
+    }
+    return activeRoom?.background ?? false;
   }
 
   /// The id to `cancel` to stop the in-flight reply. Null when idle/stale.

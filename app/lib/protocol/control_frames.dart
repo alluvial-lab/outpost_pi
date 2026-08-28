@@ -20,81 +20,116 @@ sealed class ControlInbound {
   /// retain their typed cast failure so boundary callers can reject them.
   static ControlInbound? tryFromJson(Map<String, dynamic> json) {
     try {
-      return fromWire(RelayServerControlFrameDto.fromJson(json));
+      return fromWire(RelayServerControlFrameDto.fromJson(json), raw: json);
     } on FormatException {
       return null;
     }
   }
 
   /// Adapt a generated relay-server DTO into the app's control-domain model.
-  static ControlInbound? fromWire(RelayServerControlFrameDto frame) =>
-      switch (frame) {
-        RelayChallengeFrameDto() => null,
-        RelayPeerOnlineFrameDto(:final peer) => PeerOnline(peer: peer),
-        RelayPeerOfflineFrameDto(:final peer, :final sinceTs) => PeerOffline(
+  static ControlInbound? fromWire(
+    RelayServerControlFrameDto frame, {
+    Map<String, dynamic>? raw,
+  }) {
+    bool? backgroundFrom(Map<String, dynamic>? value) {
+      if (value == null) return null;
+      final direct = value['background'];
+      if (direct is bool) return direct;
+      final nested = value['meta'];
+      if (nested is Map) {
+        final nestedBackground = nested['background'];
+        if (nestedBackground is bool) return nestedBackground;
+      }
+      return null;
+    }
+
+    bool backgroundForRoom(String roomId) {
+      final rooms = raw?['rooms'];
+      if (rooms is List) {
+        for (final entry in rooms) {
+          if (entry is Map && entry['room_id'] == roomId) {
+            return backgroundFrom(entry.cast<String, dynamic>()) ?? false;
+          }
+        }
+      }
+      return false;
+    }
+
+    return switch (frame) {
+      RelayChallengeFrameDto() => null,
+      RelayPeerOnlineFrameDto(:final peer) => PeerOnline(peer: peer),
+      RelayPeerOfflineFrameDto(:final peer, :final sinceTs) => PeerOffline(
+        peer: peer,
+        sinceTs: sinceTs,
+      ),
+      RelayPresenceFrameDto(:final states) => PresenceSnapshot(
+        states: states
+            .map(
+              (state) => PeerPresence(
+                peer: state.peer,
+                online: state.online,
+                sinceTs: state.sinceTs,
+              ),
+            )
+            .toList(),
+      ),
+      RelayRoomAnnouncedFrameDto(:final peer, :final room) => RoomAnnounced(
+        peer: peer,
+        roomId: room.roomId,
+        sessionId: room.sessionId,
+        name: room.name,
+        cwd: room.cwd,
+        startedAt: room.startedAt,
+        model: room.model,
+        thinking: room.thinking == null
+            ? null
+            : ThinkingLevel.fromWire(room.thinking!),
+        working: room.working,
+        background: backgroundFrom(raw),
+      ),
+      RelayRoomEndedFrameDto(:final peer, :final roomId, :final sinceTs) =>
+        RoomEnded(peer: peer, roomId: roomId, sinceTs: sinceTs),
+      RelayRoomsFrameDto(:final peer, :final rooms) => RoomsSnapshot(
+        peer: peer,
+        rooms: rooms
+            .map(
+              (room) => RoomInfo(
+                roomId: room.roomId,
+                sessionId: room.sessionId,
+                name: room.name,
+                cwd: room.cwd,
+                startedAt: room.startedAt,
+                model: room.model,
+                thinking: room.thinking == null
+                    ? null
+                    : ThinkingLevel.fromWire(room.thinking!),
+                working: room.working ?? false,
+                background: backgroundForRoom(room.roomId),
+              ),
+            )
+            .toList(),
+      ),
+      RelayRoomMetaUpdatedFrameDto(:final peer, :final roomId, :final meta) =>
+        RoomMetaUpdated(
           peer: peer,
-          sinceTs: sinceTs,
-        ),
-        RelayPresenceFrameDto(:final states) => PresenceSnapshot(
-          states: states
-              .map(
-                (state) => PeerPresence(
-                  peer: state.peer,
-                  online: state.online,
-                  sinceTs: state.sinceTs,
-                ),
-              )
-              .toList(),
-        ),
-        RelayRoomAnnouncedFrameDto(:final peer, :final room) => RoomAnnounced(
-          peer: peer,
-          roomId: room.roomId,
-          sessionId: room.sessionId,
-          name: room.name,
-          cwd: room.cwd,
-          startedAt: room.startedAt,
-          model: room.model,
-          thinking: room.thinking == null
+          roomId: roomId,
+          sessionId: meta.sessionId,
+          model: meta.model,
+          thinking: meta.thinking == null
               ? null
-              : ThinkingLevel.fromWire(room.thinking!),
-          working: room.working,
-        ),
-        RelayRoomEndedFrameDto(:final peer, :final roomId, :final sinceTs) =>
-          RoomEnded(peer: peer, roomId: roomId, sinceTs: sinceTs),
-        RelayRoomsFrameDto(:final peer, :final rooms) => RoomsSnapshot(
-          peer: peer,
-          rooms: rooms
-              .map(
-                (room) => RoomInfo(
-                  roomId: room.roomId,
-                  sessionId: room.sessionId,
-                  name: room.name,
-                  cwd: room.cwd,
-                  startedAt: room.startedAt,
-                  model: room.model,
-                  thinking: room.thinking == null
-                      ? null
-                      : ThinkingLevel.fromWire(room.thinking!),
-                  working: room.working ?? false,
-                ),
-              )
-              .toList(),
-        ),
-        RelayRoomMetaUpdatedFrameDto(:final peer, :final roomId, :final meta) =>
-          RoomMetaUpdated(
-            peer: peer,
-            roomId: roomId,
-            sessionId: meta.sessionId,
-            model: meta.model,
-            thinking: meta.thinking == null
-                ? null
-                : ThinkingLevel.fromWire(meta.thinking!),
-            working: meta.working,
-            hasModel: meta.hasModel,
-            hasThinking: meta.hasThinking,
-            hasSessionId: meta.hasSessionId,
+              : ThinkingLevel.fromWire(meta.thinking!),
+          working: meta.working,
+          background: backgroundFrom(
+            raw?['meta'] is Map
+                ? (raw!['meta'] as Map).cast<String, dynamic>()
+                : null,
           ),
-      };
+          hasModel: meta.hasModel,
+          hasThinking: meta.hasThinking,
+          hasSessionId: meta.hasSessionId,
+        ),
+    };
+  }
 }
 
 class PeerOnline extends ControlInbound {
@@ -206,6 +241,10 @@ class RoomInfo {
   /// (idle / not reported yet).
   final bool working;
 
+  /// True while background subagents continue work beyond the current turn.
+  /// This room-level axis is independent from [working].
+  final bool background;
+
   const RoomInfo({
     required this.roomId,
     required this.startedAt,
@@ -215,6 +254,7 @@ class RoomInfo {
     this.model,
     this.thinking,
     this.working = false,
+    this.background = false,
   });
 
   factory RoomInfo.fromJson(Map<String, dynamic> j) {
@@ -230,6 +270,7 @@ class RoomInfo {
           ? ThinkingLevel.fromWire(rawThinking)
           : null,
       working: (j['working'] as bool?) ?? false,
+      background: (j['background'] as bool?) ?? false,
     );
   }
 
@@ -242,6 +283,7 @@ class RoomInfo {
     'model': model,
     if (thinking != null) 'thinking': thinking!.wire,
     'working': working,
+    'background': background,
   };
 
   RoomInfo copyWith({
@@ -252,6 +294,7 @@ class RoomInfo {
     Object? model = _kRoomInfoUnset,
     Object? thinking = _kRoomInfoUnset,
     bool? working,
+    bool? background,
   }) => RoomInfo(
     roomId: roomId,
     sessionId: identical(sessionId, _kRoomInfoUnset)
@@ -265,6 +308,7 @@ class RoomInfo {
         ? this.thinking
         : thinking as ThinkingLevel?,
     working: working ?? this.working,
+    background: background ?? this.background,
   );
 
   @override
@@ -277,7 +321,8 @@ class RoomInfo {
       other.startedAt == startedAt &&
       other.model == model &&
       other.thinking == thinking &&
-      other.working == working;
+      other.working == working &&
+      other.background == background;
 
   @override
   int get hashCode => Object.hash(
@@ -289,6 +334,7 @@ class RoomInfo {
     model,
     thinking,
     working,
+    background,
   );
 }
 
@@ -312,6 +358,10 @@ class RoomAnnounced extends ControlInbound {
   /// frame omitted it (legacy relay); the ConnectionManager then keeps
   /// any previously-known value instead of forcing `false`.
   final bool? working;
+
+  /// Background subagent activity at announcement time. Null means the
+  /// announcing relay/extension omitted the optional field.
+  final bool? background;
   const RoomAnnounced({
     required this.peer,
     required this.roomId,
@@ -322,6 +372,7 @@ class RoomAnnounced extends ControlInbound {
     this.model,
     this.thinking,
     this.working,
+    this.background,
   });
 }
 
@@ -381,6 +432,11 @@ class RoomMetaUpdated extends ControlInbound {
   /// set. No separate `hasWorking` flag is needed because `working` can
   /// never be "explicitly null" on the wire — `false` is the off state.
   final bool? working;
+
+  /// Background subagent activity. Null means the update omitted the field,
+  /// so the ConnectionManager preserves the cached room value.
+  final bool? background;
+
   const RoomMetaUpdated({
     required this.peer,
     required this.roomId,
@@ -388,6 +444,7 @@ class RoomMetaUpdated extends ControlInbound {
     this.model,
     this.thinking,
     this.working,
+    this.background,
     this.hasModel = true,
     this.hasThinking = true,
     this.hasSessionId = true,
