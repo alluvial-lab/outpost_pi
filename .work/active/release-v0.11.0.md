@@ -39,3 +39,4 @@ first-bound here):
 
 ## Gate runs
 (populated as gates run)
+- 2026-08-28 — `tests`: inline scanner (reduced isolation per orchestrator adaptation); audited 12 bound items / 92 commit-union paths; 3 findings (High=1, Medium=1, Low=1), with 1 release-blocking story and 2 unbound backlog items; skip list contained 6 prior gate-tests items, 0 duplicate candidates skipped.
