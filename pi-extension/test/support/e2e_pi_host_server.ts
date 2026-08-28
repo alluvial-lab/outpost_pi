@@ -1,6 +1,9 @@
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { E2ePiHostRuntime } from "./e2e_pi_host_runtime.js";
+import {
+  E2ePiHostRuntime,
+  type BackgroundLifecycleEvent,
+} from "./e2e_pi_host_runtime.js";
 
 const port = integerEnv("E2E_PI_HOST_PORT", 4317);
 const relayUrl = requiredEnv("OUTPOST_PI_RELAY");
@@ -129,6 +132,25 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     const body = await readJson(request);
     const args = typeof body.args === "string" ? body.args : "";
     await runtime.invokeOutpostPi(args);
+    json(response, 200, { ok: true });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/background-control") {
+    const body = await readJson(request);
+    const event = body.event;
+    const id = body.id;
+    if (
+      (event !== "created" &&
+        event !== "completed" &&
+        event !== "failed" &&
+        event !== "resumed") ||
+      typeof id !== "string" ||
+      id.trim().length === 0
+    ) {
+      json(response, 400, { error: "event and non-empty id are required" });
+      return;
+    }
+    runtime.emitBackgroundLifecycle(event as BackgroundLifecycleEvent, id);
     json(response, 200, { ok: true });
     return;
   }

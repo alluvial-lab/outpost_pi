@@ -44,6 +44,13 @@ export interface PiHostDeliveryControlStatus {
   readonly sdkDeliveryCount: number;
 }
 
+/** Lifecycle edge names accepted by the background-work E2E seam. */
+export type BackgroundLifecycleEvent =
+  | "created"
+  | "completed"
+  | "failed"
+  | "resumed";
+
 type ProductionModule = {
   default: ExtensionFactory;
   outpostPiTestHarness: {
@@ -106,6 +113,7 @@ export class E2ePiHostRuntime {
     private readonly cwd: string,
     private sessionManager: SessionManager,
     private readonly runner: ExtensionRunner,
+    private readonly eventBus: EventBus,
     private readonly production: ProductionModule,
     private readonly sessionContextHasMessageActions: boolean,
   ) {
@@ -194,6 +202,7 @@ export class E2ePiHostRuntime {
       options.cwd,
       sessionManager,
       runner,
+      eventBus,
       production,
       typeof sessionContext.sendMessage === "function"
         || typeof sessionContext.sendUserMessage === "function",
@@ -276,6 +285,11 @@ export class E2ePiHostRuntime {
       toAddress: input.toAddress,
       body: { type: "e2e_mesh", message: input.message },
     });
+  }
+
+  /** Emit one allowlisted background-subagent lifecycle edge on the SDK bus. */
+  emitBackgroundLifecycle(event: BackgroundLifecycleEvent, id: string): void {
+    this.eventBus.emit(`subagents:${event}`, { id });
   }
 
   /** Arm the next SDK user-message action to settle only on explicit release. */
