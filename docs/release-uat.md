@@ -52,6 +52,18 @@ Output: `outpost-<version>-<code>.apk` (fat debug) + `outpost-<version>-<code>-a
 (signed slim release) attached to a **draft** prerelease on the tag;
 publishing is the operator gate.
 
+**Publish mechanics (learned 2026-08-27):** never promote a draft via the
+API `PATCH draft=false` — the GitHub `latest` marker does not move on that
+path (v0.9.0 sat unmarked for a day before anyone noticed). Publish with a
+fresh `gh release create <tag> --latest <assets>` (delete the draft object
+first if one exists; the tag stays).
+
+**Umask warning:** if key.properties was materialized in the same shell
+(`umask 177`), RESTORE `umask 022` before building — flutter's `.dart_tool`
+created under 177 is mode-600 (dirs need the execute bit) and pub-get fails
+with a misleading Permission denied. The release script now resets umask
+defensively; keep the habit anyway.
+
 **Pre-phone no-start guard** (mandatory for toolchain-swap candidates):
 `scripts/apk-launch-smoke.sh <apk>` — installs on the e2e emulator (x86_64;
 build an x64 variant with `--target-platform android-x64` for the slim's

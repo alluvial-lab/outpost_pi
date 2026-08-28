@@ -145,6 +145,15 @@ split items across component releases.
   on gate-origin items) evaluated 2026-08-26 and **not carried forward** — post-trial
   releases ran all six gates by default, and proportionality is handled by two-lane
   release slicing; record at `.work/archive/idea-evaluate-tiered-release-gates.md`.
+- `release_e2e_battery: minor cuts (0.x.0)` — operator policy (2026-08-27):
+  minor cuts run the FULL e2e battery before publish — `e2e/run-pairing.sh`
+  (docker suite) + the live lanes (golden/failure/state-shapes/grid/
+  capture-delivery) + a 600s seeded chaos soak (`live_soak.py`), all green
+  before the tag ships. Patch cuts (0.x.y) run the pairing suite + any lane
+  touching the changed surface. Rationale: the v0.10.0 battery caught
+  nothing the suites had — but the no-start and hung-connect classes this
+  session proved only device-adjacent verification covers build-system and
+  transport wedges; the battery is cheap insurance at minor cadence.
 - `release_uat: manual-checkpoint` — after the automated `gates_for_release` pass and
   before tag creation, `release-deploy` pauses for operator action; the operator runs
   the smoke runbook in [`docs/release-uat.md`](../docs/release-uat.md) and records an
