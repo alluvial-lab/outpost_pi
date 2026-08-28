@@ -1,3 +1,22 @@
+## v0.11.0 — 2026-08-28
+
+### Features
+
+- **"Orchestrating…" background state** — background subagents now hold a real working signal: the extension tracks `subagents:*` lifecycle edges onto an additive `room_meta_update.background` field through the canonical relay schema (regenerated TS/Dart/Rust; relay merge/broadcast included), and the app renders a third status state with turn-precedence. Armed hot reload now defers while background work runs instead of killing it.
+- **Offline state looks alive** — after two consecutive failed connects the status surface shows last-attempt time + next-retry countdown, and a pointed cause hint: "Can't reach the relay — check Tailscale/VPN" for transport failures vs. a pairing/auth hint for relay rejections.
+- **Pair-code clipboard copy** — the TUI pairing dialog gains press-`c`-to-copy (OSC 52), deleting the manual-transcription step where base64url confusables corrupted re-pairings.
+- **Mobile slash-command invocation** *(first changelog credit; shipped uncredited in v0.10.x)* — command invocation from the mobile app into the extension command surface.
+
+### Fixes
+
+- **Mid-stream hydrate reorder/flicker cured** — reconnect-hydrate merges during an open streaming turn now publish durable-before-visible; no more transient message reordering or turn-completion flicker (capture-diagnosed).
+- **Stale-IME recovery actually recovers** — the watchdog is no longer single-shot and now drives `WindowInsetsControllerCompat` + `requestApplyInsets` (with `TextInput.hide` fallback) at the window-inset layer where the wedge lives; every attempt is capture-visible.
+
+### Internal
+
+- **Post-stack cleanup** — pre-0.84 SDK compatibility surface removed (loader fake → installed loader, fallback model registry deleted, model hydration onto `ctx.model`; net −169 lines), `SizeTransition.axisAlignment` → `alignment`.
+- Six-gate release pass: security/tests/cruft/docs/patterns/refactor over the bundle; three patterns documented; blocking findings fixed in-release (cross-component background e2e lane, changelog + architecture roll-forward).
+
 ## v0.10.1 — 2026-08-27
 
 ### Fixes

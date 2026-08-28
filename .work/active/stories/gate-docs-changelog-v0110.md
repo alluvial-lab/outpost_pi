@@ -1,7 +1,7 @@
 ---
 id: gate-docs-changelog-v0110
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
