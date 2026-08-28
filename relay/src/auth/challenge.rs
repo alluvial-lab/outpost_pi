@@ -117,6 +117,7 @@ pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPee
                     model: meta.model,
                     thinking: meta.thinking,
                     working: meta.working,
+                    background: Some(meta.background),
                     started_at: now_ms,
                 },
             })

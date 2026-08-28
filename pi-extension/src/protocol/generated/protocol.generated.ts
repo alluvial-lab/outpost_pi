@@ -651,6 +651,7 @@ export interface RelayControlFrameHello {
   readonly thinking?: string;
   readonly session_id?: string;
   readonly working?: boolean;
+  readonly background?: boolean;
 };
 }
 
@@ -725,6 +726,7 @@ export interface RelayControlFrameRooms {
   readonly model?: string;
   readonly thinking?: string;
   readonly working: boolean;
+  readonly background?: boolean;
   readonly started_at: number;
 }>;
 }
@@ -739,6 +741,7 @@ export interface RelayControlFrameRoomAnnounced {
   readonly model?: string;
   readonly thinking?: string;
   readonly working: boolean;
+  readonly background?: boolean;
   readonly started_at: number;
 }
 
@@ -757,6 +760,7 @@ export interface RelayControlFrameRoomMetaUpdate {
   readonly thinking?: string | null;
   readonly session_id?: string | null;
   readonly working?: boolean;
+  readonly background?: boolean;
 };
 }
 
@@ -769,6 +773,7 @@ export interface RelayControlFrameRoomMetaUpdated {
   readonly thinking?: string | null;
   readonly session_id?: string | null;
   readonly working?: boolean;
+  readonly background?: boolean;
 };
 }
 
@@ -1158,11 +1163,11 @@ function isRelayControlFramePeerOffline(value: unknown): value is RelayControlFr
 }
 
 function isRelayControlFrameRooms(value: unknown): value is RelayControlFrameRooms {
-  return isObjectLike(value, ["type", "peer", "rooms"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "rooms") && (Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "rooms") && (Array.isArray(record["rooms"]) && record["rooms"].every((item) => isObjectLike(item, ["room_id", "name", "cwd", "session_id", "model", "thinking", "working", "started_at"], (record) => ((Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1 && record["room_id"].length <= 256)) && (record["name"] === undefined || (typeof record["name"] === "string" && record["name"].length <= 256)) && (record["cwd"] === undefined || (typeof record["cwd"] === "string" && record["cwd"].length <= 4096)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (record["model"] === undefined || (typeof record["model"] === "string" && record["model"].length <= 256)) && (record["thinking"] === undefined || (typeof record["thinking"] === "string" && record["thinking"].length <= 32)) && (Object.hasOwn(record, "working") && typeof record["working"] === "boolean") && (Object.hasOwn(record, "started_at") && isIntegerAtLeast(record["started_at"], 0)))))))));
+  return isObjectLike(value, ["type", "peer", "rooms"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "rooms") && (Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "rooms") && (Array.isArray(record["rooms"]) && record["rooms"].every((item) => isObjectLike(item, ["room_id", "name", "cwd", "session_id", "model", "thinking", "working", "background", "started_at"], (record) => ((Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1 && record["room_id"].length <= 256)) && (record["name"] === undefined || (typeof record["name"] === "string" && record["name"].length <= 256)) && (record["cwd"] === undefined || (typeof record["cwd"] === "string" && record["cwd"].length <= 4096)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (record["model"] === undefined || (typeof record["model"] === "string" && record["model"].length <= 256)) && (record["thinking"] === undefined || (typeof record["thinking"] === "string" && record["thinking"].length <= 32)) && (Object.hasOwn(record, "working") && typeof record["working"] === "boolean") && (record["background"] === undefined || typeof record["background"] === "boolean") && (Object.hasOwn(record, "started_at") && isIntegerAtLeast(record["started_at"], 0)))))))));
 }
 
 function isRelayControlFrameRoomAnnounced(value: unknown): value is RelayControlFrameRoomAnnounced {
-  return isObjectLike(value, ["type", "peer", "room_id", "name", "cwd", "session_id", "model", "thinking", "working", "started_at"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "room_announced") && (Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1 && record["room_id"].length <= 256)) && (record["name"] === undefined || (typeof record["name"] === "string" && record["name"].length <= 256)) && (record["cwd"] === undefined || (typeof record["cwd"] === "string" && record["cwd"].length <= 4096)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (record["model"] === undefined || (typeof record["model"] === "string" && record["model"].length <= 256)) && (record["thinking"] === undefined || (typeof record["thinking"] === "string" && record["thinking"].length <= 32)) && (Object.hasOwn(record, "working") && typeof record["working"] === "boolean") && (Object.hasOwn(record, "started_at") && isIntegerAtLeast(record["started_at"], 0))));
+  return isObjectLike(value, ["type", "peer", "room_id", "name", "cwd", "session_id", "model", "thinking", "working", "background", "started_at"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "room_announced") && (Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1 && record["room_id"].length <= 256)) && (record["name"] === undefined || (typeof record["name"] === "string" && record["name"].length <= 256)) && (record["cwd"] === undefined || (typeof record["cwd"] === "string" && record["cwd"].length <= 4096)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (record["model"] === undefined || (typeof record["model"] === "string" && record["model"].length <= 256)) && (record["thinking"] === undefined || (typeof record["thinking"] === "string" && record["thinking"].length <= 32)) && (Object.hasOwn(record, "working") && typeof record["working"] === "boolean") && (record["background"] === undefined || typeof record["background"] === "boolean") && (Object.hasOwn(record, "started_at") && isIntegerAtLeast(record["started_at"], 0))));
 }
 
 function isRelayControlFrameRoomEnded(value: unknown): value is RelayControlFrameRoomEnded {
@@ -1170,7 +1175,7 @@ function isRelayControlFrameRoomEnded(value: unknown): value is RelayControlFram
 }
 
 function isRelayControlFrameRoomMetaUpdated(value: unknown): value is RelayControlFrameRoomMetaUpdated {
-  return isObjectLike(value, ["type", "peer", "room_id", "meta"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "room_meta_updated") && (Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1 && record["room_id"].length <= 256)) && (Object.hasOwn(record, "meta") && isObjectLike(record["meta"], ["model", "thinking", "session_id", "working"], (record) => ((record["model"] === undefined || ((typeof record["model"] === "string" && record["model"].length <= 256) || record["model"] === null)) && (record["thinking"] === undefined || ((typeof record["thinking"] === "string" && record["thinking"].length <= 32) || record["thinking"] === null)) && (record["session_id"] === undefined || ((typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512) || record["session_id"] === null)) && (record["working"] === undefined || typeof record["working"] === "boolean"))))));
+  return isObjectLike(value, ["type", "peer", "room_id", "meta"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "room_meta_updated") && (Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1 && record["room_id"].length <= 256)) && (Object.hasOwn(record, "meta") && isObjectLike(record["meta"], ["model", "thinking", "session_id", "working", "background"], (record) => ((record["model"] === undefined || ((typeof record["model"] === "string" && record["model"].length <= 256) || record["model"] === null)) && (record["thinking"] === undefined || ((typeof record["thinking"] === "string" && record["thinking"].length <= 32) || record["thinking"] === null)) && (record["session_id"] === undefined || ((typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512) || record["session_id"] === null)) && (record["working"] === undefined || typeof record["working"] === "boolean") && (record["background"] === undefined || typeof record["background"] === "boolean"))))));
 }
 
 function isCrossPcFramePiEnvelope(value: unknown): value is CrossPcFramePiEnvelope {

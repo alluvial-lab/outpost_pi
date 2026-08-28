@@ -201,6 +201,7 @@ impl<'actor> ControlHandlers<'actor> {
             frame.meta.thinking.as_ref().map(|_| "thinking"),
             frame.meta.session_id.as_ref().map(|_| "session_id"),
             frame.meta.working.map(|_| "working"),
+            frame.meta.background.map(|_| "background"),
         ]
         .into_iter()
         .flatten()
@@ -297,7 +298,9 @@ mod tests {
     use crate::metrics::FirehoseMetrics;
     use crate::peers::registry::PeerRegistry;
     use crate::presence::PresenceManager;
+    use crate::protocol::frame::{DecodedRelayFrame, decode_relay_frame};
     use crate::protocol::generated::control::{RelayControlFrame, RoomMetaUpdateFrame};
+    use crate::protocol::outer::OuterEnvelopeParser;
     use crate::resource_limits::OUTBOUND_QUEUE_CAPACITY;
     use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
 
@@ -315,6 +318,7 @@ mod tests {
             model: None,
             thinking: None,
             working: false,
+            background: None,
             started_at: 0,
         }
     }
@@ -419,12 +423,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_nullable_background_in_room_meta_update_at_generated_boundary() {
+        let err = serde_json::from_value::<RelayControlFrame>(json!({
+            "type": "room_meta_update",
+            "meta": { "background": null }
+        }))
+        .expect_err("generated control frame rejects null background");
+
+        assert!(err.to_string().contains("invalid type"));
+    }
+
+    #[test]
     fn parses_room_meta_update_with_generated_patch_type() {
         let frame: RelayControlFrame = serde_json::from_value(json!({
             "type": "room_meta_update",
             "meta": {
                 "session_id": null,
-                "working": false
+                "working": false,
+                "background": true
             }
         }))
         .expect("generated room_meta_update parses");
@@ -432,7 +448,9 @@ mod tests {
         assert!(matches!(
             frame,
             RelayControlFrame::RoomMetaUpdate(RoomMetaUpdateFrame { meta, .. })
-                if meta.session_id == Some(None) && meta.working == Some(false)
+                if meta.session_id == Some(None)
+                    && meta.working == Some(false)
+                    && meta.background == Some(true)
         ));
     }
 
@@ -546,15 +564,16 @@ mod tests {
             .await;
         let mut actor = fixture.actor("pi");
 
-        let dispatch = actor
-            .dispatch_control(RelayControlFrame::RoomMetaUpdate(RoomMetaUpdateFrame {
-                room_id: None,
-                meta: RoomMetaPatch {
-                    working: Some(true),
-                    ..Default::default()
-                },
-            }))
-            .await;
+        let decoded = decode_relay_frame(
+            &OuterEnvelopeParser::new(1024),
+            r#"{"type":"room_meta_update","room_id":"main","meta":{"working":true,"background":true}}"#,
+        )
+        .expect("room_meta_update with background decodes at the relay boundary");
+        let DecodedRelayFrame::Control(frame) = decoded else {
+            panic!("room_meta_update must decode as a typed control frame");
+        };
+
+        let dispatch = actor.dispatch_control(frame).await;
 
         assert!(matches!(dispatch, ActorDispatch::Continue));
         let msg = rx_app.try_recv().expect("room_meta_updated");
@@ -563,6 +582,8 @@ mod tests {
         assert_eq!(v["peer"], "pi");
         assert_eq!(v["room_id"], "main");
         assert_eq!(v["meta"]["working"], true);
+        assert_eq!(v["meta"]["background"], true);
+        assert_eq!(fixture.registry.rooms_of("pi")[0].background, Some(true));
     }
 
     /// A `room_meta_update` whose `room_id` differs from the actor's

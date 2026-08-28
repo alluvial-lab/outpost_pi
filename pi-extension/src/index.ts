@@ -1107,7 +1107,6 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): Promise<v
     _applyTurnAndPublish({ type: "session_shutdown" });
     _resetTurnSnapshot();
     _publishWorking(false);
-    if (!_disposed) _clearBackgroundForSessionBoundary();
 
     // One failed owner drain must not strand the shared runtime. allSettled
     // observes every rejection before the relay is closed.
@@ -2159,6 +2158,10 @@ async function _startRelayViaTransportInner(ctx: Pick<ExtensionContext, "ui" | "
       // initial connect and subsequent reconnects after a relay drop.
       onConnected: () => {
         _sdkSessionProjection.publishWorking(_turnProjection().working);
+        // Background subagents outlive relay connections, so rehydrate their
+        // live projection after every initial connect and reconnect rather than
+        // relying only on a transition that may have happened while offline.
+        _publishBackground(_backgroundActivityTracker.activeCount > 0);
       },
     });
   } catch (err) {

@@ -825,7 +825,7 @@ function emitDartRelayFrames(schemaPath) {
   }
   for (const [defName, properties] of Object.entries({
     challenge: ['nonce'], presence: ['states'], peerOnline: ['peer'], peerOffline: ['peer', 'since_ts'],
-    rooms: ['peer', 'rooms'], roomAnnounced: ['peer', 'room_id', 'working', 'started_at'],
+    rooms: ['peer', 'rooms'], roomAnnounced: ['peer', 'room_id', 'working', 'background', 'started_at'],
     roomEnded: ['peer', 'room_id', 'since_ts'], roomMetaUpdated: ['peer', 'room_id', 'meta'],
   })) {
     const schema = requireObject(defs[defName], `relayControl.$defs.${defName}`);
@@ -967,6 +967,7 @@ final class RelayRoomMetaDto {
     this.sessionId,
     this.model,
     this.thinking,
+    this.background,
   });
   final String roomId;
   final String? name;
@@ -975,6 +976,7 @@ final class RelayRoomMetaDto {
   final String? model;
   final String? thinking;
   final bool? working;
+  final bool? background;
   final int startedAt;
   factory RelayRoomMetaDto.fromJson(Map<String, dynamic> json) {
     final legacyMeta = json['meta'] is Map
@@ -988,6 +990,7 @@ final class RelayRoomMetaDto {
       model: json['model'] as String?,
       thinking: (json['thinking'] as String?) ?? (legacyMeta['thinking'] as String?),
       working: (json['working'] as bool?) ?? (legacyMeta['working'] as bool?),
+      background: (json['background'] as bool?) ?? (legacyMeta['background'] as bool?),
       startedAt: (json['started_at'] as num).toInt(),
     );
   }
@@ -1037,6 +1040,7 @@ final class RelayRoomMetaPatchDto {
     this.thinking,
     this.sessionId,
     this.working,
+    this.background,
     required this.hasModel,
     required this.hasThinking,
     required this.hasSessionId,
@@ -1045,6 +1049,7 @@ final class RelayRoomMetaPatchDto {
   final String? thinking;
   final String? sessionId;
   final bool? working;
+  final bool? background;
   final bool hasModel;
   final bool hasThinking;
   final bool hasSessionId;
@@ -1053,6 +1058,7 @@ final class RelayRoomMetaPatchDto {
         thinking: json['thinking'] as String?,
         sessionId: json['session_id'] as String?,
         working: json['working'] as bool?,
+        background: json['background'] as bool?,
         hasModel: json.containsKey('model'),
         hasThinking: json.containsKey('thinking'),
         hasSessionId: json.containsKey('session_id'),
@@ -1242,6 +1248,8 @@ function emitRustControl(entries, schemaPath) {
     lines.push('    pub session_id: Option<String>,');
     lines.push('    #[serde(default)]');
     lines.push('    pub working: bool,');
+    lines.push('    #[serde(default)]');
+    lines.push('    pub background: bool,');
     lines.push('}');
     lines.push('');
     lines.push('fn default_room() -> String {');

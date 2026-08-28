@@ -20,41 +20,14 @@ sealed class ControlInbound {
   /// retain their typed cast failure so boundary callers can reject them.
   static ControlInbound? tryFromJson(Map<String, dynamic> json) {
     try {
-      return fromWire(RelayServerControlFrameDto.fromJson(json), raw: json);
+      return fromWire(RelayServerControlFrameDto.fromJson(json));
     } on FormatException {
       return null;
     }
   }
 
   /// Adapt a generated relay-server DTO into the app's control-domain model.
-  static ControlInbound? fromWire(
-    RelayServerControlFrameDto frame, {
-    Map<String, dynamic>? raw,
-  }) {
-    bool? backgroundFrom(Map<String, dynamic>? value) {
-      if (value == null) return null;
-      final direct = value['background'];
-      if (direct is bool) return direct;
-      final nested = value['meta'];
-      if (nested is Map) {
-        final nestedBackground = nested['background'];
-        if (nestedBackground is bool) return nestedBackground;
-      }
-      return null;
-    }
-
-    bool backgroundForRoom(String roomId) {
-      final rooms = raw?['rooms'];
-      if (rooms is List) {
-        for (final entry in rooms) {
-          if (entry is Map && entry['room_id'] == roomId) {
-            return backgroundFrom(entry.cast<String, dynamic>()) ?? false;
-          }
-        }
-      }
-      return false;
-    }
-
+  static ControlInbound? fromWire(RelayServerControlFrameDto frame) {
     return switch (frame) {
       RelayChallengeFrameDto() => null,
       RelayPeerOnlineFrameDto(:final peer) => PeerOnline(peer: peer),
@@ -85,7 +58,7 @@ sealed class ControlInbound {
             ? null
             : ThinkingLevel.fromWire(room.thinking!),
         working: room.working,
-        background: backgroundFrom(raw),
+        background: room.background,
       ),
       RelayRoomEndedFrameDto(:final peer, :final roomId, :final sinceTs) =>
         RoomEnded(peer: peer, roomId: roomId, sinceTs: sinceTs),
@@ -104,7 +77,7 @@ sealed class ControlInbound {
                     ? null
                     : ThinkingLevel.fromWire(room.thinking!),
                 working: room.working ?? false,
-                background: backgroundForRoom(room.roomId),
+                background: room.background ?? false,
               ),
             )
             .toList(),
@@ -119,11 +92,7 @@ sealed class ControlInbound {
               ? null
               : ThinkingLevel.fromWire(meta.thinking!),
           working: meta.working,
-          background: backgroundFrom(
-            raw?['meta'] is Map
-                ? (raw!['meta'] as Map).cast<String, dynamic>()
-                : null,
-          ),
+          background: meta.background,
           hasModel: meta.hasModel,
           hasThinking: meta.hasThinking,
           hasSessionId: meta.hasSessionId,

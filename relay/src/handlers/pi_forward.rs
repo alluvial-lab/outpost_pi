@@ -1053,6 +1053,7 @@ mod tests {
             model: None,
             thinking: None,
             working: false,
+            background: None,
             started_at: 0,
         }
     }

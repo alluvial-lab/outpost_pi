@@ -43,6 +43,7 @@
         "model": { "type": "string", "maxLength": 256 },
         "thinking": { "type": "string", "maxLength": 32 },
         "working": { "type": "boolean" },
+        "background": { "type": "boolean" },
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
       "additionalProperties": false,
@@ -62,14 +63,15 @@
             { "type": "null" }
           ]
         },
-        "working": { "type": "boolean" }
+        "working": { "type": "boolean" },
+        "background": { "type": "boolean" }
       },
       "additionalProperties": false,
       "x-outpost-pi": {
         "mergePatchSemantics": {
           "absent": "preserve current value",
           "nullableStrings": ["model", "thinking", "session_id"],
-          "nonNullableBooleans": ["working"]
+          "nonNullableBooleans": ["working", "background"]
         }
       }
     },
@@ -81,7 +83,8 @@
         "model": { "type": "string", "maxLength": 256 },
         "thinking": { "type": "string", "maxLength": 32 },
         "session_id": { "$ref": "./defs/common.schema.json#/$defs/sessionId" },
-        "working": { "type": "boolean" }
+        "working": { "type": "boolean" },
+        "background": { "type": "boolean" }
       },
       "additionalProperties": false,
       "x-outpost-pi": { "initialRoomMeta": true }
@@ -223,6 +226,7 @@
         "model": { "type": "string", "maxLength": 256 },
         "thinking": { "type": "string", "maxLength": 32 },
         "working": { "type": "boolean" },
+        "background": { "type": "boolean" },
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
       "additionalProperties": false,

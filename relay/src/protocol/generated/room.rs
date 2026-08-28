@@ -22,6 +22,8 @@ pub struct RoomMeta {
     pub thinking: Option<String>,
     #[serde(default)]
     pub working: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<bool>,
     pub started_at: i64,
 }
 
@@ -35,9 +37,12 @@ pub struct RoomMetaPatch {
     pub session_id: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<bool>,
 }
 
-const ROOM_META_PATCH_FIELDS: &[&str] = &["model", "thinking", "session_id", "working"];
+const ROOM_META_PATCH_FIELDS: &[&str] =
+    &["model", "thinking", "session_id", "working", "background"];
 
 impl<'de> Deserialize<'de> for RoomMetaPatch {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -87,6 +92,12 @@ impl<'de> Visitor<'de> for RoomMetaPatchVisitor {
                         return Err(de::Error::duplicate_field("working"));
                     }
                     patch.working = Some(map.next_value::<bool>()?);
+                }
+                "background" => {
+                    if patch.background.is_some() {
+                        return Err(de::Error::duplicate_field("background"));
+                    }
+                    patch.background = Some(map.next_value::<bool>()?);
                 }
                 other => return Err(de::Error::unknown_field(other, ROOM_META_PATCH_FIELDS)),
             }

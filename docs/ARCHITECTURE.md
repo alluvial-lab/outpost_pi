@@ -155,6 +155,11 @@ directional DTOs, registries, and ingress limits replace handwritten wire
 mirrors. App-domain control events remain handwritten adapters over generated
 relay DTOs; they are not a second wire contract.
 
+Relay room metadata is the generated `roomMeta` projection: `room_id`, `name`,
+`cwd`, `session_id`, `model`, `thinking`, `working`, `background`, and
+`started_at`. `roomMetaPatch` updates the mutable fields, including the
+independent `background` boolean, with absent fields preserved.
+
 ### The app↔pi chat wire
 
 `ClientMessage` (app → pi) union: `pair_request`, `user_message` (with

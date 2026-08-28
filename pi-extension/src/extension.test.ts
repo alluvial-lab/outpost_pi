@@ -5993,6 +5993,41 @@ describe("relay reconnect", () => {
     }
   });
 
+  test("background activity survives relay stop/start and republishes on reconnect", async () => {
+    const { events } = captureEventHandlerWithBus("session_start");
+    captureHandler("outpost-pi");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(relayInstances).toHaveLength(1);
+
+    events.emit("subagents:created", { id: "live-background" });
+    expect(relayInstances[0]!.sendControl).toHaveBeenLastCalledWith({
+      type: "room_meta_update",
+      room_id: expect.any(String),
+      meta: { background: true },
+    });
+
+    await outpostPiTestHarness.stop(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("idle");
+
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(relayInstances).toHaveLength(2);
+    expect(relayInstances[1]!.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ roomMeta: expect.objectContaining({ background: true }) }),
+    );
+
+    const reconnectBackgroundPublishes = relayInstances[1]!.sendControl.mock.calls
+      .map((call) => call[0] as { meta?: { background?: boolean } })
+      .filter((frame) => frame.meta?.background === true);
+    expect(reconnectBackgroundPublishes.length).toBeGreaterThan(0);
+
+    events.emit("subagents:completed", { id: "live-background" });
+    expect(relayInstances[1]!.sendControl).toHaveBeenLastCalledWith({
+      type: "room_meta_update",
+      room_id: expect.any(String),
+      meta: { background: false },
+    });
+  });
+
   test("relay drop detaches the cross-PC bridge before reconnecting", async () => {
     relayInstances.length = 0;
     const keypair = { publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) };

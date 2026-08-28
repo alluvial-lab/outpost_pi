@@ -51,7 +51,7 @@ fn hello_bootstrap_defaults_and_room_meta() {
     let sk = SigningKey::generate(&mut rand::thread_rng());
     let pubkey = B64.encode(sk.verifying_key().to_bytes());
     let line = format!(
-        r#"{{"type":"hello","pubkey":"{}","device_id":"dev-1","room_id":"work","room_meta":{{"name":"Desk","cwd":"/repo","session_id":"sess-1","model":"m","thinking":"high","working":true}}}}"#,
+        r#"{{"type":"hello","pubkey":"{}","device_id":"dev-1","room_id":"work","room_meta":{{"name":"Desk","cwd":"/repo","session_id":"sess-1","model":"m","thinking":"high","working":true,"background":true}}}}"#,
         pubkey
     );
 
@@ -65,6 +65,7 @@ fn hello_bootstrap_defaults_and_room_meta() {
     assert_eq!(peer.room_meta.model.as_deref(), Some("m"));
     assert_eq!(peer.room_meta.thinking.as_deref(), Some("high"));
     assert!(peer.room_meta.working);
+    assert_eq!(peer.room_meta.background, Some(true));
     assert_eq!(peer.room_meta.started_at, 1234);
 }
 
@@ -81,6 +82,7 @@ fn hello_bootstrap_defaults_main_and_not_working() {
     assert_eq!(peer.device_id, "dev-1");
     assert_eq!(peer.room_meta.room_id, "main");
     assert!(!peer.room_meta.working);
+    assert_eq!(peer.room_meta.background, Some(false));
     assert_eq!(peer.room_meta.started_at, 77);
 }
 

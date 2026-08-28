@@ -82,7 +82,7 @@ export interface RelayTransportPort {
   status(): RelayConnectivity;
   start(input: RelayStartInput): Promise<RelayStartResult>;
   stop(reason?: ByeReason): Promise<void>;
-  sendRoomMeta(patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel }): void;
+  sendRoomMeta(patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel; background?: boolean }): void;
   onOuterMessage(
     handler: (
       ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,

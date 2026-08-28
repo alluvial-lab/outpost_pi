@@ -8,10 +8,11 @@ use crate::subscriptions::SubscriptionIndex;
 /// Metadata about one active Pi room (sub-channel of a peer_id).
 ///
 /// Wire fields are generated from `protocol/schema/relay-control.schema.json`.
-/// `working` is a compatibility projection cached by the relay. The
-/// pi-extension is the only authority for turn lifecycle; the relay stores and
-/// forwards the latest projected boolean for room subscribers and `rooms`
-/// snapshots. Do not derive turn phase, reply target, or cancel target here.
+/// `working` and `background` are compatibility projections cached by the
+/// relay. The pi-extension is the only authority for turn and background
+/// lifecycle; the relay stores and forwards the latest projected booleans for
+/// room subscribers and `rooms` snapshots. Do not derive turn phase, reply
+/// target, or cancel target here.
 pub use room::RoomMeta;
 
 /// Patch over the mutable generated `RoomMeta` fields. Each entry distinguishes
@@ -21,8 +22,9 @@ pub use room::RoomMeta;
 ///
 /// Decoded by generated relay-control frames from the `meta` JSON object; the
 /// relay never inspects the inner values beyond JSON shape (they're forwarded
-/// opaquely to subscribers). `working` is non-nullable: absence preserves,
-/// `Some(false)` is terminal/idle, and `Some(true)` is active.
+/// opaquely to subscribers). `working` and `background` are non-nullable in
+/// patches: absence preserves, `Some(false)` is inactive, and `Some(true)` is
+/// active.
 pub use room::RoomMetaPatch;
 
 impl RoomMetaPatch {
@@ -33,6 +35,7 @@ impl RoomMetaPatch {
             && self.thinking.is_none()
             && self.session_id.is_none()
             && self.working.is_none()
+            && self.background.is_none()
     }
 }
 
@@ -94,12 +97,14 @@ mod tests {
             "thinking": "high",
             "session_id": null,
             "working": false,
+            "background": true,
         }))
         .unwrap();
         assert_eq!(patch.model, Some(None));
         assert_eq!(patch.thinking, Some(Some("high".to_string())));
         assert_eq!(patch.session_id, Some(None));
         assert_eq!(patch.working, Some(false));
+        assert_eq!(patch.background, Some(true));
         assert!(!patch.is_empty());
     }
 

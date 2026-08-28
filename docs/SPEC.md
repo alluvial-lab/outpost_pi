@@ -79,6 +79,13 @@ protocol codegen:
   adapter over those generated relay DTOs, not a competing wire contract.
 - **Rust** — `relay/src/protocol/generated/` (serde structs for the relay
   outer envelope, cross-PC frames, and room metadata).
+
+Relay-control room metadata is defined by `roomMeta` with `room_id`, `name`,
+`cwd`, `session_id`, `model`, `thinking`, `working`, `background`, and
+`started_at`; `roomMetaPatch` carries the mutable `model`, `thinking`,
+`session_id`, `working`, and `background` fields with merge-patch semantics.
+The same optional `background` projection is accepted in `helloRoomMeta`.
+
 - **Cockpit↔pi control RPC** — folded into the generated schema
   (`cockpit-control-rpc`), retiring the former private NUL-prefix string RPC.
 

@@ -393,7 +393,7 @@ async fn room_announced_includes_model_from_hello() {
                 "pubkey": B64.encode(vk.to_bytes()),
                 "device_id": "test-device",
                 "room_id": "work",
-                "room_meta": {"name": "my-proj", "model": "claude-opus-4-7"},
+                "room_meta": {"name": "my-proj", "model": "claude-opus-4-7", "background": true},
             })
             .to_string(),
         ))
@@ -433,6 +433,7 @@ async fn room_announced_includes_model_from_hello() {
         "model must be present in room_announced"
     );
     assert_eq!(v["name"], "my-proj");
+    assert_eq!(v["background"], true);
 }
 
 /// Pi sends room_meta_update → subscribers receive room_meta_updated with new model.
