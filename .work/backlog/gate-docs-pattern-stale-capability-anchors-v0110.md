@@ -1,5 +1,5 @@
 ---
-id: gate-docs-pattern-stale-capability-anchors
+id: gate-docs-pattern-stale-capability-anchors-v0110
 created: 2026-08-28
 updated: 2026-08-28
 tags: [documentation]
