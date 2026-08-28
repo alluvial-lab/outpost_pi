@@ -90,6 +90,7 @@ export { probeListPeers } from "./extension/probe_list_peers.js";
 export { restartSupervisorCommand as _restartSupervisorCommand } from "./extension/command_surface/supervisor_restart.js";
 export type { RestartStep } from "./extension/command_surface/supervisor_restart.js";
 import { createOutpostPiExtensionRuntime } from "./extension/composition_root.js";
+import { BackgroundActivityTracker } from "./extension/background_activity.js";
 import { FreshSessionShutdownCoordinator } from "./extension/fresh_session_shutdown.js";
 import { getOutpostPiRuntimeCoordinator } from "./extension/runtime_coordinator.js";
 import type {
@@ -441,7 +442,7 @@ const _serviceCommands = new ServiceCommands();
 // open instead of starting null. The SDK fires `thinking_level_select`
 // on every change (initial load + user toggle), mirrored to room_meta
 // the same way model is — apps subscribe to one channel for both.
-let _myRoomMeta: { name: string; cwd: string; session_id?: string; model?: string; thinking?: ThinkingLevel; working?: boolean } | null = null;
+let _myRoomMeta: { name: string; cwd: string; session_id?: string; model?: string; thinking?: ThinkingLevel; working?: boolean; background?: boolean } | null = null;
 let _currentModel: string | undefined = undefined;  // last-known model name
 let _currentThinking: ThinkingLevel | undefined = undefined;  // last-known thinking level
 
@@ -511,8 +512,13 @@ function _publishWorking(working: boolean): void {
   _publishRoomMetaPatch({ working });
 }
 
+/** Publish whether background subagent work continues beyond the agent turn. */
+function _publishBackground(active: boolean): void {
+  _publishRoomMetaPatch({ background: active });
+}
+
 function _publishRoomMetaPatch(
-  patch: { session_id?: string; model?: string; thinking?: ThinkingLevel; working?: boolean },
+  patch: { session_id?: string; model?: string; thinking?: ThinkingLevel; working?: boolean; background?: boolean },
 ): void {
   if (_myRoomMeta) _myRoomMeta = { ..._myRoomMeta, ...patch };
   _relayTransport.sendRoomMeta(patch);
@@ -1101,6 +1107,7 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): Promise<v
     _applyTurnAndPublish({ type: "session_shutdown" });
     _resetTurnSnapshot();
     _publishWorking(false);
+    if (!_disposed) _clearBackgroundForSessionBoundary();
 
     // One failed owner drain must not strand the shared runtime. allSettled
     // observes every rejection before the relay is closed.
@@ -1305,7 +1312,26 @@ let _lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd" | "mode"> | null = n
 // base-ctx methods (no newSession — that's command-ctx only), so command ops
 // keep using `_lastCtx`.
 let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "mode"> | null = null;
+let _lastSettledCtx: Pick<ExtensionContext, "isIdle"> | null = null;
 const _noopCtx = { ui: { notify: () => undefined }, abort: () => undefined };
+
+const _backgroundActivityTracker = new BackgroundActivityTracker(({ activeCount }) => {
+  const active = activeCount > 0;
+  _publishBackground(active);
+  // An agent_settled event can arrive before the last background task drains.
+  // Retry the armed reload only on the tracker's transition back to idle.
+  if (!active && _lastSettledCtx) _maybeRestartForExtensionReload(_lastSettledCtx);
+});
+
+/** Clear background activity without allowing a stale settlement to trigger a reload. */
+function _clearBackgroundForSessionBoundary(): void {
+  _lastSettledCtx = null;
+  const wasActive = _backgroundActivityTracker.activeCount > 0;
+  _backgroundActivityTracker.clearForSessionBoundary();
+  // clearForSessionBoundary emits the false edge when it had tracked work;
+  // force the reset on an already-empty set so stale relay state also clears.
+  if (!wasActive) _publishBackground(false);
+}
 
 type AgentMessageApi = {
   sendMessage: (...args: Parameters<ExtensionAPI["sendMessage"]>) => void | Promise<void>;
@@ -1341,7 +1367,7 @@ const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
 
 const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   const runtimePorts = createRuntimePorts();
-  const runtime = createOutpostPiExtensionRuntime(pi, runtimePorts);
+  const runtime = createOutpostPiExtensionRuntime(pi, runtimePorts, undefined, _backgroundActivityTracker);
   // Every ordinary SDK event is factory-local. Satellite/child factories still
   // register a complete extension surface, but their callbacks cannot mutate
   // the phone-facing process singleton.
@@ -1633,6 +1659,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // between settlement and the graceful process shutdown.
   ownerPi.on("agent_settled", (_event, ctx) => {
     runtime.ports.session.markAgentSettled();
+    _lastSettledCtx = ctx;
     _maybeRestartForExtensionReload(ctx);
   });
 
@@ -1712,6 +1739,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
           model: patch.model,
           thinking: patch.thinking as ThinkingLevel | undefined,
           working: patch.working,
+          background: patch.background,
         });
       },
       onOuterMessage: (handler) => _relayTransport.onOuterMessage(handler),
@@ -1759,6 +1787,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         // approved owner and must be captured fully. `subagentGate` remains
         // content-suppression evidence only; using it here would suppress a
         // legitimate successor that starts while a subagent tool is open.
+        _lastSettledCtx = null;
         _lastEventCtx = ctx;
         _sdkSessionProjection.bindSessionContext(ctx);
         _captureRemoteSession(ctx);
@@ -1772,6 +1801,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         _sdkSessionProjection.clearStaleContexts();
         _lastCtx = null;
         _lastEventCtx = null;
+        _lastSettledCtx = null;
         _messageApi = null;
         _pi = null;
       },
@@ -2096,7 +2126,12 @@ async function _startRelayViaTransportInner(ctx: Pick<ExtensionContext, "ui" | "
   } catch { /* defensive — never block /outpost-pi start on this */ }
 
   const sessionId = _currentRemoteSessionId(ctx);
-  const roomMeta = { name: sessionName, cwd, session_id: sessionId } as NonNullable<typeof _myRoomMeta>;
+  const roomMeta = {
+    name: sessionName,
+    cwd,
+    session_id: sessionId,
+    background: _backgroundActivityTracker.activeCount > 0,
+  } as NonNullable<typeof _myRoomMeta>;
   const modelName = _currentModelName();
   if (modelName) roomMeta.model = modelName;
   if (_currentThinking) roomMeta.thinking = _currentThinking;
@@ -3098,6 +3133,9 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
 function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1" || _disposed) return;
   if (_freshSessionShutdown.fenceReason !== null) return;
+  // Background tasks outlive the agent turn. Defer before inspecting or
+  // consuming the armed request; the tracker retries on its drain edge.
+  if (_backgroundActivityTracker.activeCount > 0) return;
 
   const dir = _secureHotReloadRemoteDir();
   if (!dir) return;
@@ -3517,6 +3555,7 @@ function _resetSessionForNew(inReplyTo: string): void {
   _applyTurnAndPublish({ type: "session_shutdown" });
   _resetTurnSnapshot();
   _publishWorking(false);
+  _clearBackgroundForSessionBoundary();
   _broadcastQueuedMessageState();
   _sdkSessionProjection.resetSessionForNew(inReplyTo);
   // Clear in-flight delivery attempts so a stale entry from the prior

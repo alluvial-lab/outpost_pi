@@ -93,6 +93,25 @@ describe("composition root runtime", () => {
     expect(p.sessionStart).toHaveBeenCalledOnce();
   });
 
+  test("background lifecycle publishes only the transition edges", () => {
+    const p = ports();
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
+    runtime.register();
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
+    vi.mocked(p.relay.sendRoomMeta).mockClear();
+
+    const events = (pi as unknown as { events: { emit(channel: string, payload: unknown): void } }).events;
+    events.emit("subagents:created", { id: "one" });
+    events.emit("subagents:created", { id: "two" });
+    events.emit("subagents:completed", { id: "one" });
+    events.emit("subagents:failed", { id: "two" });
+
+    expect(p.relay.sendRoomMeta).toHaveBeenCalledTimes(2);
+    expect(p.relay.sendRoomMeta).toHaveBeenNthCalledWith(1, { background: true });
+    expect(p.relay.sendRoomMeta).toHaveBeenNthCalledWith(2, { background: false });
+  });
+
   test("session_start publishes working=false to clear stale true from a killed predecessor", () => {
     // Regression: when a pi process is killed mid-turn (SIGKILL), session_shutdown
     // never fires, so resetTurnSnapshot() never converges working=false. The
@@ -108,6 +127,21 @@ describe("composition root runtime", () => {
     handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("successor"));
 
     expect(p.session.publishWorking).toHaveBeenCalledWith(false);
+  });
+
+  test("session replacement clears tracked background activity before relay teardown", async () => {
+    const p = ports();
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
+    runtime.register();
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
+    const events = (pi as unknown as { events: { emit(channel: string, payload: unknown): void } }).events;
+    events.emit("subagents:created", { id: "live" });
+    vi.mocked(p.relay.sendRoomMeta).mockClear();
+
+    await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" });
+
+    expect(p.relay.sendRoomMeta).toHaveBeenCalledWith({ background: false });
   });
 
   test("print session_start binds lifecycle state without auto-starting relay resources", () => {

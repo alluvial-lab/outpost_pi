@@ -631,7 +631,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function sendRoomMeta(
-    patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel },
+    patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel; background?: boolean },
   ): void {
     if (!roomId) return;
     if (roomMeta) roomMeta = { ...roomMeta, ...patch };
