@@ -123,6 +123,36 @@ that component:
   room/presence state via the relay log.
 - **site** — `pnpm build` green + the production route renders.
 
+## Stack-currency releases — pertinence retests
+
+When a release's bind set bumps the toolchain or SDK floors (Flutter, pi
+SDK, majors of runtime plugins), run the pertinence retests for the
+specific deltas in addition to the smoke above. Current set (from the
+2026-08-28 v0.10.0 sweep; prune rows when a later bump supersedes them —
+see `.work/backlog/backlog-stack-v010-pertinence-residue.md`):
+
+1. **Pixel Fold posture/rotation stress** during cold start, reconnect
+   hydration, and active streaming (3.47 Mali/AHB Impeller fixes; Tensor
+   GPUs are Mali-family) — watch for crash, black frame, frozen frame.
+2. **Gboard text input** (3.47 phantom-Shift fix): shift-lock, Backspace,
+   Enter, tap/drag selection in chat input and selectable transcript text.
+3. **Debug-log share while streaming** (share_plus 13 off-main-thread I/O):
+   share the largest permitted log during active streaming/scrolling; no
+   visible stall, byte-identical NDJSON.
+4. **pi event-bus scoping** (0.84 listeners scoped + cleaned on
+   reload/disposal): full process restart, repeated `/reload` cycles, one
+   subagent create/complete/fail sequence — exactly one background
+   transition per event, no ghost child-session authority; plus one failed
+   extension init + recovery.
+5. **pi model catalogs after restart** (0.81/0.84 interactive refresh,
+   generation-guarded publication): model get/list/set from the phone with
+   healthy and unavailable catalogs; cached models stay usable, stale
+   refreshes never overwrite newer state.
+6. **Streaming markdown URLs** (gpt_markdown 1.2 bare-URL autolink default):
+   long streaming replies with partial/bare URLs and malformed links — no
+   shifting tap targets mid-stream beyond the accepted reveal, no layout
+   churn in long inline code.
+
 ## Acknowledgment
 
 The operator records the ack (a checked item / a recorded `--accept` on the
