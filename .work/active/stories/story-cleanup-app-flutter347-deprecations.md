@@ -1,7 +1,7 @@
 ---
 id: story-cleanup-app-flutter347-deprecations
 kind: story
-stage: review
+stage: done
 tags: [app, cleanup]
 parent: null
 depends_on: []
