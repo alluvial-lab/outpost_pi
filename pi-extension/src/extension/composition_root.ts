@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { BackgroundActivityTracker } from "./background_activity.js";
 import type { OutpostPiRuntime, OutpostPiRuntimePorts, RuntimeEpoch } from "./ports.js";
 import {
   getOutpostPiRuntimeCoordinator,
@@ -32,12 +33,20 @@ export function createOutpostPiExtensionRuntime(
   pi: ExtensionAPI,
   ports: OutpostPiRuntimePorts,
   coordinator: OutpostPiRuntimeCoordinator = getOutpostPiRuntimeCoordinator(),
+  backgroundActivityTracker?: BackgroundActivityTracker,
 ): OutpostPiRuntime {
   const epoch = createRuntimeEpoch();
   const lease = coordinator.acquireFactory();
+  const tracker = backgroundActivityTracker ?? new BackgroundActivityTracker(({ activeCount }) => {
+    ports.relay.sendRoomMeta({ background: activeCount > 0 });
+  });
+  const ownsTracker = backgroundActivityTracker === undefined;
   const eventBus = (pi as Partial<ExtensionAPI>).events;
   const hasEventBus = !!eventBus && typeof eventBus === "object" && typeof eventBus.on === "function";
-  if (hasEventBus) coordinator.observeChildLifecycle(eventBus);
+  if (hasEventBus) {
+    coordinator.observeChildLifecycle(eventBus);
+    tracker.subscribe(eventBus);
+  }
   // Legacy broad unit fixtures predate session_start-driven ownership and
   // intentionally exercise handlers in isolation. They opt into an explicit
   // test seam; production ExtensionAPI objects always carry a real event bus.
@@ -57,7 +66,7 @@ export function createOutpostPiExtensionRuntime(
       ports.commands.register(pi, runtime);
     },
     registerLifecycle() {
-      registerLifecycleHooks(pi, ports, epoch, coordinator, lease, runtime);
+      registerLifecycleHooks(pi, ports, epoch, coordinator, lease, runtime, tracker, ownsTracker);
     },
     isOwner() {
       return isolatedTestHarness || coordinator.isOwner(lease);
@@ -65,7 +74,7 @@ export function createOutpostPiExtensionRuntime(
     async dispose(reason: SessionLifecycleReason = "quit") {
       if (!coordinator.beginShutdown(lease, reason)) return false;
       ports.session.onSessionLifecycle?.(reason, "");
-      await disposeRuntimePorts(ports, epoch, reason);
+      await disposeRuntimePorts(ports, epoch, reason, tracker, ownsTracker);
       return true;
     },
   };
@@ -80,6 +89,8 @@ export function registerLifecycleHooks(
   coordinator: OutpostPiRuntimeCoordinator,
   lease: FactoryLease,
   runtime: OutpostPiRuntime,
+  tracker: BackgroundActivityTracker,
+  ownsTracker: boolean,
 ): void {
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
     const reason = sessionReason(_event, "startup");
@@ -126,7 +137,7 @@ export function registerLifecycleHooks(
     const reason = sessionReason(_event, "quit");
     if (!coordinator.beginShutdown(lease, reason)) return;
     ports.session.onSessionLifecycle?.(reason, "");
-    await disposeRuntimePorts(ports, epoch, reason);
+    await disposeRuntimePorts(ports, epoch, reason, tracker, ownsTracker);
   });
 }
 
@@ -134,9 +145,16 @@ async function disposeRuntimePorts(
   ports: OutpostPiRuntimePorts,
   epoch: RuntimeEpoch,
   reason: SessionLifecycleReason,
+  tracker: BackgroundActivityTracker,
+  ownsTracker: boolean,
 ): Promise<void> {
   epoch.dispose();
   ports.commands.prepareSessionShutdown?.();
+  // A provided tracker belongs to the process-scoped extension composition;
+  // an internally-created tracker belongs to this runtime and can be stopped
+  // with it. Both paths converge the background projection before relay stop.
+  tracker.clearForSessionBoundary();
+  if (ownsTracker) tracker.dispose();
   // Converge the turn projection and publish working=false BEFORE the relay
   // stops — a session_shutdown during an active turn invalidates the old
   // runner, so terminal agent_end/turn_end events are dropped and the

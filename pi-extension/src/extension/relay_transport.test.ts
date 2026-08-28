@@ -666,6 +666,26 @@ describe("relay transport control frames", () => {
     transport.stop();
   });
 
+  test("room metadata updates carry background transition values", async () => {
+    const { transport, relays } = makeTransport();
+    await transport.start({ relayUrl: "ws://relay.test", keypair, roomId: "room-1" });
+
+    transport.sendRoomMeta({ background: true });
+    transport.sendRoomMeta({ background: false });
+
+    expect(relays[0]!.sendControl).toHaveBeenNthCalledWith(1, {
+      type: "room_meta_update",
+      room_id: "room-1",
+      meta: { background: true },
+    });
+    expect(relays[0]!.sendControl).toHaveBeenNthCalledWith(2, {
+      type: "room_meta_update",
+      room_id: "room-1",
+      meta: { background: false },
+    });
+    transport.stop();
+  });
+
   test("presence subscription emits the canonical control frame", async () => {
     const { transport, relays } = makeTransport();
     await transport.start({ relayUrl: "ws://relay.test", keypair });

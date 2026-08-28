@@ -1,7 +1,7 @@
 ---
 id: story-background-work-ext-tracker
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, ux]
 parent: feature-background-work-working-state
 depends_on: []
@@ -41,6 +41,24 @@ acceptance criteria).
 - Restart-gate test: deferral + drain-retry.
 - `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
   green from `pi-extension/`.
+
+## Implementation notes
+
+- Landed `BackgroundActivityTracker` with structural `unknown` payload
+  narrowing, per-bus idempotent subscriptions, transition-only callbacks,
+  session-boundary clearing, and teardown in
+  `pi-extension/src/extension/background_activity.ts`.
+- Added `RoomMeta.background` and threaded the patch through relay transport
+  and the extension composition root. The process-scoped tracker publishes
+  background transitions, resets on stop/session replacement, and seeds
+  reconnect hello metadata from its current count.
+- Hardened the hot-reload gate in `pi-extension/src/index.ts`: active
+  background work defers without consuming the armed request, while the
+  stored minimal settlement context retries the gate after the tracker drains.
+- Added tracker, composition-root, relay-seam, and extension restart-gate
+  coverage. Verification: `corepack pnpm typecheck` passed; full Vitest run
+  passed with 63 test files and 1,118 passing tests (3 skipped);
+  `corepack pnpm build` passed.
 
 ## Ordering
 

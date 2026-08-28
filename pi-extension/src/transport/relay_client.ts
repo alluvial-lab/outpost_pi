@@ -53,6 +53,8 @@ export interface RoomMeta {
   model?: string;
   thinking?: string;
   working?: boolean;
+  /** True while background subagents (pi-subagents tasks) are queued/running beyond the agent turn. Optional — older apps ignore it. */
+  background?: boolean;
 }
 
 export interface ConnectOptions {
