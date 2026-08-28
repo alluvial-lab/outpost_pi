@@ -101,7 +101,8 @@ Rust + axum. One binary, one port: WebSocket upgrade (`GET /`), health
 - `presence.rs` — `PresenceManager` (subscribe/notify, dedup
   offline→online transitions).
 - `rooms.rs` — `RoomManager`, generated `RoomMeta`, `RoomMetaPatch` (per-room
-  metadata: schema-owned `model`, `thinking`, `session_id`, and `working` are
+  metadata: schema-owned `model`, `thinking`, `session_id`, `working`, and
+  `background` are
   shared by the TS and Dart projections; stack adapters may wrap these values or
   add transport fields such as `room_id`, `name`, `cwd`, and `started_at`).
 - `mesh/` — `store` (SQLite `mesh_versions` cartulary, LWW + monotonic
