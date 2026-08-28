@@ -181,6 +181,10 @@ final class TranscriptProjectionReducer {
   /// Return the current immutable projection snapshot.
   TranscriptProjection get projection => _projection;
 
+  /// Detect whether a committed assistant row already belongs to [replyTo].
+  bool hasAssistantReplyTo(String replyTo) =>
+      _assistantReplyTo.containsValue(replyTo);
+
   /// Apply unseen events and return the first changed materialized row.
   TranscriptProjectionUpdate applyAll(Iterable<TranscriptEvent> events) {
     final accepted = <TranscriptEvent>[];
