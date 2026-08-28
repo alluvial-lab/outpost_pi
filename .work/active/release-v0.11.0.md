@@ -39,6 +39,8 @@ first-bound here):
 
 ## Gate runs
 (populated as gates run)
+
 - 2026-08-28 — `tests`: inline scanner (reduced isolation per orchestrator adaptation); audited 12 bound items / 92 commit-union paths; 3 findings (High=1, Medium=1, Low=1), with 1 release-blocking story and 2 unbound backlog items; skip list contained 6 prior gate-tests items, 0 duplicate candidates skipped.
 - 2026-08-28 — `docs`: inline scanner (reduced isolation per orchestrator adaptation); audited 12 bound items / 92 commit-union paths; 10 findings (foundation-doc-assertion=1, changelog-gap=1, repo-skill-staleness=4, pattern-skill-staleness=4), with 2 high-severity release-bound stories and 8 medium/low unbound backlog items; skip list contained 7 prior gate-docs items, 0 duplicate candidates skipped.
 - 2026-08-28 — `patterns`: inline source-read-only scanner (reduced isolation per orchestrator adaptation); audited 12 bound items / 92 commit-union paths; 3 new patterns codified, 0 inconsistencies; existing durable-first/edge-triggered patterns and sub-three-occurrence watchdog/timestamp candidates skipped; skip list included existing gate-patterns items and the canonical 36-pattern catalog.
+- **gate-refactor** (2026-08-28) — 0 findings (0 high, 0 medium, 0 low) from 3 libraries: boundaries (0), lifecycle (0), protocol-contract (0). Inline rule check per orchestrator adaptation (no nested scanner); 5 already-tracked findings skipped.
