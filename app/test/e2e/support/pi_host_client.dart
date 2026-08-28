@@ -116,6 +116,18 @@ final class PiHostClient {
         await _json('POST', '/turn-control/defer-next'),
       );
 
+  /// Emit one allowlisted `subagents:*` lifecycle edge on the real Pi bus.
+  Future<void> emitBackgroundLifecycle({
+    required String event,
+    required String id,
+  }) async {
+    await _json(
+      'POST',
+      '/background-control',
+      body: <String, Object>{'event': event, 'id': id},
+    );
+  }
+
   Future<PiHostTurnControlStatus> turnControlStatus() async =>
       PiHostTurnControlStatus.fromJson(await _json('GET', '/turn-control'));
 

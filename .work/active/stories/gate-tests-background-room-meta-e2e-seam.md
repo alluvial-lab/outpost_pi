@@ -1,7 +1,7 @@
 ---
 id: gate-tests-background-room-meta-e2e-seam
 kind: story
-stage: implementing
+stage: done
 tags: [testing, pi-extension, relay, app]
 parent: null
 depends_on: []
@@ -56,3 +56,21 @@ by this test (created/terminal id), not a shortcut that writes room metadata.
 `app/test/e2e/background_work_metadata_e2e_test.dart`, with narrow support in
 `pi-extension/test/support/e2e_pi_host_{server,runtime}.ts` and
 `app/test/e2e/support/pi_host_client.dart`
+
+## Implementation notes
+
+- Added `app/test/e2e/background_room_meta_e2e_test.dart` to the existing
+  headless `e2e/run-pairing.sh` battery. The lane pairs through `PairingStack`,
+  listens to the real app `IControlLink`, and asserts the production
+  `RoomMetaUpdated.background` frames and `ConnectionManager` room snapshot.
+- Added a narrow test-only `/background-control` Pi-host endpoint and app
+  client helper. It emits only allowlisted `subagents:created`,
+  `subagents:completed`, `subagents:failed`, or `subagents:resumed` events on
+  the real SDK event bus; it cannot write room metadata directly.
+- The test covers duplicate and overlapping active ids, partial terminal drain,
+  and completed/resumed/failed terminal edges. Expected transition values are
+  `[true, false, true, false]`, proving the field survives extension → relay
+  decode/merge/broadcast → app decode/snapshot.
+- Verification: `e2e/run-pairing.sh` passed with `18` tests, including the new
+  lane; the new lane logged four `room_meta_updated` control frames.
+  `flutter analyze` passed with no issues.
