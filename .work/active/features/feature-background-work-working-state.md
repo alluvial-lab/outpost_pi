@@ -1,7 +1,7 @@
 ---
 id: feature-background-work-working-state
 kind: feature
-stage: drafting
+stage: implementing
 tags: [pi-extension, app, ux]
 parent: null
 depends_on: []
@@ -33,48 +33,280 @@ agent_settled → working=false. Background agents (pi-subagents tasks) run
 harness-side beyond any turn — the room/app has no signal that
 orchestrator work continues.
 
-## Candidate directions (design time)
-
-1. **Extension-side bridge**: the pi-subagents package owns live agent
-   state (it queues/schedules them) — if outpost-pi can observe sibling
-   extension state or pi exposes a task/agent lifecycle event, map
-   "background agents active" onto the working marker (or a new distinct
-   "orchestrating" state so idle-vs-working-vs-backgrounding are visually
-   three states, not two).
-2. **Interim convention (now)**: agents narrate wait-state in the closing
-   message — already practiced, confirmed insufficient alone.
-3. Consider a distinct iconography: online (idle) / working (turn) /
-   orchestrating (background) — the operator explicitly reads these as
-   different situations.
-
-## Code seams (grounded at scope time)
-
-- `pi-extension/src/extension/relay_transport.ts` — where `agent_settled`
-  drives the working projection onto room metadata; the bridge from
-  background-agent liveness lands here (or feeds it).
-- `app/lib/ui/chat/viewmodels/chat_viewmodel.dart` (`statusProjection`) +
-  `_nlIndicator` in `app/lib/ui/chat/chat_page.dart` — the app-side
-  status surface that would gain the third state.
-- Pi-subagents package observability (what lifecycle events the extension
-  can subscribe to) is the open investigation for feature-design.
-
 Related: `story-offline-state-liveness-ux` (same surface, opposite
 failure — dead-looking when alive vs alive-looking when idle). Deliberately
 independent: neither assumes the other's output, but design should keep
 the two status-surface changes coherent.
 
-## Simplification opportunity
+## Investigation result (2026-08-27, explorer pass)
 
-A real "orchestrating" state makes the narration convention (agents
-prose-reporting wait-state) unnecessary — delete the convention from
-operator expectations once the signal is trustworthy. If the three-state
-model lands, check whether any ad-hoc working-state heuristics in the app
-can collapse onto it. Iconography should reuse existing status-indicator
-primitives (design-system tokens), not invent a parallel indicator.
+The pi-subagents package (`@gotgenes/pi-subagents` v19.3.5, loaded from
+`~/.pi/agent/npm/node_modules/`) emits lifecycle events on the shared
+`pi.events` bus — the same bus the extension already subscribes to for
+`subagents:child:*` in `runtime_coordinator.ts`:
 
-## Verification
+- `subagents:created` — background records only, emitted before
+  concurrency admission (includes queued). Payload `{ id, type,
+  description, isBackground: true }`.
+- `subagents:completed` / `subagents:failed` — terminal states, payload
+  includes `{ id, status, ... }`.
+- `subagents:resumed` — terminal state of a resumed run, same shape.
 
-`corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
-from `pi-extension/`; `flutter analyze && flutter test --exclude-tags e2e`
-from `app/`. Cross-component behavior (extension → room metadata → app)
-gets an e2e lane if the projection changes shape.
+Payloads arrive as `unknown` (EventBus is `emit(channel, data: unknown)`)
+and must be structurally narrowed, never blindly cast. `subagents:child:
+disposed` is NOT a completion signal (sessions are retained for resume).
+The package also exports an in-process query service
+(`getSubagentsService().listAgents()`), but importing it would require
+dependency wiring to a package that resolves from `~/.pi/agent/npm/`, not
+the extension's own node_modules — the event bus avoids that coupling.
+
+The package's in-memory registry is cleared of completed records on
+session start/switch; there is no durable live-task state to poll.
+
+## Architectural choice
+
+**Event-bus tracker in the extension + additive `RoomMeta.background` +
+a fourth status axis in the app.** The tracker keeps a `Set<string>` of
+live background agent ids from `subagents:created`/`completed`/`failed`/
+`resumed`, publishes `background: boolean` on 0↔n transitions through the
+existing `room_meta_update` path, and the app renders a distinct
+"orchestrating…" status chip.
+
+Alternatives rejected:
+
+- **OR into the existing `working` boolean extension-side** — minimal app
+  change, but collapses turn-work and background-work into one bit. The
+  field report is explicitly about the operator reading these as
+  different situations, and the app's `ChatStatusProjection` architecture
+  composes transport/turn/steering without flattening axes; ORing at the
+  extension would fight both.
+- **Direct `getSubagentsService()` import + polling** — authoritative,
+  but requires package-resolution wiring into `~/.pi/agent/npm/`
+  (fragile across installs) for a signal the event bus already carries.
+
+Tradeoff accepted: an event-sourced set can drift if the extension
+re-subscribes mid-flight (hot reload). That window is closed by the
+restart-gate hardening below; a manual pi restart kills the tasks anyway,
+which is self-consistent.
+
+## Design decisions
+
+- **Three states, not two**: idle / working (turn) / orchestrating
+  (background) — the operator explicitly reads these as different
+  situations; the wire keeps the axes separate so the app chooses the
+  rendering.
+- **Wire shape**: additive optional `background?: boolean` on `RoomMeta`
+  — backward-compatible (old apps ignore the key; the Rust relay treats
+  meta as opaque and is untouched; the app's preserve convention treats
+  absence as "no change").
+- **Signal source**: `pi.events` channels with structural narrowing; no
+  direct package import.
+- **Restart gate consults the tracker**: `_maybeRestartForExtensionReload`
+  fires on `agent_settled`, which ignores background tasks — today an
+  armed hot reload can kill a running background worker. The gate now
+  defers while the set is non-empty, and a drain-to-zero transition
+  re-attempts it (armed requests carry a 5-min TTL and are never consumed
+  by a deferral, so nothing is lost if background outlives the window).
+- **Background does not gate the composer or add a cancel affordance**:
+  the operator can keep messaging during background work (same as idle
+  today); `isWorking`/Stop stay turn-scoped. v1 shows state only.
+- **Label/iconography**: `orchestrating…` chip reusing `colors.working` —
+  no new palette entries (design-system tokens contract). Turn status
+  takes precedence when both are active; the background chip shows when
+  the turn is idle/done/stale.
+- **Session replacement clears the set** — matches the package clearing
+  completed records on session start/switch; late terminal events for
+  absent ids are no-ops.
+
+## Implementation Units
+
+### Unit 1: BackgroundActivityTracker
+**File**: `pi-extension/src/extension/background_activity.ts`
+**Story**: `story-background-work-ext-tracker`
+
+```ts
+import type { EventBus } from "./ports"; // same type runtime_coordinator uses
+
+export interface BackgroundActivitySnapshot {
+  readonly activeCount: number;
+}
+
+/** Tracks live background subagents via pi.events lifecycle channels. */
+export class BackgroundActivityTracker {
+  constructor(onChange: (snapshot: BackgroundActivitySnapshot) => void);
+  /** Idempotent per bus identity (mirror observeChildLifecycle's guard). */
+  subscribe(bus: EventBus): void;
+  /** Session replacement/reset: drop all tracked ids, emit if non-empty. */
+  clearForSessionBoundary(): void;
+  get activeCount(): number;
+  dispose(): void;
+}
+```
+
+**Implementation Notes**:
+- `subagents:created` → add `id` (background-only channel per package
+  semantics; still require `typeof id === "string"`). `subagents:
+  completed` | `failed` | `resumed` → delete `id`. Emit `onChange` only
+  on 0↔n transitions (room-meta traffic stays bounded).
+- Narrow every payload as `{ id?: unknown }` and bail on non-string —
+  the bus is typed `unknown` end to end.
+- Do NOT use `subagents:child:disposed` as completion (sessions are
+  retained after completion for resume).
+
+**Acceptance Criteria**:
+- [ ] Fake-bus test: created/completed/failed drive the count; malformed
+      payloads (`null`, `{}`, `{id: 7}`) are ignored without throwing.
+- [ ] `onChange` fires only on 0↔n transitions, not per event.
+- [ ] `subscribe` twice on the same bus registers one listener set.
+- [ ] `clearForSessionBoundary` empties the set and emits when it was
+      non-empty.
+
+### Unit 2: RoomMeta field + publish wiring
+**File**: `pi-extension/src/transport/relay_client.ts` (type),
+`pi-extension/src/extension/relay_transport.ts` (patch type),
+`pi-extension/src/index.ts` (wiring)
+**Story**: `story-background-work-ext-tracker`
+
+```ts
+// relay_client.ts — RoomMeta gains:
+/** True while background subagents (pi-subagents tasks) are queued/running
+ *  beyond the agent turn. Optional — older apps ignore it. */
+background?: boolean;
+
+// index.ts:
+function _publishBackground(active: boolean): void {
+  _publishRoomMetaPatch({ background: active });
+}
+```
+
+**Implementation Notes**:
+- Extend `sendRoomMeta`'s patch type and `_publishRoomMetaPatch`'s patch
+  type with `background?: boolean` (mirrors `working`).
+- Wire the tracker in `composition_root.ts` next to
+  `observeChildLifecycle(eventBus)` (same guarded
+  `(pi as Partial<ExtensionAPI>).events` access), with `onChange` →
+  `_publishBackground(activeCount > 0)`.
+- Session reset paths that already call `_publishWorking(false)`
+  (new-session reset and dispose in `index.ts`) also call
+  `clearForSessionBoundary()` + `_publishBackground(false)`.
+
+**Acceptance Criteria**:
+- [ ] `room_meta_update` control frames carry `background: true/false`
+      only on transitions (integration test at the relay_transport seam,
+      following existing room-meta test patterns).
+- [ ] Session replacement publishes `background: false`.
+
+### Unit 3: Restart-gate hardening
+**File**: `pi-extension/src/index.ts`
+**Story**: `story-background-work-ext-tracker`
+
+**Implementation Notes**:
+- In `_maybeRestartForExtensionReload`, add an early guard alongside the
+  existing ones: if `tracker.activeCount > 0`, return WITHOUT consuming
+  the armed request (deferral, not cancellation — the 5-min TTL and the
+  restart-loop's re-arm behavior handle long-running work).
+- On the tracker's drain transition (n→0), re-invoke
+  `_maybeRestartForExtensionReload(lastSettledCtx)`, where the
+  `agent_settled` handler stores its minimal
+  `Pick<ExtensionContext, "isIdle">` ctx in module state.
+- This closes a latent hazard independent of the UX goal: today an armed
+  hot reload fires at `agent_settled` and would kill running background
+  tasks (in-memory, process-bound).
+
+**Acceptance Criteria**:
+- [ ] Armed reload + active background task → no restart, armed file
+      intact; drain → restart proceeds (unit test at the gate function
+      with a fake tracker).
+
+### Unit 4: App room snapshot + parsing
+**File**: `app/lib/data/transport/connection_manager.dart`
+**Story**: `story-background-work-app-surface`
+
+**Implementation Notes**:
+- Parse `background` from `room_meta_updated` meta with the same
+  preserve convention as `working` (absent key → preserve existing;
+  explicit value → set). Room snapshot model gains the field.
+
+**Acceptance Criteria**:
+- [ ] Meta with/without `background` updates the room snapshot correctly
+      (mirror of the `working` preserve tests).
+
+### Unit 5: App projection + indicator
+**File**: `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`,
+`app/lib/ui/chat/chat_page.dart` (`_ChatStatusIndicator`)
+**Story**: `story-background-work-app-surface`
+
+```dart
+// ChatStatusProjection gains a fourth axis (transport/turn/steering stay as-is):
+final bool background; // room-level: background subagents active
+```
+
+**Implementation Notes**:
+- ViewModel composes `background` from the active room's snapshot (same
+  authority/stale-gating scope as the room's `working`).
+- `_ChatStatusIndicator`: when `status.background` and the turn status
+  maps to no active label (idle/done/stale), render an `orchestrating…`
+  chip in `colors.working`. Turn status (working/streaming/awaitingTool/
+  error) takes precedence when active.
+- Composer unchanged: `isWorking` and the Stop affordance stay
+  turn-scoped; background does not gate input.
+
+**Acceptance Criteria**:
+- [ ] Widget test: background + idle turn → 'orchestrating…' chip;
+      background + working turn → 'working…' wins; no background →
+      unchanged rendering.
+- [ ] `flutter analyze` clean.
+
+---
+
+## Implementation Order
+1. `story-background-work-ext-tracker` (Units 1-3) — the signal source
+   and wire field must exist first.
+2. `story-background-work-app-surface` (Units 4-5) — consumes the field.
+
+## Simplification
+
+- A trustworthy "orchestrating" state retires the narration convention
+  (agents prose-reporting wait-state) as an operator expectation — update
+  operator-facing docs to stop prescribing it once shipped.
+- No parallel indicator: the chip composes into `_ChatStatusIndicator`'s
+  existing label stack; no new widget hierarchy.
+- The tracker deliberately does NOT duplicate the package's registry —
+  it is a projection (id set) with transitions only, not a status store.
+
+## Testing
+
+- Extension unit tests (fake bus): tracker transitions, malformed-payload
+  tolerance, idempotent subscribe, boundary clear — protects the
+  untrusted-payload contract.
+- Extension integration: `room_meta_update` frames carry `background` on
+  transitions — protects the wire contract at the relay seam.
+- Restart-gate test: deferral + drain-retry — protects the
+  don't-kill-running-work invariant.
+- App: connection_manager preserve/parse mirror test — protects the
+  meta-parsing contract; widget test for the three-state mapping and
+  turn-precedence — protects the operator-visible behavior.
+- No test removals identified.
+
+## Risks
+
+- **Package event contract drift**: the `subagents:*` channels are
+  exported constants of `@gotgenes/pi-subagents` but carry no cross-repo
+  compatibility guarantee. A rename/shape change degrades to today's
+  behavior (idle chip) — fail-quiet, not fail-wrong. The narrowing keeps
+  malformed payloads from crashing the extension.
+- **Hot-reload drift window**: events between unsubscribe/re-subscribe are
+  lost (set undercounts). Closed for the armed-reload path by Unit 3;
+  manual pi restart kills the tasks anyway (self-consistent).
+- **`resumed` edge**: resuming a completed background agent shows idle
+  during the resumed run (only its terminal `resumed` event fires).
+  Accepted: resume is an operator-initiated action with narration.
+- **Sibling pi processes** (patchbay etc.) each see only their own
+  subagents — correct scope: the room reflects this pi.
+
+## Mockups
+
+Skipped (fallback tier): minor composition reusing the existing
+`_ChatStatusIndicator` label stack and existing palette tokens; no
+net-new screen or journey. (Seam names verified 2026-08-27: earlier
+`_nlIndicator`/`nlProjection` references were grep artifacts.)
