@@ -12,6 +12,7 @@ import { roomIdFor } from "../../rooms.js";
 import { localConfigExists } from "../../session/local_config.js";
 import type { OwnerMultiplexerPort } from "../ports.js";
 import type { SystemStatusEvent } from "../system_status_event.js";
+import { Osc52Clipboard, type ClipboardPort } from "./clipboard.js";
 
 export type PairingCoordinatorState = "idle" | "started";
 
@@ -22,17 +23,26 @@ type PairingDialogTheme = {
   dim(text: string): string;
 };
 
-/** Render a QR pairing code in a keyboard-dismissible TUI-only dialog. */
-class PairingCodeDialog {
+type PairingDialogTui = {
+  requestRender(): void;
+};
+
+type PairingCopyState = "copying" | "copied" | "failed";
+
+/** Render a QR pairing code and offer an exact clipboard copy action. */
+export class PairingCodeDialog {
   private readonly qrLines: string[];
   private readonly expiresAtText: string;
   private readonly minimumWidth: number;
+  private copyState: PairingCopyState | undefined;
 
   constructor(
     qrAscii: string,
     private readonly qrUri: string,
     expiresAt: number,
     private readonly theme: PairingDialogTheme,
+    private readonly tui: PairingDialogTui,
+    private readonly clipboard: ClipboardPort,
     private readonly done: () => void,
   ) {
     this.qrLines = qrAscii.trimEnd().split("\n");
@@ -44,6 +54,18 @@ class PairingCodeDialog {
   }
 
   render(width: number): string[] {
+    const copyHint = this.copyState === undefined
+      ? "Press c to copy pairing code."
+      : this.copyState === "copying"
+        ? "Copying pairing code…"
+        : this.copyState === "copied"
+          ? "Pairing code copied to clipboard."
+          : "Clipboard copy failed.";
+    const copyHintLines = wrapForTui(copyHint, width).map((line) => this.copyState === "copied"
+      ? this.theme.accent(line)
+      : this.theme.dim(line));
+    const closeHintLines = wrapForTui("Press Enter or Esc to close.", width).map((line) => this.theme.dim(line));
+
     if (width < this.minimumWidth) {
       // The QR won't fit, but the camera-less URI path is exactly what a
       // narrow terminal needs — show it wrapped rather than hiding the only
@@ -53,8 +75,9 @@ class PairingCodeDialog {
         "",
         ...wrapForTui(this.qrUri, width),
         "",
+        ...copyHintLines,
         ...wrapForTui(this.expiresAtText, width).map((line) => this.theme.dim(line)),
-        ...wrapForTui("Press Enter or Esc to close.", width).map((line) => this.theme.dim(line)),
+        ...closeHintLines,
       ];
     }
     return [
@@ -66,16 +89,34 @@ class PairingCodeDialog {
       "",
       ...wrapForTui(this.qrUri, width),
       "",
+      ...copyHintLines,
       ...wrapForTui(this.expiresAtText, width).map((line) => this.theme.dim(line)),
-      ...wrapForTui("Press Enter or Esc to close.", width).map((line) => this.theme.dim(line)),
+      ...closeHintLines,
     ];
   }
 
   handleInput(data: string): void {
+    if (data === "c" || data === "C") {
+      void this.copyPairingCode();
+      return;
+    }
     if (data === "\r" || data === "\n" || data === "\x1b") this.done();
   }
 
   invalidate(): void {}
+
+  private async copyPairingCode(): Promise<void> {
+    if (this.copyState === "copying") return;
+    this.copyState = "copying";
+    this.tui.requestRender();
+    try {
+      await this.clipboard.copy(this.qrUri);
+      this.copyState = "copied";
+    } catch {
+      this.copyState = "failed";
+    }
+    this.tui.requestRender();
+  }
 }
 
 function wrapForTui(text: string, width: number): string[] {
@@ -95,6 +136,8 @@ export interface PairingCoordinatorDeps {
   getState(): PairingCoordinatorState;
   /** Resolve the live session UI after asynchronous pairing setup. */
   currentUi?(): Pick<PairingUiContext["ui"], "custom" | "notify"> | undefined;
+  /** Copy pairing URIs without coupling the dialog to a platform clipboard API. */
+  clipboard?: ClipboardPort;
   startRelay(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void>;
   isRelayConnected(): boolean;
   roomId(): string | null;
@@ -166,12 +209,15 @@ export class PairingCoordinator {
   private selfRevoke: SelfRevoke | null = null;
   private verifiedSiblingsForTest: SiblingInfo[] = [];
   private listDevicesUi: PairingUiContext["ui"] | null = null;
+  private readonly clipboard: ClipboardPort;
 
   constructor(
     private readonly deps: PairingCoordinatorDeps,
     private readonly createSelfRevoke: (options: SelfRevokeOptions) => SelfRevoke =
       (options) => new SelfRevoke(options),
-  ) {}
+  ) {
+    this.clipboard = deps.clipboard ?? new Osc52Clipboard();
+  }
 
   currentKeypair(): Ed25519Keypair | null {
     return this.cachedEd25519;
@@ -276,7 +322,7 @@ export class PairingCoordinator {
       ?? (this.deps.currentUi === undefined ? ctx.ui : undefined);
     if (!dialogUi) return;
     try {
-      await dialogUi.custom<void>((_tui, theme, _keybindings, done) => new PairingCodeDialog(
+      await dialogUi.custom<void>((tui, theme, _keybindings, done) => new PairingCodeDialog(
         qrAscii,
         qrUri,
         expiresAt,
@@ -284,6 +330,8 @@ export class PairingCoordinator {
           accent: (text) => theme.fg("accent", theme.bold(text)),
           dim: (text) => theme.fg("dim", text),
         },
+        tui,
+        this.clipboard,
         done,
       ));
     } catch (error) {
