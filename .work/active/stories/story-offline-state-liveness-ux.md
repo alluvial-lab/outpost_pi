@@ -1,7 +1,7 @@
 ---
 id: story-offline-state-liveness-ux
 kind: story
-stage: review
+stage: done
 tags: [app, ux, bug]
 parent: null
 depends_on: []
