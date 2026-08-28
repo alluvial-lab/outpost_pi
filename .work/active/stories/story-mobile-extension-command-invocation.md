@@ -5,7 +5,7 @@ stage: done
 tags: [app, pi-extension, research]
 parent: feature-mobile-slash-command-invocation
 depends_on: []
-release_binding: null
+release_binding: v0.11.0
 gate_origin: null
 provenance: synthesis
 created: 2026-08-04

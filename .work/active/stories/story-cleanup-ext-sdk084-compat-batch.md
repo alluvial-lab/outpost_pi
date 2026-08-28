@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, cleanup]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.11.0
 gate_origin: null
 created: 2026-08-28
 updated: 2026-08-28
