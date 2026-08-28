@@ -1,7 +1,7 @@
 ---
 id: feature-background-work-working-state
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, ux]
 parent: null
 depends_on: []
@@ -310,3 +310,35 @@ Skipped (fallback tier): minor composition reusing the existing
 `_ChatStatusIndicator` label stack and existing palette tokens; no
 net-new screen or journey. (Seam names verified 2026-08-27: earlier
 `_nlIndicator`/`nlProjection` references were grep artifacts.)
+
+## Implementation summary (2026-08-27)
+
+Both checkpoints landed and verified:
+
+- `story-background-work-ext-tracker` (done, `0c99f262a` + supplemental
+  `04e0ebb5f`): `BackgroundActivityTracker` with structural payload
+  narrowing and transition-only onChange; `RoomMeta.background` through
+  relay_client → sendRoomMeta → `_publishRoomMetaPatch`; tracker wired in
+  composition_root beside `observeChildLifecycle`; session-reset paths
+  clear + publish false; `_maybeRestartForExtensionReload` defers while
+  background is active and re-attempts on drain (armed file preserved
+  during deferral). The supplemental commit carries the extension.test.ts
+  end-to-end coverage the worker correctly kept out of its scoped commit
+  (transition-edge `room_meta_update` frames; armed-file lifecycle through
+  deferral → drain → SIGTERM).
+- `story-background-work-app-surface` (done, `235414321`): `background`
+  parsed with the `working` preserve convention in connection_manager
+  (`RoomInfo.background`); `ChatStatusProjection` background axis with
+  live-room gating; `orchestrating…` chip in `_ChatStatusIndicator` with
+  turn-status precedence; composer untouched.
+
+## Integrated verification (2026-08-27)
+
+- pi-extension: `corepack pnpm typecheck` clean; `pnpm test` 63 files,
+  1,118 passed / 3 skipped (pre-existing skips).
+- app: `flutter analyze` no issues; `flutter test --exclude-tags e2e` 996
+  passed.
+
+Both child checkpoints done + integrated verification green → feature
+advances to review. Effective review_weight: standard (default; no caller
+or project override).
