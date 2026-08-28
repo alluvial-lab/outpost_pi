@@ -7,6 +7,15 @@ tags: [pi-extension, app, cleanup, deps]
 
 # Post-stack-currency code cleanup — version-delta sweep candidates (2026-08-28)
 
+**STATUS 2026-08-28 (same day): candidates 1–6 LANDED** via
+`story-cleanup-ext-sdk084-compat-batch` (55e5d6f89; 4/5 removed, candidate 3
+partially retained — explicit refresh kept on RPC/JSON/daemon paths on
+freshness evidence; teardown-window listener test added for candidate 5;
+net −169 lines, suite green) and `story-cleanup-app-flutter347-deprecations`
+(e1bc2b340). **Only candidate 7 remains live** (Future.pause — floor-bound,
+ride with the next pubspec `sdk:` floor change). The candidate details below
+are retained as the sweep record.
+
 Code-anchored counterpart to `backlog-stack-v010-pertinence-residue.md`:
 cross-referenced the v0.10.0 version deltas (pi SDK 0.80.6→0.84.3,
 Flutter 3.44.4→3.47.1, plugin bumps) against the CODE (not the board) for
