@@ -117,6 +117,11 @@ const MethodChannel imeVisibilityChannel = MethodChannel(
   'dev.kevoun.outpostpi/ime-visibility',
 );
 
+/// Native recovery command that asks Android to hide the window-level IME.
+const MethodChannel imeRecoveryChannel = MethodChannel(
+  'dev.kevoun.outpostpi/ime-recovery',
+);
+
 /// Grace period before treating a keyboard-sized inset as stale.
 ///
 /// Four seconds is well beyond Android's normal IME close animation while
@@ -128,6 +133,12 @@ const Duration kStaleImeWatchdogDelay = Duration(seconds: 4);
 /// This deliberately excludes small transient/system overlays; the affected
 /// Pixel Fold reports a keyboard-sized inset hundreds of logical pixels tall.
 const double kStaleImeInsetThreshold = 100.0;
+
+/// Delay between bounded stale-IME recovery attempts after the first attempt.
+const Duration kStaleImeWatchdogRetryDelay = Duration(seconds: 4);
+
+/// Maximum recovery requests for one keyboard-sized inset plateau.
+const int kMaxStaleImeWatchdogAttempts = 4;
 
 /// Dismiss a departed IME without overriding routed system-bar insets.
 ///
@@ -144,10 +155,10 @@ const double kStaleImeInsetThreshold = 100.0;
 /// keeps that connection private. The Android host therefore exposes the
 /// platform's `WindowInsets.Type.ime()` visibility through
 /// [imeVisibilityChannel]. A four-second watchdog checks that independent
-/// signal before sending the same cheap, idempotent command. Focus loss still
-/// reasserts immediately, and a focused [EditableText] is the conservative
-/// fallback on platforms without the host channel. The timer and binding/focus
-/// observers are owned by this widget.
+/// signal before sending bounded recovery requests through [imeRecoveryChannel].
+/// Focus loss still reasserts immediately, and a focused [EditableText] is the
+/// conservative fallback on platforms without the host channel. The timer and
+/// binding/focus observers are owned by this widget.
 class PaneCollapseImeDismissal extends StatefulWidget {
   const PaneCollapseImeDismissal({
     super.key,
@@ -159,7 +170,7 @@ class PaneCollapseImeDismissal extends StatefulWidget {
   final bool twoPane;
   final Widget child;
 
-  /// Emit field diagnostics when fallback stale-inset recovery acts.
+  /// Emit field diagnostics whenever stale-inset recovery acts.
   final VoidCallback? onWatchdogRecovery;
 
   @override
@@ -171,7 +182,7 @@ class _PaneCollapseImeDismissalState extends State<PaneCollapseImeDismissal>
     with WidgetsBindingObserver {
   Timer? _watchdog;
   FlutterView? _view;
-  bool _watchdogActedForInset = false;
+  int _watchdogRecoveryAttempts = 0;
   bool _hadTextInputConnection = false;
 
   @override
@@ -230,27 +241,53 @@ class _PaneCollapseImeDismissalState extends State<PaneCollapseImeDismissal>
     if (bottomInset < kStaleImeInsetThreshold) {
       _watchdog?.cancel();
       _watchdog = null;
-      _watchdogActedForInset = false;
+      _watchdogRecoveryAttempts = 0;
       return;
     }
-    if (_watchdog != null || _watchdogActedForInset) return;
-    _watchdog = Timer(
-      kStaleImeWatchdogDelay,
-      () => unawaited(_recoverStaleInset()),
-    );
+    if (_watchdog != null ||
+        _watchdogRecoveryAttempts >= kMaxStaleImeWatchdogAttempts) {
+      return;
+    }
+    final delay = _watchdogRecoveryAttempts == 0
+        ? kStaleImeWatchdogDelay
+        : kStaleImeWatchdogRetryDelay;
+    _watchdog = Timer(delay, () => unawaited(_recoverStaleInset()));
   }
 
   Future<void> _recoverStaleInset() async {
     _watchdog = null;
     if (!mounted || _windowBottomInset < kStaleImeInsetThreshold) return;
     if (await _isImeVisible() || _hasActiveTextInputConnection()) {
-      if (mounted) _reconcileWatchdog(_windowBottomInset);
+      // A legitimate IME must not keep a polling timer alive. A later metrics
+      // or focus transition can re-arm recovery if the input connection ends.
+      if (mounted) {
+        _watchdog?.cancel();
+        _watchdog = null;
+        _watchdogRecoveryAttempts = 0;
+      }
       return;
     }
     if (!mounted || _windowBottomInset < kStaleImeInsetThreshold) return;
-    _watchdogActedForInset = true;
+    _watchdogRecoveryAttempts++;
     widget.onWatchdogRecovery?.call();
-    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+    unawaited(_requestImeRecovery());
+    _reconcileWatchdog(_windowBottomInset);
+  }
+
+  Future<void> _requestImeRecovery() async {
+    try {
+      final recovered = await imeRecoveryChannel.invokeMethod<bool>('recover');
+      if (recovered == true) return;
+    } on Object {
+      // Tests, older hosts, and non-Android platforms do not expose the
+      // window-level channel. Retain the existing input-channel backstop.
+    }
+    try {
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    } on Object {
+      // Recovery is best effort; a host channel failure must not surface as
+      // an unhandled Future error from the watchdog.
+    }
   }
 
   double get _windowBottomInset {
