@@ -16,6 +16,7 @@ import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/voice/speech_service.dart';
 import 'package:app/domain/session_state.dart';
+import 'package:app/domain/value_objects/reachability.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/routing/adaptive.dart';
@@ -387,6 +388,111 @@ void main() {
       conn.dispose();
     },
   );
+
+  testWidgets('retry surface separates liveness and failure hints', (
+    tester,
+  ) async {
+    final conn = ConnectionManager(
+      factory: (_, _) async => _FakeChannel(),
+      storage: _FakeStorage(),
+    );
+    final boxes = LocalBoxes();
+    final sync = SyncService(conn, boxes);
+    final prefs = Preferences(_FakeSecureStorage());
+    final actions = ActionsRepository(conn);
+    final vm = _CountingChatViewModel(
+      SessionReadRepository(boxes),
+      sync,
+      conn,
+      prefs,
+      _FakeStorage(),
+    );
+    final voice = VoiceInputViewModel(_FakeSpeech());
+    final attach = AttachmentViewModel(_FakePicker(), actions);
+    final selection = SessionSelection();
+    final attemptAt = DateTime.utc(2026, 8, 27, 22, 34, 0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ChatViewModel>.value(value: vm),
+            ChangeNotifierProvider<VoiceInputViewModel>.value(value: voice),
+            ChangeNotifierProvider<AttachmentViewModel>.value(value: attach),
+            ChangeNotifierProvider<Preferences>.value(value: prefs),
+            ChangeNotifierProvider<SessionSelection>.value(value: selection),
+          ],
+          child: const ChatPage(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    ChatReady readyWith(ChatTransportRetrying transport) => ChatReady(
+      messages: const [],
+      status: ChatStatusProjection(
+        transport: transport,
+        turn: AppTurnProjection.stale,
+        steering: NoSteering(),
+      ),
+    );
+
+    vm.show(
+      readyWith(
+        ChatTransportRetrying(
+          attempt: 1,
+          nextRetry: const Duration(seconds: 2),
+          lastAttemptAt: attemptAt,
+          nextRetryAt: attemptAt.add(const Duration(seconds: 2)),
+          failureKind: ReachabilityFailureKind.transport,
+          failureStreak: 2,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('chat-connection-status-banner')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('chat-last-attempt')), findsOneWidget);
+    expect(find.byKey(const Key('chat-next-retry-countdown')), findsOneWidget);
+    expect(
+      find.text("Can't reach the relay — check Tailscale/VPN"),
+      findsOneWidget,
+    );
+
+    vm.show(
+      readyWith(
+        const ChatTransportRetrying(
+          attempt: 0,
+          nextRetry: Duration(seconds: 1),
+          failureKind: ReachabilityFailureKind.relayRejected,
+          failureStreak: 1,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('chat-last-attempt')), findsNothing);
+    expect(
+      find.text('Relay rejected the connection — check pairing/auth'),
+      findsOneWidget,
+    );
+    expect(
+      find.text("Can't reach the relay — check Tailscale/VPN"),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    vm.dispose();
+    attach.dispose();
+    voice.dispose();
+    actions.dispose();
+    sync.dispose();
+    selection.dispose();
+    conn.dispose();
+  });
 
   testWidgets(
     'AppBar line 2 shows the device from initialDevice immediately — no '

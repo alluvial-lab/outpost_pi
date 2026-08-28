@@ -12,11 +12,13 @@ import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
+import 'package:app/domain/value_objects/reachability.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 // ---------------------------------------------------------------------------
 // Fake infrastructure
@@ -264,6 +266,44 @@ void main() {
         });
       },
     );
+
+    test('retry status carries attempt timing and failure classification', () {
+      fakeAsync((async) {
+        var now = DateTime.utc(2026, 8, 27, 22, 34, 0);
+        final cm = ConnectionManager(
+          factory: (_, _) async {
+            throw WebSocketChannelException('relay path unavailable');
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          clock: () => now,
+        );
+
+        // ignore: discarded_futures
+        cm.connectTo(_fakePeer());
+        async.flushMicrotasks();
+
+        final first = cm.status as StatusRetrying;
+        expect(first.attempt, 0);
+        expect(first.failureKind, ReachabilityFailureKind.transport);
+        expect(first.failureStreak, 1);
+        expect(first.lastAttemptAt, now);
+        expect(first.nextRetryAt, now.add(const Duration(seconds: 1)));
+
+        now = now.add(const Duration(seconds: 1));
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+
+        final second = cm.status as StatusRetrying;
+        expect(second.attempt, 1);
+        expect(second.failureKind, ReachabilityFailureKind.transport);
+        expect(second.failureStreak, 2);
+        expect(second.lastAttemptAt, now);
+        expect(second.nextRetryAt, now.add(const Duration(seconds: 2)));
+
+        cm.dispose();
+      });
+    });
 
     test('factory failure → StatusRetrying with attempt=0', () async {
       final states = <ConnectionStatus>[];

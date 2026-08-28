@@ -38,10 +38,12 @@ import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/data/transport/reachability_adapter.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/room_snapshot_change.dart';
+import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:app/domain/session_state.dart';
+import 'package:app/domain/value_objects/reachability.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 
@@ -74,7 +76,25 @@ class StatusOnline extends ConnectionStatus {
 class StatusRetrying extends ConnectionStatus {
   final Duration nextRetry;
   final int attempt; // 0-based
-  const StatusRetrying({required this.nextRetry, required this.attempt});
+
+  /// Timestamp when the most recent connect attempt started.
+  final DateTime? lastAttemptAt;
+
+  /// Absolute deadline for the scheduled retry.
+  final DateTime? nextRetryAt;
+
+  /// Classification and consecutive streak from the reachability adapter.
+  final ReachabilityFailureKind failureKind;
+  final int failureStreak;
+
+  const StatusRetrying({
+    required this.nextRetry,
+    required this.attempt,
+    this.lastAttemptAt,
+    this.nextRetryAt,
+    this.failureKind = ReachabilityFailureKind.unknown,
+    this.failureStreak = 0,
+  });
 }
 
 /// Connection is unavailable, optionally requiring user recovery before retry.
@@ -775,9 +795,12 @@ class ConnectionManager extends Service {
 
     final token = CancelToken();
     _connectCancel = token;
-    final deadlineSupervisor = _ConnectAttemptDeadlineSupervisor(_clock());
+    final attemptStartedAt = _clock();
+    final deadlineSupervisor = _ConnectAttemptDeadlineSupervisor(
+      attemptStartedAt,
+    );
     _connectDeadlineSupervisor = deadlineSupervisor;
-    _reachability.onConnectRequested();
+    _reachability.onConnectRequested(at: attemptStartedAt);
     final samePeer = _activePeer?.remoteEpk == peer.remoteEpk;
     if (samePeer) {
       // A retry captures the PeerRecord that originally opened the socket. It
@@ -871,7 +894,7 @@ class ConnectionManager extends Service {
       room: _activeRoomId,
       retryScheduled: true,
     );
-    _scheduleRetry(peer);
+    _scheduleRetry(peer, failureKind: classifyWsTransportFailure(error));
   }
 
   Future<IChannel> _connectWithFreshFallback(
@@ -1932,9 +1955,20 @@ class ConnectionManager extends Service {
           _learnSessionFromPairOk(peer, msg);
         }
       },
-      onError: (_) =>
-          _onChannelLost(peer, ch, cause: ReconnectCause.channelError),
-      onDone: () => _onChannelLost(peer, ch, cause: ReconnectCause.channelDone),
+      onError: (Object error, StackTrace _) => _onChannelLost(
+        peer,
+        ch,
+        cause: ReconnectCause.channelError,
+        error: error,
+      ),
+      // A clean close after admission is still a transport loss. Auth
+      // rejection is classified by WsTransport before an IChannel exists.
+      onDone: () => _onChannelLost(
+        peer,
+        ch,
+        cause: ReconnectCause.channelDone,
+        error: null,
+      ),
     );
   }
 
@@ -1942,6 +1976,7 @@ class ConnectionManager extends Service {
     PeerRecord peer,
     IChannel ch, {
     ReconnectCause cause = ReconnectCause.unknown,
+    Object? error,
   }) {
     if (_status is! StatusOnline) return;
     final cur = (_status as StatusOnline).channel;
@@ -1977,7 +2012,11 @@ class ConnectionManager extends Service {
     // teardown or replacement, rather than spending later attempts' full
     // connect/auth deadlines after only the first retry was protected.
     _raceNextConnect = cause != ReconnectCause.simulated;
-    _scheduleRetry(peer);
+    _scheduleRetry(
+      peer,
+      failureKind: classifyWsTransportFailure(error),
+      countFailure: true,
+    );
   }
 
   @visibleForTesting
@@ -1987,14 +2026,32 @@ class ConnectionManager extends Service {
     _onChannelLost(peer, ch, cause: ReconnectCause.simulated);
   }
 
-  void _scheduleRetry(PeerRecord peer) {
+  void _scheduleRetry(
+    PeerRecord peer, {
+    ReachabilityFailureKind failureKind = ReachabilityFailureKind.unknown,
+    bool countFailure = false,
+  }) {
     if (_disposed) return;
-    if (!_reachability.waitingForRetry) {
-      _reachability.onConnectFailedRetryable();
+    if (countFailure || !_reachability.waitingForRetry) {
+      _reachability.onConnectFailedRetryable(
+        at: _clock(),
+        failureKind: failureKind,
+      );
+    } else {
+      _reachability.refreshRetryDeadline(at: _clock());
     }
     final delay = _reachability.nextRetryDelay;
     final attempt = _reachability.retryAttempt;
-    _emit(StatusRetrying(nextRetry: delay, attempt: attempt));
+    _emit(
+      StatusRetrying(
+        nextRetry: delay,
+        attempt: attempt,
+        lastAttemptAt: _reachability.lastAttemptAt,
+        nextRetryAt: _reachability.nextRetryAt,
+        failureKind: _reachability.failureKind,
+        failureStreak: _reachability.consecutiveFailureCount,
+      ),
+    );
     // Cancel any previous timer before scheduling — prevents the
     // "two timers firing back-to-back" footgun.
     _retryTimer?.cancel();

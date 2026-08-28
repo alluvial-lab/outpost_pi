@@ -1,6 +1,8 @@
 // Session domain model — chat message variants + streaming buffer.
 // Lives in domain/ → no Flutter, no network, no storage.
 
+import 'package:app/domain/value_objects/reachability.dart';
+
 // ---------------------------------------------------------------------------
 // ChatMessage — sealed union of message variants in the conversation history
 // ---------------------------------------------------------------------------
@@ -286,19 +288,77 @@ final class ChatTransportOnline extends ChatTransportProjection {
 
 /// Describe a connection attempt or retry backoff in progress.
 final class ChatTransportRetrying extends ChatTransportProjection {
-  const ChatTransportRetrying({required this.attempt, required this.nextRetry});
+  const ChatTransportRetrying({
+    required this.attempt,
+    required this.nextRetry,
+    this.lastAttemptAt,
+    this.nextRetryAt,
+    this.failureKind = ReachabilityFailureKind.unknown,
+    this.failureStreak = 0,
+  });
 
   final int attempt;
   final Duration nextRetry;
+
+  /// When the most recent connection attempt started, when known.
+  final DateTime? lastAttemptAt;
+
+  /// Absolute retry deadline. The UI derives a live countdown from this value.
+  final DateTime? nextRetryAt;
+
+  /// Failure classification produced by the WebSocket transport adapter.
+  final ReachabilityFailureKind failureKind;
+
+  /// Consecutive failures of [failureKind] in the current retry run.
+  final int failureStreak;
+
+  /// Whether enough consecutive failures have accumulated to show retry
+  /// liveness details rather than only the compact reconnecting label.
+  bool get showsLiveness =>
+      failureStreak >= reachabilityLivenessFailureThreshold &&
+      lastAttemptAt != null &&
+      nextRetryAt != null;
+
+  /// Return the remaining delay at [now], clamped once the retry is due.
+  Duration retryRemainingAt(DateTime now) {
+    final deadline = nextRetryAt;
+    if (deadline == null) return nextRetry;
+    final remaining = deadline.difference(now);
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  /// Return an actionable cause hint once the relevant failure threshold is
+  /// met. Relay rejection is actionable after the first rejection; transport
+  /// failures require two consecutive observations to avoid noisy hints.
+  String? get retryHint => switch (failureKind) {
+    ReachabilityFailureKind.transport
+        when failureStreak >= reachabilityTransportHintFailureThreshold =>
+      "Can't reach the relay — check Tailscale/VPN",
+    ReachabilityFailureKind.relayRejected =>
+      'Relay rejected the connection — check pairing/auth',
+    ReachabilityFailureKind.unknown => null,
+    _ => null,
+  };
 
   @override
   bool operator ==(Object other) =>
       other is ChatTransportRetrying &&
       other.attempt == attempt &&
-      other.nextRetry == nextRetry;
+      other.nextRetry == nextRetry &&
+      other.lastAttemptAt == lastAttemptAt &&
+      other.nextRetryAt == nextRetryAt &&
+      other.failureKind == failureKind &&
+      other.failureStreak == failureStreak;
 
   @override
-  int get hashCode => Object.hash(attempt, nextRetry);
+  int get hashCode => Object.hash(
+    attempt,
+    nextRetry,
+    lastAttemptAt,
+    nextRetryAt,
+    failureKind,
+    failureStreak,
+  );
 }
 
 /// Describe an unavailable selected room with a user-facing reason.

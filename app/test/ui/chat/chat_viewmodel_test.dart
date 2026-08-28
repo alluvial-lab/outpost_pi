@@ -609,6 +609,69 @@ void main() {
     conn.dispose();
   });
 
+  test('retry liveness survives into the ChatViewModel projection', () async {
+    final firstChannel = _FakeChannel();
+    final storage = _FakeStorage();
+    final conn = ConnectionManager(
+      factory: (_, _) async => _FakeChannel(),
+      storage: storage,
+      emitDebounce: Duration.zero,
+    );
+    final boxes = LocalBoxes();
+    final sync = SyncService(conn, boxes);
+    final prefs = Preferences(_FakeSecureStorage());
+    await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+    await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+
+    conn.adopt(firstChannel, _peer);
+    final vm = ChatViewModel(
+      SessionReadRepository(boxes),
+      sync,
+      conn,
+      prefs,
+      storage,
+    );
+    await vm.initialize();
+
+    conn.debugSimulateChannelLost(firstChannel);
+    await Future<void>.delayed(Duration.zero);
+    final firstStatus = conn.status as StatusRetrying;
+    expect(firstStatus.failureStreak, 1);
+    final secondChannel = _FakeChannel();
+    conn.adopt(secondChannel, _peer);
+    conn.debugSimulateChannelLost(secondChannel);
+    await Future<void>.delayed(Duration.zero);
+
+    final transport = vm.statusProjection.transport;
+    final connectionStatus = conn.status;
+    // Assert the source and projected status together so the ViewModel cannot
+    // drop retry liveness metadata at its projection boundary.
+    expect(connectionStatus, isA<StatusRetrying>());
+    final retryingStatus = connectionStatus as StatusRetrying;
+    expect(
+      retryingStatus.failureStreak,
+      2,
+      reason: 'the connection manager owns the consecutive failure streak',
+    );
+    expect(retryingStatus.lastAttemptAt, isNotNull);
+    expect(retryingStatus.nextRetryAt, isNotNull);
+    expect(transport, isA<ChatTransportRetrying>());
+    final retrying = transport as ChatTransportRetrying;
+    expect(retrying.failureStreak, 2);
+    expect(retrying.lastAttemptAt, isNotNull);
+    expect(retrying.nextRetryAt, isNotNull);
+    expect(retrying.showsLiveness, isTrue);
+    final deadline = retrying.nextRetryAt!;
+    expect(
+      retrying.retryRemainingAt(deadline.subtract(const Duration(seconds: 1))),
+      const Duration(seconds: 1),
+    );
+
+    vm.dispose();
+    sync.dispose();
+    conn.dispose();
+  });
+
   test('awaiting tool remains independently online and cancellable', () async {
     final ch = _FakeChannel();
     final storage = _FakeStorage();

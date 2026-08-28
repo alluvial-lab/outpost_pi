@@ -117,6 +117,44 @@ void main() {
       },
     );
 
+    test('records classified failure streak and retry deadlines', () {
+      final firstAttempt = DateTime.utc(2026, 8, 27, 22, 34, 0);
+      final adapter = ReachabilityAdapter();
+
+      adapter.onConnectRequested(at: firstAttempt);
+      adapter.onConnectFailedRetryable(
+        at: firstAttempt,
+        failureKind: ReachabilityFailureKind.transport,
+      );
+      expect(adapter.lastAttemptAt, firstAttempt);
+      expect(
+        adapter.nextRetryAt,
+        firstAttempt.add(reachabilityBackoffForAttempt(0)),
+      );
+      expect(adapter.consecutiveFailureCount, 1);
+
+      adapter.onRetryTimerFired();
+      final secondAttempt = firstAttempt.add(const Duration(seconds: 1));
+      adapter.onConnectRequested(at: secondAttempt);
+      adapter.onConnectFailedRetryable(
+        at: secondAttempt,
+        failureKind: ReachabilityFailureKind.transport,
+      );
+
+      expect(adapter.failureKind, ReachabilityFailureKind.transport);
+      expect(adapter.consecutiveFailureCount, 2);
+      expect(adapter.lastAttemptAt, secondAttempt);
+      expect(
+        adapter.nextRetryAt,
+        secondAttempt.add(reachabilityBackoffForAttempt(1)),
+      );
+
+      adapter.onAppFrameObserved();
+      expect(adapter.consecutiveFailureCount, 0);
+      expect(adapter.lastAttemptAt, isNull);
+      expect(adapter.nextRetryAt, isNull);
+    });
+
     test(
       'stop and reset project offline without transport or timer dependencies',
       () {
