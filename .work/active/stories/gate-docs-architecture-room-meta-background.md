@@ -1,7 +1,7 @@
 ---
 id: gate-docs-architecture-room-meta-background
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
