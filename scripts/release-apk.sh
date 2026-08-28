@@ -9,6 +9,8 @@
 #   --upload-draft <tag>  create or update a draft prerelease with every built
 #                         APK. Tag convention: v<version>-rc.<n> for candidates.
 set -euo pipefail
+umask 022  # callers materialize key.properties under 177; a leaked umask
+           # breaks flutter's .dart_tool (dirs need +x) with misleading EACCES
 
 SLIM=false
 UPLOAD_TAG=""
