@@ -1,7 +1,7 @@
 ---
 id: story-cleanup-ext-sdk084-compat-batch
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, cleanup]
 parent: null
 depends_on: []
