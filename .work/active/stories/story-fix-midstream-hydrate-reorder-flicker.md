@@ -1,7 +1,7 @@
 ---
 id: story-fix-midstream-hydrate-reorder-flicker
 kind: story
-stage: review
+stage: done
 tags: [app, bug, ux]
 parent: null
 depends_on: []
