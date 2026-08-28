@@ -966,6 +966,206 @@ void main() {
     s.sync.dispose();
   });
 
+  test(
+    'mid-stream hydrate and completion never hide the bubble before commit',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      await s.sync.debugApplyHistory(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'prefix-history',
+          sessionStartedAt: 1,
+          events: const [
+            UserInputEvt(ts: 10, id: 'prior-turn', text: 'prior prompt'),
+            AgentMessageEvt(
+              ts: 11,
+              inReplyTo: 'prior-turn',
+              messageId: 'prior-assistant',
+              text: 'prior response',
+            ),
+          ],
+          eos: true,
+        ),
+      );
+      final snapshots = <({StreamingMessage? streaming, List<String> ids})>[];
+      final nullEmission = Completer<void>();
+      final sub = s.sync.streamingStream.listen((streaming) {
+        final ids = messages(s.epk).map((message) => message.id).toList();
+        snapshots.add((streaming: streaming, ids: ids));
+        if (streaming == null && !nullEmission.isCompleted) {
+          nullEmission.complete();
+        }
+      });
+
+      s.ch.pushRaw(
+        AgentChunk(
+          sessionId: s.sessionId,
+          inReplyTo: 'in-flight-turn',
+          delta: 'still streaming',
+        ),
+      );
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'still streaming',
+        reason: 'the in-flight turn to become visible',
+      );
+
+      final appendStarted = Completer<void>();
+      final appendGate = Completer<void>();
+      store
+        ..appendStarted = appendStarted
+        ..appendGate = appendGate;
+      final hydration = s.sync.debugApplyHistory(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'mid-turn-hydrate',
+          sessionStartedAt: 1,
+          events: const [
+            UserInputEvt(ts: 10, id: 'prior-turn', text: 'prior prompt'),
+            AgentMessageEvt(
+              ts: 11,
+              inReplyTo: 'prior-turn',
+              messageId: 'prior-assistant',
+              text: 'prior response',
+            ),
+            UserInputEvt(ts: 12, id: 'in-flight-turn', text: 'prompt'),
+            AgentMessageEvt(
+              ts: 13,
+              inReplyTo: 'in-flight-turn',
+              messageId: 'in-flight-assistant',
+              text: 'committed while reconnecting',
+            ),
+          ],
+          eos: true,
+        ),
+      );
+      await appendStarted.future;
+
+      // Turn completion races the in-flight reconnect hydrate. The current
+      // implementation clears the streaming cursor before either terminal
+      // event is durable, exposing the same transient gap as the capture.
+      s.ch.pushRaw(
+        AgentDone(sessionId: s.sessionId, inReplyTo: 'in-flight-turn', ts: 3),
+      );
+      // Give the old implementation a deterministic chance to publish its
+      // pre-durable null. The repaired implementation must remain quiet until
+      // the gate is released.
+      for (var turn = 0; turn < 20 && !nullEmission.isCompleted; turn++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      try {
+        if (nullEmission.isCompleted) {
+          final nullSnapshot = snapshots.lastWhere(
+            (snapshot) => snapshot.streaming == null,
+          );
+          expect(
+            nullSnapshot.ids,
+            [
+              'prior-turn',
+              'server-message:${s.sessionId}:agent_message:prior-assistant:11',
+              'in-flight-turn',
+              'server-message:${s.sessionId}:agent_message:in-flight-assistant:13',
+            ],
+            reason:
+                'clearing the streaming bubble must not precede its committed row',
+          );
+        }
+      } finally {
+        appendGate.complete();
+        await hydration;
+        await _settle();
+        await sub.cancel();
+        s.conn.dispose();
+        s.sync.dispose();
+      }
+
+      if (!nullEmission.isCompleted) await nullEmission.future;
+      final prefix = [
+        'prior-turn',
+        'server-message:${s.sessionId}:agent_message:prior-assistant:11',
+      ];
+      for (final snapshot in snapshots) {
+        expect(
+          snapshot.ids.toSet(),
+          hasLength(snapshot.ids.length),
+          reason: 'the merge projection must not duplicate a message',
+        );
+        expect(snapshot.ids.take(prefix.length), prefix);
+      }
+      expect(messages(s.epk).map((message) => message.text), [
+        'prior prompt',
+        'prior response',
+        'prompt',
+        'committed while reconnecting',
+      ], reason: 'replay and terminal handoff must render one assistant row');
+    },
+  );
+
+  test(
+    'turn completion does not remove streaming content before commit',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final snapshots = <({StreamingMessage? streaming, List<String> texts})>[];
+      final nullEmission = Completer<void>();
+      final sub = s.sync.streamingStream.listen((streaming) {
+        final texts = messages(s.epk).map((message) => message.text).toList();
+        snapshots.add((streaming: streaming, texts: texts));
+        if (streaming == null && !nullEmission.isCompleted) {
+          nullEmission.complete();
+        }
+      });
+
+      s.ch.pushRaw(
+        AgentChunk(
+          sessionId: s.sessionId,
+          inReplyTo: 'completion-turn',
+          delta: 'completed text',
+        ),
+      );
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'completed text',
+        reason: 'the streaming bubble to become visible',
+      );
+
+      final appendStarted = Completer<void>();
+      final appendGate = Completer<void>();
+      store
+        ..appendStarted = appendStarted
+        ..appendGate = appendGate;
+      s.ch.pushRaw(
+        AgentDone(sessionId: s.sessionId, inReplyTo: 'completion-turn', ts: 4),
+      );
+      await appendStarted.future;
+      for (var turn = 0; turn < 20 && !nullEmission.isCompleted; turn++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      try {
+        if (nullEmission.isCompleted) {
+          final nullSnapshot = snapshots.lastWhere(
+            (snapshot) => snapshot.streaming == null,
+          );
+          expect(
+            nullSnapshot.texts,
+            contains('completed text'),
+            reason:
+                'the streaming bubble may clear only with its committed message',
+          );
+        }
+      } finally {
+        appendGate.complete();
+        await _settle();
+        await sub.cancel();
+        s.conn.dispose();
+        s.sync.dispose();
+      }
+
+      if (!nullEmission.isCompleted) await nullEmission.future;
+    },
+  );
+
   test('multi-batch history hydration emits one settled projection', () async {
     final store = _MemoryTranscriptStore();
     final s = await setup(transcriptEventStore: store);
@@ -4233,11 +4433,9 @@ void main() {
 
       store.failAppendCall = 2;
       s.ch.push(AgentDone(inReplyTo: 'epoch-turn'));
-      await _waitUntil(
-        () => !s.sync.turnProjection.working,
-        reason: 'the synchronous terminal idle transition',
-      );
 
+      // Terminal state is published after the durable batch resolves. The
+      // terminal epoch still invalidates the older queued chunk projection.
       appendGate.complete();
       await _waitUntil(
         () => store.appendCalls >= 2,

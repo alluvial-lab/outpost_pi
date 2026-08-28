@@ -1315,35 +1315,52 @@ class SyncService extends Service {
         final deterministicExpectedButDropped =
             !committedViaAgentMessage &&
             _extensionSendsDeterministicAgentMessage;
-        final terminalEvents = <TranscriptEvent>[];
-        if (_streaming != null) _emitStreaming(null);
-        if (buffered.isNotEmpty &&
-            !committedViaAgentMessage &&
-            !deterministicExpectedButDropped) {
-          terminalEvents.add(
-            AssistantMessageCommitted(
-              eventId: 'server:assistant_committed:$inReplyTo:${uuid7()}',
-              sessionId: _activeTranscriptSessionId(),
-              ts: assistantTs,
-              messageId: 'agent_${uuid7()}',
-              replyTo: inReplyTo,
-              text: buffered,
-            ),
-          );
-        }
-        terminalEvents.add(
-          AssistantDoneReceived(
-            eventId: 'server:assistant_done:$inReplyTo:${uuid7()}',
-            sessionId: _activeTranscriptSessionId(),
-            ts: assistantTs,
-            replyTo: inReplyTo,
-          ),
-        );
-        _runDetachedTranscriptWrite(
-          () => _appendTranscriptEvents(terminalEvents),
-          expectedRef: expectedRef,
-        );
-        _setTurnIdle(preview: buffered.isEmpty ? null : buffered);
+        // Invalidate older queued chunk writes without changing the visible
+        // turn. The terminal projection owns the eventual streaming→idle
+        // transition after its durable rows are materialized.
+        _turnProjectionEpoch += 1;
+        final terminalGeneration = _lifecycleGeneration;
+        _runDetachedTranscriptWrite(() async {
+          try {
+            await _appendTranscriptEventsFrom((reducer) {
+              final replayCommitted = reducer.hasAssistantReplyTo(inReplyTo);
+              final terminalEvents = <TranscriptEvent>[];
+              if (buffered.isNotEmpty &&
+                  !committedViaAgentMessage &&
+                  !deterministicExpectedButDropped &&
+                  !replayCommitted) {
+                terminalEvents.add(
+                  AssistantMessageCommitted(
+                    eventId: 'server:assistant_committed:$inReplyTo:${uuid7()}',
+                    sessionId: _activeTranscriptSessionId(),
+                    ts: assistantTs,
+                    messageId: 'agent_${uuid7()}',
+                    replyTo: inReplyTo,
+                    text: buffered,
+                  ),
+                );
+              }
+              terminalEvents.add(
+                AssistantDoneReceived(
+                  eventId: 'server:assistant_done:$inReplyTo:${uuid7()}',
+                  sessionId: _activeTranscriptSessionId(),
+                  ts: assistantTs,
+                  replyTo: inReplyTo,
+                ),
+              );
+              return terminalEvents;
+            });
+          } catch (_) {
+            // A failed terminal write cannot leave the turn working forever.
+            // There is no committed replacement to protect in this path, so
+            // converge the visible cursor only after the failure is known.
+            if (_isCurrentLifecycle(terminalGeneration, expectedRef)) {
+              _discardStreamingState();
+              _setTurnIdle(preview: buffered.isEmpty ? null : buffered);
+            }
+            rethrow;
+          }
+        }, expectedRef: expectedRef);
 
       case AgentMessage(
         :final inReplyTo,
@@ -1921,16 +1938,24 @@ class SyncService extends Service {
   Future<void> _appendTranscriptEvents(
     Iterable<TranscriptEvent> events, {
     bool preserveTurnState = false,
+  }) => _appendTranscriptEventsFrom(
+    (_) => events,
+    preserveTurnState: preserveTurnState,
+  );
+
+  // Resolve deferred terminal batches inside the serialized write chain so a
+  // completion racing hydration observes any committed replay before choosing
+  // the legacy streamed-buffer fallback.
+  Future<void> _appendTranscriptEventsFrom(
+    Iterable<TranscriptEvent> Function(TranscriptProjectionReducer reducer)
+    eventFactory, {
+    bool preserveTurnState = false,
   }) async {
     final ref = _activeRef;
     if (ref == null) return;
     final generation = _lifecycleGeneration;
     final projectionEpoch = _turnProjectionEpoch;
     final key = _transcriptKeyForRef(ref);
-    final batch = events
-        .where((event) => event.sessionId == key.sessionId)
-        .toList(growable: false);
-    if (batch.isEmpty) return;
 
     await _enqueue(() async {
       if (!_isCurrentLifecycle(generation, ref)) return;
@@ -1943,6 +1968,10 @@ class SyncService extends Service {
         );
         if (reducer == null) return;
       }
+      final batch = eventFactory(reducer)
+          .where((event) => event.sessionId == key.sessionId)
+          .toList(growable: false);
+      if (batch.isEmpty) return;
       final result = await _eventStore.appendAll(key, batch);
       if (!_isCurrentLifecycle(generation, ref)) return;
       if (result.appended == 0) {
@@ -1952,17 +1981,18 @@ class SyncService extends Service {
       final update = reducer.applyAll(
         result.accepted.map((entry) => entry.event),
       );
+      await _applyTranscriptProjectionUpdateInWriteChain(
+        ref,
+        update,
+        generation,
+      );
+      if (!_isCurrentLifecycle(generation, ref)) return;
       _publishTranscriptUpdate(
         update,
         generation,
         ref,
         projectionEpoch,
         preserveTurnState: preserveTurnState,
-      );
-      await _applyTranscriptProjectionUpdateInWriteChain(
-        ref,
-        update,
-        generation,
       );
       if (_isCurrentLifecycle(generation, ref)) {
         _markPersistenceRecovered(ref);
