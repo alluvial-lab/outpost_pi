@@ -742,6 +742,10 @@ class _ChatStatusIndicator extends StatelessWidget {
             }
         ? 'orchestrating…'
         : null;
+    final visibleAgentLabel = backgroundLabel ?? agentLabel;
+    final visibleAgentColor = backgroundLabel != null
+        ? colors.working
+        : agentColor;
     final steeringLabel = status.steering is SteeringPending
         ? 'steering…'
         : null;
@@ -756,10 +760,8 @@ class _ChatStatusIndicator extends StatelessWidget {
 
     final (priorityLabel, priorityColor) = steeringLabel != null
         ? (steeringLabel, colors.muted2)
-        : agentLabel != null
-        ? (agentLabel, agentColor)
-        : backgroundLabel != null
-        ? (backgroundLabel, colors.working)
+        : visibleAgentLabel != null
+        ? (visibleAgentLabel, visibleAgentColor)
         : (transportLabel, transportColor);
 
     return Row(
@@ -779,12 +781,9 @@ class _ChatStatusIndicator extends StatelessWidget {
           Flexible(child: label(priorityLabel, priorityColor))
         else ...[
           label(transportLabel, transportColor),
-          if (agentLabel != null || backgroundLabel != null) ...[
+          if (visibleAgentLabel != null) ...[
             const SizedBox(width: 6),
-            label(
-              agentLabel ?? backgroundLabel!,
-              agentLabel == null ? colors.working : agentColor,
-            ),
+            label(visibleAgentLabel, visibleAgentColor),
           ],
           if (steeringLabel != null) ...[
             const SizedBox(width: 6),

@@ -187,9 +187,9 @@ impl PeerRegistry {
     /// Returns one `RoomMeta` per distinct live room of `peer_id`.
     ///
     /// This is the authoritative `rooms` snapshot for currently live rooms.
-    /// The `working` value inside each entry is only the latest compatibility
-    /// projection published by the pi-extension; the relay does not infer or
-    /// synthesize turn lifecycle from it.
+    /// The `working` and `background` values inside each entry are only the
+    /// latest compatibility projections published by the pi-extension; the
+    /// relay does not infer or synthesize lifecycle from them.
     ///
     /// Multiple conns at the same room collapse to a single canonical entry;
     /// later duplicate registrations refresh that snapshot for compatibility.
@@ -207,7 +207,8 @@ impl PeerRegistry {
     /// `meta` wholesale instead of merging field-by-field. Nullable fields
     /// that are still `None` after the patch are omitted from `meta` (matching
     /// the `skip_serializing_if` convention used for `RoomMeta` itself); the
-    /// non-nullable `working` projection bool is always present in the broadcast.
+    /// non-nullable `working` projection bool is always present in the
+    /// broadcast, and `background` is included when the sender supplied it.
     ///
     /// An empty patch (no fields present) still returns `true` if the
     /// `(peer, room)` pair exists, but skips the broadcast — nothing changed.
@@ -253,6 +254,7 @@ mod tests {
             model: None,
             thinking: None,
             working: false,
+            background: None,
             started_at: 0,
         }
     }

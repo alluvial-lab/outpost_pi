@@ -117,8 +117,10 @@ impl RegistryEventPublisher {
             return;
         }
 
-        // Schema gap: `room_meta_updated` has no generated outbound variant yet,
-        // so this compatibility frame remains handwritten until the schema defines it.
+        // `room_meta_updated` is schema-defined for relay ingress and the
+        // generated patch type owns its field validation. This publisher
+        // serializes the post-merge snapshot because the relay emits this
+        // subscriber update as a derived compatibility projection.
         let mut meta_obj = serde_json::Map::new();
         if let Some(model) = &snapshot.model {
             meta_obj.insert(
@@ -139,11 +141,18 @@ impl RegistryEventPublisher {
             );
         }
         // `working` is always present (non-nullable bool), so it always rides
-        // along in the broadcast — subscribers can rely on it.
+        // along in the broadcast — subscribers can rely on it. `background`
+        // is optional for compatibility with older hello frames.
         meta_obj.insert(
             "working".to_string(),
             serde_json::Value::Bool(snapshot.working),
         );
+        if let Some(background) = snapshot.background {
+            meta_obj.insert(
+                "background".to_string(),
+                serde_json::Value::Bool(background),
+            );
+        }
         let msg = serde_json::json!({
             "type": "room_meta_updated",
             "peer": peer_id,

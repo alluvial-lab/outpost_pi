@@ -106,7 +106,7 @@ RelayFrameDecodeResult decodeRelayInboundFrame(
         ),
       ),
       RelayServerControlFrameDto() => () {
-        final control = ControlInbound.fromWire(frame, raw: decoded);
+        final control = ControlInbound.fromWire(frame);
         return control == null
             ? RejectedRelayFrame(
                 reason: RelayFrameDecodeFailure.unsupportedType,

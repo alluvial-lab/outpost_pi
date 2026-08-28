@@ -134,6 +134,18 @@ void main() {
       steering: NoSteering(),
       background: true,
     );
+    const onlineDone = ChatStatusProjection(
+      transport: ChatTransportOnline(roomId: 'main'),
+      turn: AppTurnProjection(status: AppTurnStatus.done),
+      steering: NoSteering(),
+      background: true,
+    );
+    const onlineStale = ChatStatusProjection(
+      transport: ChatTransportOnline(roomId: 'main'),
+      turn: AppTurnProjection(status: AppTurnStatus.stale),
+      steering: NoSteering(),
+      background: true,
+    );
     const onlineWithoutBackground = ChatStatusProjection(
       transport: ChatTransportOnline(roomId: 'main'),
       turn: AppTurnProjection.idle,
@@ -165,6 +177,13 @@ void main() {
     await tester.pump();
     expect(find.text('working…'), findsOneWidget);
     expect(find.text('orchestrating…'), findsNothing);
+
+    for (final terminalStatus in [onlineDone, onlineStale]) {
+      viewModel.showStatus(terminalStatus);
+      await tester.pump();
+      expect(find.text('orchestrating…'), findsOneWidget);
+      expect(find.text(terminalStatus == onlineDone ? 'done' : 'stale'), findsNothing);
+    }
 
     viewModel.showStatus(onlineWithoutBackground);
     await tester.pump();

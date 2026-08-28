@@ -97,6 +97,9 @@ impl RoomStateStore {
         if let Some(working) = patch.working {
             meta.working = working;
         }
+        if let Some(background) = patch.background {
+            meta.background = Some(background);
+        }
 
         Some(RoomMetaPatchResult { meta: meta.clone() })
     }
@@ -115,6 +118,7 @@ mod tests {
             model: None,
             thinking: None,
             working: false,
+            background: None,
             started_at: 0,
         }
     }
@@ -163,6 +167,7 @@ mod tests {
         let peer = "peer";
         let mut meta = make_meta("main");
         meta.working = true;
+        meta.background = Some(true);
         store.on_connection_inserted(peer, meta, &insert(1, true));
 
         let model_only = store
@@ -178,6 +183,11 @@ mod tests {
             .meta;
         assert_eq!(model_only.model.as_deref(), Some("opus"));
         assert!(model_only.working, "absent working must preserve true");
+        assert_eq!(
+            model_only.background,
+            Some(true),
+            "absent background must preserve true"
+        );
 
         let off = store
             .apply_patch(
@@ -185,12 +195,18 @@ mod tests {
                 "main",
                 RoomMetaPatch {
                     working: Some(false),
+                    background: Some(false),
                     ..Default::default()
                 },
             )
             .expect("room exists")
             .meta;
         assert!(!off.working, "working false is a real patch");
+        assert_eq!(
+            off.background,
+            Some(false),
+            "background false is a real patch"
+        );
     }
 
     #[test]

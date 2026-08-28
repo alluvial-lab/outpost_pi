@@ -397,6 +397,7 @@ mod tests {
             model: None,
             thinking: None,
             working: false,
+            background: None,
             started_at: 0,
         }
     }
@@ -551,6 +552,7 @@ mod tests {
                     model: Some("model-1".to_string()),
                     thinking: None,
                     working: true,
+                    background: Some(true),
                     started_at: 123,
                 },
                 "dev-a".to_string(),
@@ -581,6 +583,7 @@ mod tests {
                     "name": "Main",
                     "model": "model-1",
                     "working": true,
+                    "background": true,
                     "started_at": 123,
                 }],
             })

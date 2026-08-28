@@ -34,6 +34,8 @@ pub struct HelloRoomMeta {
     pub session_id: Option<String>,
     #[serde(default)]
     pub working: bool,
+    #[serde(default)]
+    pub background: bool,
 }
 
 fn default_room() -> String {
