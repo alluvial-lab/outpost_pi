@@ -1,7 +1,7 @@
 ---
 id: story-pair-code-clipboard-copy
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, app, ux]
 parent: null
 depends_on: []
@@ -76,3 +76,19 @@ Diagnosed during the 2026-07-30 pairing incident chain
 narrow-terminal URI-display fix (`8652dcf`) and the paste-tolerance fix
 (`0761c91`) shipped, but neither eliminates the visual-transcription
 step.
+
+## Implementation notes
+
+- Added the injected `ClipboardPort` and `Osc52Clipboard` adapter in
+  `pi-extension/src/extension/command_surface/clipboard.ts`. OSC 52 was chosen
+  as the smallest dependency-free strategy: it works through modern local and
+  SSH terminals without shelling out to platform-specific clipboard tools.
+- Updated `PairingCodeDialog` to show a visible `c` copy hint, copy the exact
+  URI through the injected port, refresh the TUI while copying, and show
+  success or failure feedback. `PairingCoordinatorDeps.clipboard` keeps the
+  port injectable while defaulting production to the OSC 52 adapter.
+- Added `clipboard.test.ts` covering exact UTF-8 OSC 52 output and injected
+  fake clipboard/keybinding behavior.
+- Verification passed from `pi-extension/`: `corepack pnpm typecheck`,
+  `corepack pnpm test` (62 files, 1108 passed, 3 skipped), and
+  `corepack pnpm build`.
