@@ -2796,7 +2796,7 @@ describe("multi-channel broadcast (W2D)", () => {
               provider === model.provider && modelId === model.id ? model : undefined,
             ),
           },
-          getModel: vi.fn(() => model),
+          model,
         });
         return { cancelled: false };
       }),
@@ -2942,7 +2942,7 @@ describe("multi-channel broadcast (W2D)", () => {
             provider === model.provider && modelId === model.id ? model : undefined,
           ),
         },
-        getModel: vi.fn(() => model),
+        model,
       });
       const sessionId = _getRemoteSessionIdForTest()!;
       expect(sessionId).toBe(`fresh-${reason}-session`);
@@ -6924,80 +6924,17 @@ describe("model meta", () => {
     expect(capturedOpts[0]!.roomMeta?.cwd).toBe("/tmp/outpost-pi-model-test");
   });
 
-  test("hello carries `model` from getModel() when ctx.model is absent (daemon path)", async () => {
+  test("hello omits `model` when the public ctx.model is undefined", async () => {
     const capturedOpts: Array<{ roomMeta?: { model?: string } }> = [];
     _defaultConnectImpl = async (opts?: unknown) => {
       capturedOpts.push(opts as { roomMeta?: { model?: string } });
     };
 
     captureHandler("outpost-pi");
-    // A headless daemon never fires model_select and has no `ctx.model`, but
-    // its session resolved a default model that getModel() exposes — the fix
-    // seeds room_meta from there so the app no longer shows "unknown".
-    const ctx = {
-      ui: { notify: vi.fn() },
-      cwd: "/tmp/outpost-pi-daemon-model",
-      abort: vi.fn(),
-      getModel: () => ({ id: "claude-opus-4-8", name: "claude-opus-4.8" }),
-    } as unknown as ReturnType<typeof makeMockCtx>;
-    await outpostPiTestHarness.connect(ctx);
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-no-model"));
 
     expect(capturedOpts).toHaveLength(1);
-    expect(capturedOpts[0]!.roomMeta?.model).toBe("claude-opus-4.8");
-  });
-
-  test("hello omits `model` when ctx has none AND no default is configured", async () => {
-    // Isolate from the machine's global settings (PI_CODING_AGENT_DIR → a
-    // non-existent dir) so the settings fallback finds no default model; the
-    // /tmp cwd has no project .pi/settings.json either.
-    const prevAgentDir = process.env["PI_CODING_AGENT_DIR"];
-    process.env["PI_CODING_AGENT_DIR"] = "/tmp/pi-no-such-agent-dir-omit";
-    try {
-      const capturedOpts: Array<{ roomMeta?: { model?: string } }> = [];
-      _defaultConnectImpl = async (opts?: unknown) => {
-        capturedOpts.push(opts as { roomMeta?: { model?: string } });
-      };
-
-      captureHandler("outpost-pi");
-      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-no-model"));
-
-      expect(capturedOpts).toHaveLength(1);
-      expect(capturedOpts[0]!.roomMeta?.model).toBeUndefined();
-    } finally {
-      if (prevAgentDir === undefined) delete process.env["PI_CODING_AGENT_DIR"];
-      else process.env["PI_CODING_AGENT_DIR"] = prevAgentDir;
-    }
-  });
-
-  test("hello carries `model` from configured default settings (idle daemon path)", async () => {
-    // A headless daemon has no ctx.model/getModel at connect (the SDK resolves
-    // the session model lazily at the first turn). The fix reads the configured
-    // default from <cwd>/.pi/settings.json — the model the daemon WILL use.
-    const cwd = mkdtempSync(join(tmpdir(), "pi-daemon-cfg-"));
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeFileSync(
-      join(cwd, ".pi", "settings.json"),
-      JSON.stringify({ defaultProvider: "acme", defaultModel: "acme-model-zzz" }),
-    );
-    const prevAgentDir = process.env["PI_CODING_AGENT_DIR"];
-    process.env["PI_CODING_AGENT_DIR"] = "/tmp/pi-no-such-agent-dir-daemon";
-    try {
-      const capturedOpts: Array<{ roomMeta?: { model?: string } }> = [];
-      _defaultConnectImpl = async (opts?: unknown) => {
-        capturedOpts.push(opts as { roomMeta?: { model?: string } });
-      };
-
-      captureHandler("outpost-pi");
-      await outpostPiTestHarness.connect(makeMockCtx(cwd));  // ctx has no model/getModel
-
-      expect(capturedOpts).toHaveLength(1);
-      // The test registry won't know "acme-model-zzz" → falls back to the id.
-      expect(capturedOpts[0]!.roomMeta?.model).toBe("acme-model-zzz");
-    } finally {
-      if (prevAgentDir === undefined) delete process.env["PI_CODING_AGENT_DIR"];
-      else process.env["PI_CODING_AGENT_DIR"] = prevAgentDir;
-      rmSync(cwd, { recursive: true, force: true });
-    }
+    expect(capturedOpts[0]!.roomMeta?.model).toBeUndefined();
   });
 
   test("pi.on('model_select') fires room_meta_update via relay.sendControl", async () => {

@@ -5,7 +5,7 @@
  *   - happy path → asserts `action_ok` (or `models_list`) shape
  *   - failure path → asserts `action_error` with structured `error` field
  *
- * No global state; everything passes through `ActionPi`/`ActionCtx`/
+ * No global state; everything passes through `ActionPi`/`ModelActionCtx`/
  * `ActionModelRegistry` interfaces — easy fakes, fast (synchronous where
  * possible).
  */
@@ -19,9 +19,9 @@ import {
   handleListModels,
   wireFromModel,
   type ActionCtx,
+  type ModelActionCtx,
   type ActionPi,
   type ActionModelRegistry,
-  type ActionModelRegistryProvider,
   type SdkModelLike,
 } from "./handlers.js";
 import type { ServerMessage } from "../protocol/types.js";
@@ -64,8 +64,8 @@ function fakeRegistry(catalog: SdkModelLike[]): ActionModelRegistry {
   } as ActionModelRegistry & { _refreshes: number };
 }
 
-function registryProvider(registry: ActionModelRegistry): ActionModelRegistryProvider {
-  return async () => registry;
+function modelCtx(registry: ActionModelRegistry, extra: Partial<ActionCtx> = {}): ModelActionCtx {
+  return { modelRegistry: registry, ...extra };
 }
 
 // ── session_compact ────────────────────────────────────────────────────────
@@ -188,14 +188,14 @@ describe("handleThinkingSet", () => {
 // ── model_set ──────────────────────────────────────────────────────────────
 
 describe("handleModelSet", () => {
-  test("happy path → refreshes, looks up, sets, action_ok", async () => {
+  test("looks up the live registry, sets the model, and replies action_ok", async () => {
     const reg = fakeRegistry([sampleModel]);
     const setModelArgs: SdkModelLike[] = [];
     const pi = fakePi({
       setModel: async (m) => { setModelArgs.push(m as SdkModelLike); return true; },
     });
     const sender = makeSender();
-    await handleModelSet(pi, null, registryProvider(reg), sender, {
+    await handleModelSet(pi, modelCtx(reg), sender, {
       type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7",
     });
     expect(setModelArgs).toHaveLength(1);
@@ -208,7 +208,7 @@ describe("handleModelSet", () => {
   test("unknown model → action_error", async () => {
     const reg = fakeRegistry([sampleModel]);
     const sender = makeSender();
-    await handleModelSet(fakePi(), null, registryProvider(reg), sender, {
+    await handleModelSet(fakePi(), modelCtx(reg), sender, {
       type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "nope-3",
     });
     expect(sender.sent[0]).toMatchObject({
@@ -221,7 +221,7 @@ describe("handleModelSet", () => {
     const reg = fakeRegistry([sampleModel]);
     const pi = fakePi({ setModel: async () => false });
     const sender = makeSender();
-    await handleModelSet(pi, null, registryProvider(reg), sender, {
+    await handleModelSet(pi, modelCtx(reg), sender, {
       type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7",
     });
     expect(sender.sent[0]).toMatchObject({
@@ -236,7 +236,7 @@ describe("handleModelSet", () => {
     const sender = makeSender();
     const persisted: Array<{ provider: string; modelId: string }> = [];
     await handleModelSet(
-      pi, null, registryProvider(reg), sender,
+      pi, modelCtx(reg), sender,
       { type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7" },
       (provider, modelId) => persisted.push({ provider, modelId }),
     );
@@ -250,7 +250,7 @@ describe("handleModelSet", () => {
     const sender = makeSender();
     let persistCalls = 0;
     await handleModelSet(
-      pi, null, registryProvider(reg), sender,
+      pi, modelCtx(reg), sender,
       { type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "claude-opus-4-7" },
       () => { persistCalls += 1; },
     );
@@ -263,7 +263,7 @@ describe("handleModelSet", () => {
     const sender = makeSender();
     let persistCalls = 0;
     await handleModelSet(
-      fakePi(), null, registryProvider(reg), sender,
+      fakePi(), modelCtx(reg), sender,
       { type: "model_set", id: "r4", session_id: "s1", provider: "anthropic", model_id: "nope-3" },
       () => { persistCalls += 1; },
     );
@@ -274,11 +274,11 @@ describe("handleModelSet", () => {
 // ── list_models ────────────────────────────────────────────────────────────
 
 describe("handleListModels", () => {
-  test("returns wire-shaped catalog with current echo when ctx.getModel is set", async () => {
+  test("returns wire-shaped catalog with current echo when ctx.model is set", async () => {
     const reg = fakeRegistry([sampleModel]);
-    const ctx: ActionCtx = { getModel: () => sampleModel };
+    const ctx = modelCtx(reg, { model: sampleModel });
     const sender = makeSender();
-    await handleListModels(ctx, registryProvider(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
+    await handleListModels(ctx, sender, { type: "list_models", id: "r5", session_id: "s1" });
     const reply = sender.sent[0];
     expect(reply.type).toBe("models_list");
     if (reply.type !== "models_list") throw new Error("type guard");
@@ -296,63 +296,48 @@ describe("handleListModels", () => {
     expect(reply.current).toEqual(reply.models[0]);
   });
 
-  test("omits `current` when ctx.getModel is undefined", async () => {
+  test("omits `current` when ctx.model is undefined", async () => {
     const reg = fakeRegistry([sampleModel]);
     const sender = makeSender();
-    await handleListModels(null, registryProvider(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
+    await handleListModels(modelCtx(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
     const reply = sender.sent[0];
     expect(reply.type).toBe("models_list");
     if (reply.type !== "models_list") throw new Error("type guard");
     expect(reply.current).toBeUndefined();
   });
 
-  test("prefers ctx.modelRegistry over the fallback registry", async () => {
-    const fallback = fakeRegistry([sampleModel]);
-    const liveModel: SdkModelLike = {
-      id: "gpt-oss-20b",
-      name: "GPT OSS 20B",
-      provider: "lemonade",
-      reasoning: false,
-      contextWindow: 131_072,
-    };
-    const live = fakeRegistry([liveModel]);
-    const ctx: ActionCtx = { modelRegistry: live };
-    const sender = makeSender();
-    let fallbackRequested = false;
-    await handleListModels(ctx, async () => {
-      fallbackRequested = true;
-      return fallback;
-    }, sender, { type: "list_models", id: "r5", session_id: "s1" });
-    expect(fallbackRequested).toBe(false);
-    const reply = sender.sent[0];
-    expect(reply.type).toBe("models_list");
-    if (reply.type !== "models_list") throw new Error("type guard");
-    expect(reply.models).toEqual([
-      {
-        id: "gpt-oss-20b",
-        name: "GPT OSS 20B",
-        provider: "lemonade",
-        reasoning: false,
-        context_window: 131_072,
-        vision: false,
-      },
-    ]);
-  });
-
-  test("registry refresh failure surfaces as error envelope", async () => {
+  test("a registry read failure surfaces as an error envelope", async () => {
     const reg: ActionModelRegistry = {
-      refresh: async () => { throw new Error("models.json malformed"); },
-      getAvailable: () => [],
+      refresh: async () => undefined,
+      getAvailable: () => { throw new Error("models.json malformed"); },
       find: () => undefined,
     };
     const sender = makeSender();
-    await handleListModels(null, registryProvider(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
+    await handleListModels(modelCtx(reg), sender, { type: "list_models", id: "r5", session_id: "s1" });
     expect(sender.sent[0]).toMatchObject({
       type: "error",
       in_reply_to: "r5",
       code: "internal_error",
       message: expect.stringContaining("models.json malformed"),
     });
+  });
+
+  test("does not refresh the live registry in interactive mode", async () => {
+    const reg = fakeRegistry([sampleModel]);
+    const sender = makeSender();
+    await handleListModels(modelCtx(reg, { mode: "tui" }), sender, {
+      type: "list_models", id: "r5", session_id: "s1",
+    });
+    expect((reg as ActionModelRegistry & { _refreshes: number })._refreshes).toBe(0);
+  });
+
+  test("refreshes the live registry in daemon RPC mode", async () => {
+    const reg = fakeRegistry([sampleModel]);
+    const sender = makeSender();
+    await handleListModels(modelCtx(reg, { mode: "rpc" }), sender, {
+      type: "list_models", id: "r5", session_id: "s1",
+    });
+    expect((reg as ActionModelRegistry & { _refreshes: number })._refreshes).toBe(1);
   });
 });
 

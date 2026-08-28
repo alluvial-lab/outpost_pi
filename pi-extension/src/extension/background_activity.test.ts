@@ -1,5 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
-import type { EventBus } from "@earendil-works/pi-coding-agent";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  createEventBus,
+  createExtensionRuntime,
+  type EventBus,
+  type Extension,
+  type ExtensionFactory,
+  type ExtensionRuntime,
+} from "@earendil-works/pi-coding-agent";
 import { BackgroundActivityTracker } from "./background_activity.js";
 
 type Handler = (payload: unknown) => void;
@@ -19,6 +28,24 @@ class FakeEventBus implements EventBus {
   emit(channel: string, payload: unknown): void {
     for (const handler of this.handlers.get(channel) ?? []) handler(payload);
   }
+}
+
+type LoadExtensionFromFactory = (
+  factory: ExtensionFactory,
+  cwd: string,
+  eventBus: EventBus,
+  runtime: ExtensionRuntime,
+  extensionPath?: string,
+) => Promise<Extension>;
+
+async function realSdkFactoryLoader(): Promise<LoadExtensionFromFactory> {
+  const packageEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+  const loaderUrl = pathToFileURL(join(dirname(packageEntry), "core/extensions/loader.js")).href;
+  const module = await import(loaderUrl) as { loadExtensionFromFactory?: LoadExtensionFromFactory };
+  if (typeof module.loadExtensionFromFactory !== "function") {
+    throw new Error("installed Pi SDK does not expose its factory loader implementation");
+  }
+  return module.loadExtensionFromFactory;
 }
 
 describe("BackgroundActivityTracker", () => {
@@ -99,5 +126,41 @@ describe("BackgroundActivityTracker", () => {
 
     expect(tracker.activeCount).toBe(0);
     expect(changes).toEqual([1, 0]);
+  });
+
+  test("SDK-owned listeners remain safe during awaited shutdown and auto-unregister afterward", async () => {
+    const tracker = new BackgroundActivityTracker(vi.fn());
+    const eventBus = createEventBus();
+    const runtime = createExtensionRuntime();
+    let enterShutdown!: () => void;
+    let releaseShutdown!: () => void;
+    const shutdownEntered = new Promise<void>((resolve) => { enterShutdown = resolve; });
+    const shutdownRelease = new Promise<void>((resolve) => { releaseShutdown = resolve; });
+    const factory: ExtensionFactory = (pi) => {
+      tracker.subscribe(pi.events);
+      pi.on("session_shutdown", async () => {
+        enterShutdown();
+        await shutdownRelease;
+      });
+    };
+    const load = await realSdkFactoryLoader();
+    const extension = await load(factory, process.cwd(), eventBus, runtime, "<background-activity-test>");
+    const shutdown = extension.handlers.get("session_shutdown")?.[0];
+    if (!shutdown) throw new Error("expected session_shutdown test handler");
+
+    const teardown = shutdown({ type: "session_shutdown", reason: "new" });
+    await shutdownEntered;
+    // AgentSessionRuntime invalidates the old runtime only after this awaited
+    // handler finishes, so an event in the teardown window must still be safe.
+    eventBus.emit("subagents:created", { id: "during-shutdown" });
+    expect(tracker.activeCount).toBe(1);
+
+    releaseShutdown();
+    await teardown;
+    runtime.invalidate();
+    // The installed loader owns pi.events subscriptions and removes this
+    // listener when the runtime is invalidated; a late terminal event is ignored.
+    eventBus.emit("subagents:completed", { id: "during-shutdown" });
+    expect(tracker.activeCount).toBe(1);
   });
 });
