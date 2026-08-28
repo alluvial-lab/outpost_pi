@@ -877,6 +877,7 @@ void main() {
         tester.view.padding = const FakeViewPadding(top: 24, bottom: 48);
         tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 48);
         final textInputCalls = <MethodCall>[];
+        final recoveryCalls = <MethodCall>[];
         var imeVisible = false;
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.textInput,
@@ -889,6 +890,13 @@ void main() {
           imeVisibilityChannel,
           (call) async => call.method == 'isVisible' ? imeVisible : null,
         );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          imeRecoveryChannel,
+          (call) async {
+            recoveryCalls.add(call);
+            return true;
+          },
+        );
         addTearDown(() {
           tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
             SystemChannels.textInput,
@@ -896,6 +904,10 @@ void main() {
           );
           tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
             imeVisibilityChannel,
+            null,
+          );
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            imeRecoveryChannel,
             null,
           );
         });
@@ -1123,6 +1135,7 @@ void main() {
           FocusManager.instance.primaryFocus?.unfocus();
           await pumpRouterFrames();
           textInputCalls.clear();
+          recoveryCalls.clear();
           debugLog.events.clear();
           imeVisible = false;
           tester.view.padding = const FakeViewPadding(top: 24);
@@ -1136,11 +1149,16 @@ void main() {
           );
           await tester.pump(const Duration(milliseconds: 1));
           expect(
-            textInputCalls.where((call) => call.method == 'TextInput.hide'),
+            recoveryCalls.where((call) => call.method == 'recover'),
             hasLength(1),
             reason:
                 'the full-screen phone chat must recover even when no pane, '
                 'route, or focus transition clears the stale inset',
+          );
+          expect(
+            textInputCalls.where((call) => call.method == 'TextInput.hide'),
+            isEmpty,
+            reason: 'the Android window-inset recovery owns the host path',
           );
           final watchdogEvent = debugLog.events
               .whereType<LayoutModeEvent>()

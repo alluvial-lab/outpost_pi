@@ -262,6 +262,9 @@ void main() {
     List<MethodCall> recordTextInputCalls(
       WidgetTester tester, {
       required bool imeVisible,
+      List<MethodCall>? recoveryCalls,
+      bool recoveryChannelUnavailable = false,
+      bool clearInsetOnRecovery = false,
     }) {
       final calls = <MethodCall>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -275,6 +278,19 @@ void main() {
         imeVisibilityChannel,
         (call) async => call.method == 'isVisible' ? imeVisible : null,
       );
+      if (recoveryCalls != null) {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          imeRecoveryChannel,
+          (call) async {
+            recoveryCalls.add(call);
+            if (recoveryChannelUnavailable) throw MissingPluginException();
+            if (clearInsetOnRecovery) {
+              tester.view.viewInsets = const FakeViewPadding();
+            }
+            return true;
+          },
+        );
+      }
       addTearDown(() {
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.textInput,
@@ -284,15 +300,25 @@ void main() {
           imeVisibilityChannel,
           null,
         );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          imeRecoveryChannel,
+          null,
+        );
       });
       return calls;
     }
 
     testWidgets(
-      'single-pane stale inset reasserts hide at the watchdog deadline',
+      'single-pane stale inset uses platform recovery at the watchdog deadline',
       (tester) async {
         configurePhoneView(tester, inset: 280);
-        final calls = recordTextInputCalls(tester, imeVisible: false);
+        final recoveryCalls = <MethodCall>[];
+        final calls = recordTextInputCalls(
+          tester,
+          imeVisible: false,
+          recoveryCalls: recoveryCalls,
+          clearInsetOnRecovery: true,
+        );
 
         await tester.pumpWidget(
           const MaterialApp(
@@ -304,8 +330,10 @@ void main() {
         );
         await tester.pump();
         calls.clear();
+        recoveryCalls.clear();
 
         await tester.pump(const Duration(milliseconds: 3999));
+        expect(recoveryCalls, isEmpty);
         expect(
           calls.where((call) => call.method == 'TextInput.hide'),
           isEmpty,
@@ -314,20 +342,126 @@ void main() {
 
         await tester.pump(const Duration(milliseconds: 1));
         expect(
-          calls.where((call) => call.method == 'TextInput.hide'),
+          recoveryCalls.where((call) => call.method == 'recover'),
           hasLength(1),
           reason:
-              'a keyboard-sized inset with no text-input connection must not '
-              'pin the single-pane viewport indefinitely',
+              'the window-inset recovery channel must be tried before the '
+              'input channel fallback',
+        );
+        expect(
+          calls.where((call) => call.method == 'TextInput.hide'),
+          isEmpty,
+          reason: 'a working host recovery channel does not need the fallback',
+        );
+        expect(
+          tester.view.viewInsets.bottom,
+          0,
+          reason: 'the successful recovery clears the fake window inset',
         );
       },
     );
+
+    testWidgets('persistent stale inset retries recovery up to its cap', (
+      tester,
+    ) async {
+      configurePhoneView(tester, inset: 280);
+      final recoveryCalls = <MethodCall>[];
+      final calls = recordTextInputCalls(
+        tester,
+        imeVisible: false,
+        recoveryCalls: recoveryCalls,
+      );
+      var diagnosticCalls = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaneCollapseImeDismissal(
+            twoPane: false,
+            onWatchdogRecovery: () => diagnosticCalls++,
+            child: const SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pump();
+      calls.clear();
+      recoveryCalls.clear();
+
+      await tester.pump(kStaleImeWatchdogDelay);
+      await tester.pump(kStaleImeWatchdogRetryDelay);
+      expect(
+        recoveryCalls.where((call) => call.method == 'recover'),
+        hasLength(2),
+        reason: 'a failed window-inset recovery must re-arm the watchdog',
+      );
+      expect(diagnosticCalls, 2, reason: 'every recovery attempt is logged');
+
+      for (
+        var attempt = 3;
+        attempt <= kMaxStaleImeWatchdogAttempts;
+        attempt++
+      ) {
+        await tester.pump(kStaleImeWatchdogRetryDelay);
+      }
+      expect(
+        recoveryCalls.where((call) => call.method == 'recover'),
+        hasLength(kMaxStaleImeWatchdogAttempts),
+      );
+      expect(diagnosticCalls, kMaxStaleImeWatchdogAttempts);
+
+      await tester.pump(kStaleImeWatchdogRetryDelay * 2);
+      expect(
+        recoveryCalls.where((call) => call.method == 'recover'),
+        hasLength(kMaxStaleImeWatchdogAttempts),
+        reason: 'the bounded cap must stop an infinite retry loop',
+      );
+    });
+
+    testWidgets('unavailable platform recovery falls back to TextInput.hide', (
+      tester,
+    ) async {
+      configurePhoneView(tester, inset: 280);
+      final recoveryCalls = <MethodCall>[];
+      final calls = recordTextInputCalls(
+        tester,
+        imeVisible: false,
+        recoveryCalls: recoveryCalls,
+        recoveryChannelUnavailable: true,
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: PaneCollapseImeDismissal(
+            twoPane: false,
+            child: SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pump();
+      calls.clear();
+      recoveryCalls.clear();
+
+      await tester.pump(kStaleImeWatchdogDelay);
+      expect(
+        recoveryCalls.where((call) => call.method == 'recover'),
+        hasLength(1),
+      );
+      expect(
+        calls.where((call) => call.method == 'TextInput.hide'),
+        hasLength(1),
+        reason: 'older hosts retain the existing input-channel fallback',
+      );
+    });
 
     testWidgets('focused real keyboard is never dismissed by the watchdog', (
       tester,
     ) async {
       configurePhoneView(tester);
-      final calls = recordTextInputCalls(tester, imeVisible: true);
+      final recoveryCalls = <MethodCall>[];
+      final calls = recordTextInputCalls(
+        tester,
+        imeVisible: true,
+        recoveryCalls: recoveryCalls,
+      );
       final focusNode = FocusNode();
       addTearDown(focusNode.dispose);
 
@@ -349,13 +483,55 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
 
       expect(
-        calls.where((call) => call.method == 'TextInput.hide'),
+        recoveryCalls.where((call) => call.method == 'recover'),
         isEmpty,
         reason:
             'a nonzero inset plus platform-visible focused editable is a real '
             'IME, not stale WindowManager state',
       );
+      expect(calls.where((call) => call.method == 'TextInput.hide'), isEmpty);
     });
+
+    testWidgets(
+      'active editable connection blocks recovery when IME is hidden',
+      (tester) async {
+        configurePhoneView(tester);
+        final recoveryCalls = <MethodCall>[];
+        final calls = recordTextInputCalls(
+          tester,
+          imeVisible: false,
+          recoveryCalls: recoveryCalls,
+        );
+        final focusNode = FocusNode();
+        addTearDown(focusNode.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PaneCollapseImeDismissal(
+              twoPane: false,
+              child: Scaffold(body: TextField(focusNode: focusNode)),
+            ),
+          ),
+        );
+        await tester.tap(find.byType(TextField));
+        await tester.pump();
+        expect(focusNode.hasFocus, isTrue);
+        calls.clear();
+        recoveryCalls.clear();
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+        await tester.pump();
+        await tester.pump(kStaleImeWatchdogDelay);
+
+        expect(recoveryCalls, isEmpty);
+        expect(
+          calls.where((call) => call.method == 'TextInput.hide'),
+          isEmpty,
+          reason:
+              'an active editable connection is still a legitimate input path',
+        );
+      },
+    );
 
     testWidgets('focus loss reasserts hide while the inset remains', (
       tester,
