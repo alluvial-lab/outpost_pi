@@ -1303,6 +1303,31 @@ function captureEventHandler(eventName: string): EventHandler {
   return captured;
 }
 
+function captureEventHandlerWithBus(eventName: string): {
+  handler: EventHandler;
+  events: ReturnType<typeof createEventBus>;
+} {
+  resetOutpostPiRuntimeCoordinatorForTest();
+  let captured: EventHandler | undefined;
+  const events = createEventBus();
+  const pi = {
+    __outpostPiTestHarness: true,
+    events,
+    on(e: string, h: EventHandler) {
+      if (e === eventName) captured = h;
+    },
+    registerCommand: () => undefined,
+    registerTool: () => undefined, registerShortcut: () => undefined,
+    registerFlag: () => undefined, getFlag: () => undefined,
+    registerMessageRenderer: () => undefined,
+    sendMessage: () => undefined, sendUserMessage: () => undefined,
+    appendEntry: appendDurableEntry,
+  } as unknown as ExtensionAPI;
+  (extension as ExtensionFactory)(pi);
+  if (!captured) throw new Error(`event "${eventName}" handler not registered`);
+  return { handler: captured, events };
+}
+
 async function _pairForTest(appPeerId: string): Promise<void> {
   captureHandler("outpost-pi");
   await outpostPiTestHarness.connect(makeMockCtx());
@@ -7087,6 +7112,26 @@ describe("model meta", () => {
     }
   });
 
+  test("background activity publishes room metadata only on transition edges", async () => {
+    captureHandler("outpost-pi");
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-background-meta"));
+    relayRef.current!.sendControl.mockClear();
+    const { events } = captureEventHandlerWithBus("agent_settled");
+
+    events.emit("subagents:created", { id: "background-one" });
+    events.emit("subagents:created", { id: "background-two" });
+    events.emit("subagents:completed", { id: "background-one" });
+    events.emit("subagents:failed", { id: "background-two" });
+
+    const updates = relayRef.current!.sendControl.mock.calls
+      .map((call) => call[0] as { type: string; meta?: { background?: boolean } })
+      .filter((frame) => frame.type === "room_meta_update");
+    expect(updates.map((frame) => frame.meta?.background)).toEqual([true, false]);
+
+    const stop = captureHandler("outpost-pi stop");
+    await stop("", makeMockCtx());
+  });
+
   test("hot-reload: agent_settled claims once, writes marker before graceful SIGTERM", async () => {
     const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-v2-"));
     const previousHome = process.env["OUTPOST_PI_HOME"];
@@ -7209,6 +7254,42 @@ describe("model meta", () => {
       _setHotReloadingForTest(false);
       if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
       else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload: background activity defers an armed request until the drain edge", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-background-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    const previousDaemon = process.env["OUTPOST_PI_DAEMON"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    process.env["OUTPOST_PI_DAEMON"] = "";
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    _setDisposedForTest(false);
+    _setHotReloadingForTest(false);
+
+    try {
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      const arm = captureHandler("outpost-pi hot-reload");
+      await arm("arm", makeMockCtx());
+      const { handler: onSettled, events } = captureEventHandlerWithBus("agent_settled");
+
+      events.emit("subagents:created", { id: "background-run" });
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(true);
+
+      events.emit("subagents:completed", { id: "background-run" });
+      expect(killSpy).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(false);
+    } finally {
+      killSpy.mockRestore();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      if (previousDaemon === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemon;
       rmSync(fakeHome, { recursive: true, force: true });
     }
   });
