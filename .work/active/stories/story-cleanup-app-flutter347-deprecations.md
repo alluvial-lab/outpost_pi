@@ -1,7 +1,7 @@
 ---
 id: story-cleanup-app-flutter347-deprecations
 kind: story
-stage: implementing
+stage: review
 tags: [app, cleanup]
 parent: null
 depends_on: []
@@ -32,3 +32,16 @@ From the 2028-08-28 version-delta code sweep — candidate 6 in
 - `flutter analyze && flutter test --exclude-tags e2e` green from app/.
 - No ignore_for_file additions; the comment removal leaves no stale
   pin-reference prose behind.
+
+## Implementation notes
+
+- Replaced `SizeTransition.axisAlignment: -1.0` and its local analyzer ignore
+  with `alignment: const Alignment(-1.0, -1.0)` in
+  `app/lib/ui/chat/widgets/input_bar.dart`; removed the stale Flutter pin
+  comment.
+- Verified against the installed Flutter SDK migration guidance in
+  `packages/flutter/lib/src/widgets/transitions.dart:498-509`: for a
+  horizontal transition, `axisAlignment` maps to the alignment x-coordinate,
+  so `-1.0` remains start-aligned with the explicit alignment.
+- Verification passed from `app/`: `flutter analyze && flutter test
+  --exclude-tags e2e` (all 1001 tests passed).
