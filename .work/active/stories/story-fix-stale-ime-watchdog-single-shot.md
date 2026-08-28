@@ -1,7 +1,7 @@
 ---
 id: story-fix-stale-ime-watchdog-single-shot
 kind: story
-stage: review
+stage: done
 tags: [app, bug, ux]
 parent: null
 depends_on: []
