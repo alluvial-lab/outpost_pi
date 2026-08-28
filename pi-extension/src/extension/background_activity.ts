@@ -24,7 +24,6 @@ function backgroundId(payload: unknown): string | null {
 export class BackgroundActivityTracker {
   private readonly activeIds = new Set<string>();
   private readonly subscribedBuses = new WeakSet<object>();
-  private readonly unsubscribe = new Set<() => void>();
   private disposed = false;
 
   constructor(private readonly onChange: (snapshot: BackgroundActivitySnapshot) => void) {}
@@ -35,17 +34,17 @@ export class BackgroundActivityTracker {
     const identity = bus as object;
     if (this.subscribedBuses.has(identity)) return;
     this.subscribedBuses.add(identity);
+    // Pi 0.84 tracks `pi.events.on` subscriptions and removes them when the
+    // owning runtime is invalidated; retaining manual closures would outlive
+    // the session-scoped listener contract.
 
-    const onCreated = bus.on(CREATED_EVENT, (payload) => {
+    bus.on(CREATED_EVENT, (payload) => {
       this.add(backgroundId(payload));
     });
     const onTerminal = (payload: unknown): void => {
       this.remove(backgroundId(payload));
     };
-    const terminalUnsubscribers = TERMINAL_EVENTS.map((event) => bus.on(event, onTerminal));
-    for (const unsubscribe of [onCreated, ...terminalUnsubscribers]) {
-      if (typeof unsubscribe === "function") this.unsubscribe.add(unsubscribe);
-    }
+    for (const event of TERMINAL_EVENTS) bus.on(event, onTerminal);
   }
 
   /** Clear session-scoped activity and publish the idle edge when necessary. */
@@ -59,12 +58,10 @@ export class BackgroundActivityTracker {
     return this.activeIds.size;
   }
 
-  /** Stop receiving lifecycle events and release all tracked activity. */
+  /** Stop processing lifecycle events and release all tracked activity. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const unsubscribe of this.unsubscribe) unsubscribe();
-    this.unsubscribe.clear();
     if (this.activeIds.size === 0) return;
     this.activeIds.clear();
     this.emitChange();

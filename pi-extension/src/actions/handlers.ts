@@ -17,8 +17,9 @@
  *                                  resolves with `{cancelled}` flag
  *   - `pi.setModel(model)`       — returns `false` if no auth configured
  *   - `pi.setThinkingLevel(lvl)` — synchronous
- *   - `ctx.getModel()`           — optional, undefined before first turn
- *   - `ModelRegistry.{refresh,getAvailable,find}` — async refresh; see `registry.ts`
+ *   - `ctx.model`                — current model, when one is selected
+ *   - `ModelRegistry.{refresh,getAvailable,find}` — refresh is retained for
+ *                                  non-interactive modes; reads are synchronous
  */
 
 import type {
@@ -72,13 +73,14 @@ export interface ActionPi {
 
 /**
  * Narrow shape of the per-call context. Drawn from the union of
- * `ExtensionContextActions` (compact, getModel) and
+ * `ExtensionContext` (model, modelRegistry, compact) and
  * `ExtensionCommandContextActions` (newSession), since index.ts caches
  * the most-recent ctx and that's typically the command one.
  *
- * All fields are optional so a missing method (e.g. when only a plain
- * `ExtensionContext` was seen) becomes a typed `action_error` instead of
- * a runtime TypeError.
+ * Action capabilities remain optional so a missing method (e.g. when only a
+ * plain `ExtensionContext` was seen) becomes a typed `action_error` instead of
+ * a runtime TypeError. Model actions receive a `ModelActionCtx`, whose live
+ * registry is required.
  */
 export interface ActionCtx {
   compact?: (options?: object) => void;
@@ -91,14 +93,18 @@ export interface ActionCtx {
   newSession?: (options?: {
     withSession?: (ctx: ActionCtx) => Promise<void>;
   }) => Promise<{ cancelled: boolean }>;
-  getModel?: () => Model<any> | undefined;
-  /**
-   * Live session registry from Pi's extension ctx. Includes providers/models
-   * registered dynamically via `pi.registerProvider(...)`, unlike the fallback
-   * disk-backed registry outpost-pi can build on its own.
-   */
+  /** Current model from the public SDK context, when one is selected. */
+  model?: Model<any>;
+  /** Live session registry from the public SDK context. */
   modelRegistry?: ActionModelRegistry;
+  /** SDK mode, used to retain catalog refresh where no background refresh runs. */
+  mode?: "tui" | "rpc" | "json" | "print";
 }
+
+/** A model action must always use the live registry owned by the SDK session. */
+export type ModelActionCtx = ActionCtx & {
+  modelRegistry: ActionModelRegistry;
+};
 
 /**
  * Minimal shape of the registry surface. Maps 1:1 onto `ModelRegistry`
@@ -110,14 +116,16 @@ export interface ActionModelRegistry {
   find(provider: string, modelId: string): Model<any> | undefined;
 }
 
-/** Resolve the fallback registry only when the live session registry is unavailable. */
-export type ActionModelRegistryProvider = () => Promise<ActionModelRegistry>;
-
-async function resolveModelRegistry(
-  ctx: ActionCtx | null,
-  fallback: ActionModelRegistryProvider,
-): Promise<ActionModelRegistry> {
-  return ctx?.modelRegistry ?? fallback();
+/**
+ * Refresh the SDK catalog only in modes without the interactive background
+ * refresh. `ModelRuntime.create()` provides the initial snapshot, but RPC and
+ * JSON sessions remain alive after startup and otherwise can read stale
+ * models.json contents.
+ */
+async function refreshCatalogIfNeeded(ctx: ModelActionCtx): Promise<void> {
+  if (ctx.mode === "rpc" || ctx.mode === "json" || process.env["OUTPOST_PI_DAEMON"] === "1") {
+    await ctx.modelRegistry.refresh();
+  }
 }
 
 /** Project a SDK `Model<Api>` onto the wire schema. Shared by list_models
@@ -265,21 +273,14 @@ export function handleThinkingSet(
 /** Select a model from the live registry and persist the successful choice when requested. */
 export async function handleModelSet(
   pi: ActionPi,
-  ctx: ActionCtx | null,
-  fallbackRegistry: ActionModelRegistryProvider,
+  ctx: ModelActionCtx,
   sender: ActionReplySender,
   msg: ModelSetMsg,
   onPersist?: (provider: string, modelId: string) => void,
 ): Promise<void> {
   await runAsync(sender, msg, "model_set", async () => {
-    // Prefer Pi's LIVE session registry when available so the app sees models
-    // registered dynamically by extensions via `pi.registerProvider(...)`.
-    // Fall back to outpost-pi's own disk-backed registry when no ctx exists.
-    const liveReg = await resolveModelRegistry(ctx, fallbackRegistry);
-    // Pi 0.80.8+ refreshes models.json asynchronously. Await it so reads cannot
-    // race a just-completed `/login` or `/scoped-models` update.
-    await liveReg.refresh();
-    const model = liveReg.find(msg.provider, msg.model_id);
+    await refreshCatalogIfNeeded(ctx);
+    const model = ctx.modelRegistry.find(msg.provider, msg.model_id);
     if (!model) {
       throw new Error(`model "${msg.provider}/${msg.model_id}" not in registry`);
     }
@@ -297,21 +298,14 @@ export async function handleModelSet(
 
 /** Send the available model catalog and current selection to the requesting owner. */
 export async function handleListModels(
-  ctx: ActionCtx | null,
-  fallbackRegistry: ActionModelRegistryProvider,
+  ctx: ModelActionCtx,
   sender: ActionReplySender,
   msg: ListModelsMsg,
 ): Promise<void> {
-  // refresh() can reject if `models.json` is malformed — wrap in try so the
-  // app gets an explicit error reply instead of a silent drop.
   try {
-    // Prefer Pi's LIVE session registry when available so the app sees models
-    // registered dynamically by extensions via `pi.registerProvider(...)`.
-    // Fall back to outpost-pi's own disk-backed registry when no ctx exists.
-    const liveReg = await resolveModelRegistry(ctx, fallbackRegistry);
-    await liveReg.refresh();
-    const models = liveReg.getAvailable().map(wireFromModel);
-    const current = ctx?.getModel?.();
+    await refreshCatalogIfNeeded(ctx);
+    const models = ctx.modelRegistry.getAvailable().map(wireFromModel);
+    const current = ctx.model;
     sender.send(sessionReply(msg, {
       type: "models_list",
       in_reply_to: msg.id,

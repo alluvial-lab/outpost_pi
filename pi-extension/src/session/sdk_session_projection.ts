@@ -1078,10 +1078,10 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   }
 
   private wrapActionCtx(ctx: ActionCtx): ActionCtx | null {
-    // Accessing guarded SDK getters (modelRegistry, compact, newSession,
-    // getModel, ui, cwd, ...) on a STALE ctx throws a stale-context error
-    // synchronously — and the `typeof ctx.X === "function"` / `ctx.modelRegistry`
-    // accesses below happen OUTSIDE the per-method try/catch, so a stale ctx
+    // Accessing guarded SDK getters (model, modelRegistry, compact,
+    // newSession, ui, cwd, ...) on a STALE ctx throws a stale-context error
+    // synchronously — and the property accesses below happen OUTSIDE the
+    // per-method try/catch, so a stale ctx
     // here crashes pi (uncaught through the message router). Guard the whole
     // property-access sequence: on a stale ctx, forget the binding and return
     // null so callers degrade to "no action ctx available" instead of crashing.
@@ -1107,16 +1107,8 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
           }
         };
       }
-      if (typeof ctx.getModel === "function") {
-        wrapped.getModel = () => {
-          try {
-            return ctx.getModel?.();
-          } catch (err) {
-            if (isStaleContextError(err)) this.forgetStaleBinding(ctx);
-            throw err;
-          }
-        };
-      }
+      wrapped.model = ctx.model;
+      wrapped.mode = ctx.mode;
       if (ctx.modelRegistry) wrapped.modelRegistry = ctx.modelRegistry;
       return wrapped;
     } catch (err) {

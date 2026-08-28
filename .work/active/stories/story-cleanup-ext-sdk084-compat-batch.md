@@ -1,7 +1,7 @@
 ---
 id: story-cleanup-ext-sdk084-compat-batch
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, cleanup]
 parent: null
 depends_on: []
@@ -62,3 +62,47 @@ redundant, or simpler. Verify each against the installed types under
   tests in implementation notes).
 - Verification edges 3 and 5 explicitly resolved with evidence (removed
   with proof, or retained with a one-line reason each).
+
+## Implementation notes
+
+- **Candidate 1 — removed.** `SdkSessionReplacementHarness` now loads the
+  production factory through the installed SDK `loadExtensionFromFactory`; the
+  handwritten `createExtensionShell()` and `createHarnessExtensionApi()` fake
+  were deleted. The composition root's `Partial<ExtensionAPI>.events` guard
+  was intentionally retained: legacy ping fixtures still pass a non-object
+  placeholder, so candidate 1 did not make that seam trivially safe. The
+  replacement suite still passed against the real runtime staleness guards.
+- **Candidate 2 — removed.** Deleted `src/actions/registry.ts` and all fallback
+  registry/provider plumbing. `model_set` and `list_models` require the live
+  session `ctx.modelRegistry`; the route returns a session-unavailable error
+  rather than constructing a separate registry.
+- **Candidate 3 — retained only where needed.** The unconditional refresh was
+  removed from the interactive path, but a minimal `refresh()` remains for
+  `ctx.mode === "rpc"`/`"json"` (and the daemon marker). Installed SDK evidence
+  shows `InteractiveMode` schedules its background catalog refresh, while the
+  long-lived RPC/JSON paths do not; the service startup refresh is only an
+  initial snapshot. This avoids stale daemon/JSON catalogs. Tests assert zero
+  refreshes in TUI mode and one refresh in RPC mode.
+- **Candidate 4 — removed.** Model hydration now uses public `ctx.model` at
+  relay startup and in `models_list`; first-turn late hydration, private
+  `getModel` adapters, and configured-default prediction were deleted.
+  `model_select` remains the later-change source. Removed/replaced stale test
+  names: `hello carries \`model\` from getModel() when ctx.model is absent
+  (daemon path)`, `hello carries \`model\` from configured default settings
+  (idle daemon path)`, `prefers ctx.modelRegistry over the fallback registry`,
+  `registry refresh failure surfaces as error envelope`, and the old
+  `ctx.getModel` wording for `omits \`current\``; the latter two were replaced
+  by live-registry/current-`ctx.model` assertions rather than weakening tests.
+- **Candidate 5 — removed.** Deleted manual unsubscribe-closure retention;
+  `pi.events.on` is now owned by the installed SDK runtime, while tracker
+  disposal still clears state and marks callbacks inert. The new
+  `SDK-owned listeners remain safe during awaited shutdown and auto-unregister
+  afterward` test emits during the pending shutdown handler, then invalidates
+  the runtime and verifies a late terminal event is ignored.
+- **Net source/test delta:** 220 additions and 392 deletions, for **172 fewer
+  lines** (including the explicit SDK listener-lifecycle evidence test).
+- **Verification:** targeted extension, action, projection, composition,
+  background-activity, runtime-coordinator, and replacement-harness suites
+  passed: 7 files / 345 tests. The required commands also passed from
+  `pi-extension/`: `corepack pnpm typecheck`, `corepack pnpm test` (63 files,
+  1,119 passed, 3 skipped), and `corepack pnpm build`.

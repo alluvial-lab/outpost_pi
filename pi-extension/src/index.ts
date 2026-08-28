@@ -31,7 +31,6 @@
 
 import { randomUUID } from "node:crypto";
 import {
-  SettingsManager,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
@@ -123,7 +122,6 @@ import {
   handleListModels,
   type ActionCtx,
 } from "./actions/handlers.js";
-import { ensureModelRegistry } from "./actions/registry.js";
 import { CaptureUploadHandler } from "./actions/capture_upload_handler.js";
 import {
   ensureGlobalDirs,
@@ -1629,19 +1627,9 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // longer notify it of turn lifecycle. Working state is still published as
   // room_meta over the relay (plan/32) below — that's independent of the
   // broker and drives the app's working indicator.
-  ownerPi.on("turn_start", (_event, ctx) => {
+  ownerPi.on("turn_start", (_event, _ctx) => {
     const fallbackTurnId = _turnProjection().replyTo ?? _turnProjection().activeTurnId ?? `local_${randomUUID()}`;
     _applyTurnAndPublish({ type: "turn_start", fallbackTurnId });
-    // Late model hydration: if the model was still unknown at connect (resolved
-    // lazily by the SDK), grab it on the first turn and fan it out — so a daemon
-    // whose model only materialises at turn 1 still reports it to the app.
-    if (!_currentModel) {
-      try {
-        const m = (ctx as Partial<ExtensionContext> & { getModel?: () => { name?: string; id?: string } | undefined }).getModel?.();
-        const name = m?.name ?? m?.id;
-        if (name) _setCurrentModel(name);
-      } catch { /* defensive — never block a turn on a model lookup */ }
-    }
     // Plan/32 Part B: room_meta.working is published by the turn projection diff.
   });
   ownerPi.on("turn_end", () => {
@@ -2038,8 +2026,12 @@ async function _cmdSetup(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
 // The pair command can race the relay start directly (pair during the
 // fire-and-forget session-start auto-start), below any root-level guard.
 let _relayStartInFlight: Promise<void> | null = null;
+type RelayStartContext = Pick<ExtensionContext, "ui" | "cwd"> & {
+  /** Public SDK model context; absent before a model is selected. */
+  model?: ExtensionContext["model"];
+};
 
-async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
+async function _startRelayViaTransport(ctx: RelayStartContext): Promise<void> {
   ctx = _safeCommandContext(ctx);
   if (_state !== "idle") {
     ctx.ui.notify("[outpost-pi] Already started.", "warning");
@@ -2055,7 +2047,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
   return _relayStartInFlight;
 }
 
-async function _startRelayViaTransportInner(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
+async function _startRelayViaTransportInner(ctx: RelayStartContext): Promise<void> {
   const relayResolution = resolveRelayUrl();
   if (relayResolution.source === "unconfigured") {
     ctx.ui.notify(
@@ -2101,22 +2093,8 @@ async function _startRelayViaTransportInner(ctx: Pick<ExtensionContext, "ui" | "
 
   if (!_currentModelName()) {
     try {
-      const c = ctx as Partial<ExtensionContext> & {
-        model?: { name?: string; id?: string };
-        getModel?: () => { name?: string; id?: string } | undefined;
-      };
-      const live = c.getModel?.() ?? c.model;
-      if (live) {
-        _currentModel = live.name ?? live.id ?? undefined;
-      } else {
-        const sm = SettingsManager.create(cwd);
-        const provider = sm.getDefaultProvider();
-        const modelId = sm.getDefaultModel();
-        if (modelId) {
-          const found = provider ? (await ensureModelRegistry()).find(provider, modelId) : undefined;
-          _currentModel = found?.name ?? modelId;
-        }
-      }
+      const live = ctx.model;
+      if (live) _currentModel = live.name ?? live.id ?? undefined;
     } catch { /* defensive — never block start on a model lookup */ }
   }
 
@@ -3400,10 +3378,15 @@ export function _routeClientMessageFrom(
         _sessionUnavailable(sender, msg.id, "Pi model API unavailable for the current session");
         break;
       }
+      const actionCtx = _sdkSessionProjection.freshActionCtx();
+      const modelRegistry = actionCtx?.modelRegistry;
+      if (!actionCtx || !modelRegistry) {
+        _sessionUnavailable(sender, msg.id, "Pi model registry unavailable for the current session");
+        break;
+      }
       void handleModelSet(
         pi,
-        _sdkSessionProjection.freshActionCtx(),
-        ensureModelRegistry,
+        { ...actionCtx, modelRegistry },
         sender,
         msg,
         _persistModelDefault,
@@ -3419,10 +3402,15 @@ export function _routeClientMessageFrom(
       handleThinkingSet(pi, sender, msg);
       break;
     }
-    case "list_models":
+    case "list_models": {
+      const actionCtx = _sdkSessionProjection.freshActionCtx();
+      const modelRegistry = actionCtx?.modelRegistry;
+      if (!actionCtx || !modelRegistry) {
+        _sessionUnavailable(sender, msg.id, "Pi model registry unavailable for the current session");
+        break;
+      }
       void handleListModels(
-        _sdkSessionProjection.freshActionCtx(),
-        ensureModelRegistry,
+        { ...actionCtx, modelRegistry },
         {
           send: (reply) => {
             if (reply.type === "error" && reply.code === "internal_error") {
@@ -3440,6 +3428,7 @@ export function _routeClientMessageFrom(
         msg,
       );
       break;
+    }
     case "capture_upload_begin":
     case "capture_upload_chunk":
     case "capture_upload_end": {

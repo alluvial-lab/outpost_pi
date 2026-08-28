@@ -6,7 +6,7 @@ import {
   SessionManager,
   type Extension,
   type ExtensionActions,
-  type ExtensionAPI,
+  type EventBus,
   type ExtensionCommandContext,
   type ExtensionCommandContextActions,
   type ExtensionContextActions,
@@ -16,9 +16,30 @@ import {
   type SessionShutdownEvent,
   type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { vi, type Mock } from "vitest";
+import { vi } from "vitest";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ClientMessage, ServerMessage } from "../../src/protocol/types.js";
 import { resetOutpostPiRuntimeCoordinatorForTest } from "../../src/extension/runtime_coordinator.js";
+
+type LoadExtensionFromFactory = (
+  factory: ExtensionFactory,
+  cwd: string,
+  eventBus: EventBus,
+  runtime: ExtensionRuntime,
+  extensionPath?: string,
+) => Promise<Extension>;
+
+/** Load through Pi's installed runtime so the harness exercises real API guards and listener ownership. */
+async function realSdkFactoryLoader(): Promise<LoadExtensionFromFactory> {
+  const packageEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+  const loaderUrl = pathToFileURL(join(dirname(packageEntry), "core/extensions/loader.js")).href;
+  const module = await import(loaderUrl) as { loadExtensionFromFactory?: LoadExtensionFromFactory };
+  if (typeof module.loadExtensionFromFactory !== "function") {
+    throw new Error("installed Pi SDK does not expose its factory loader implementation");
+  }
+  return module.loadExtensionFromFactory;
+}
 
 type OutpostPiIndexModule = {
   default: ExtensionFactory;
@@ -359,10 +380,16 @@ export class SdkSessionReplacementHarness {
     indexModule: OutpostPiIndexModule;
   }> {
     const runtime = createExtensionRuntime();
-    const extension = createExtensionShell(`<outpost-pi-session-harness:${label}>`);
     const eventBus = createEventBus();
     const module = await import("../../src/index.js") as OutpostPiIndexModule;
-    await module.default(createHarnessExtensionApi(extension, runtime, cwd, eventBus) as ExtensionAPI);
+    const load = await realSdkFactoryLoader();
+    const extension = await load(
+      module.default,
+      cwd,
+      eventBus,
+      runtime,
+      `<outpost-pi-session-harness:${label}>`,
+    );
     return { extension, runtime, indexModule: module };
   }
 
@@ -518,126 +545,4 @@ function deferred(): Deferred {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve };
-}
-
-function createExtensionShell(extensionPath: string): Extension {
-  return {
-    path: extensionPath,
-    resolvedPath: extensionPath,
-    sourceInfo: { path: extensionPath } as never,
-    handlers: new Map(),
-    tools: new Map(),
-    messageRenderers: new Map(),
-    commands: new Map(),
-    flags: new Map(),
-    shortcuts: new Map(),
-  } as unknown as Extension;
-}
-
-function createHarnessExtensionApi(
-  extension: Extension,
-  runtime: ExtensionRuntime,
-  cwd: string,
-  eventBus: unknown,
-): Partial<ExtensionAPI> {
-  const assertActive = (runtime as unknown as { assertActive(): void }).assertActive;
-  const api = {
-    on(event: string, handler: unknown) {
-      assertActive.call(runtime);
-      const list = extension.handlers.get(event) ?? [];
-      list.push(handler as never);
-      extension.handlers.set(event, list);
-    },
-    registerTool(tool: { name: string }) {
-      assertActive.call(runtime);
-      extension.tools.set(tool.name, { definition: tool, sourceInfo: extension.sourceInfo } as never);
-      (runtime.refreshTools as Mock | (() => void))();
-    },
-    registerCommand(name: string, options: object) {
-      assertActive.call(runtime);
-      extension.commands.set(name, { name, sourceInfo: extension.sourceInfo, ...options } as never);
-    },
-    registerShortcut(shortcut: string, options: object) {
-      assertActive.call(runtime);
-      extension.shortcuts.set(shortcut as never, { shortcut, extensionPath: extension.path, ...options } as never);
-    },
-    registerFlag(name: string, options: { default?: boolean | string }) {
-      assertActive.call(runtime);
-      extension.flags.set(name, { name, extensionPath: extension.path, ...options } as never);
-      if (options.default !== undefined && !runtime.flagValues.has(name)) runtime.flagValues.set(name, options.default);
-    },
-    registerMessageRenderer(customType: string, renderer: unknown) {
-      assertActive.call(runtime);
-      extension.messageRenderers.set(customType, renderer as never);
-    },
-    getFlag(name: string) {
-      assertActive.call(runtime);
-      if (!extension.flags.has(name)) return undefined;
-      return runtime.flagValues.get(name);
-    },
-    sendMessage(message: unknown, options?: unknown) {
-      assertActive.call(runtime);
-      runtime.sendMessage(message as never, options as never);
-    },
-    sendUserMessage(content: unknown, options?: unknown) {
-      assertActive.call(runtime);
-      runtime.sendUserMessage(content as never, options as never);
-    },
-    appendEntry(customType: string, data?: unknown) {
-      assertActive.call(runtime);
-      runtime.appendEntry(customType, data);
-    },
-    setSessionName(name: string) {
-      assertActive.call(runtime);
-      runtime.setSessionName(name);
-    },
-    getSessionName() {
-      assertActive.call(runtime);
-      return runtime.getSessionName();
-    },
-    setLabel(entryId: string, label: string | undefined) {
-      assertActive.call(runtime);
-      runtime.setLabel(entryId, label);
-    },
-    exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-    getActiveTools() {
-      assertActive.call(runtime);
-      return runtime.getActiveTools();
-    },
-    getAllTools() {
-      assertActive.call(runtime);
-      return runtime.getAllTools();
-    },
-    setActiveTools(toolNames: string[]) {
-      assertActive.call(runtime);
-      runtime.setActiveTools(toolNames);
-    },
-    getCommands() {
-      assertActive.call(runtime);
-      return runtime.getCommands();
-    },
-    setModel(model: never) {
-      assertActive.call(runtime);
-      return runtime.setModel(model);
-    },
-    getThinkingLevel() {
-      assertActive.call(runtime);
-      return runtime.getThinkingLevel();
-    },
-    setThinkingLevel(level: never) {
-      assertActive.call(runtime);
-      runtime.setThinkingLevel(level);
-    },
-    registerProvider(name: string, config: never) {
-      assertActive.call(runtime);
-      runtime.registerProvider(name, config, extension.path);
-    },
-    unregisterProvider(name: string) {
-      assertActive.call(runtime);
-      runtime.unregisterProvider(name);
-    },
-    cwd,
-    events: eventBus,
-  };
-  return api;
 }

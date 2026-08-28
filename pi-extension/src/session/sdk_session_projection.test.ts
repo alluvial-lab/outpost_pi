@@ -537,10 +537,10 @@ describe("SdkSessionProjection wakeAgent recoverable failures", () => {
  * crash pi when the captured event/command ctx is stale after a session
  * replacement or `/reload`.
  *
- * The SDK marks a replaced ctx's guarded getters (modelRegistry, ui, cwd,
- * compact, newSession, getModel, …) to throw a stale-context error via
- * `assertActive()`. `wrapActionCtx` previously accessed those getters OUTSIDE
- * its per-method try/catch (e.g. `if (ctx.modelRegistry) …`), so a stale ctx
+ * The SDK marks a replaced ctx's guarded getters (model, modelRegistry, ui,
+ * cwd, compact, newSession, …) to throw a stale-context error via
+ * `assertActive()`. `wrapActionCtx` accesses those getters inside its
+ * stale-specific guard so a stale ctx
  * threw synchronously and propagated uncaught through the relay message
  * router, taking down the whole pi process. The fix wraps the whole
  * property-access sequence and returns null on a stale ctx so callers degrade
@@ -559,7 +559,7 @@ describe("SdkSessionProjection stale-ctx crash guard on freshActionCtx", () => {
     return {
       get compact() { throwStale(); },
       get newSession() { throwStale(); },
-      get getModel() { throwStale(); },
+      get model() { throwStale(); },
       get modelRegistry() { throwStale(); },
       get ui() { throwStale(); },
       get cwd() { throwStale(); },
@@ -592,10 +592,10 @@ describe("SdkSessionProjection stale-ctx crash guard on freshActionCtx", () => {
     projection.bindApi(makePi());
     const otherErr = new Error("some unrelated getter failure");
     (projection as unknown as { eventCtx: unknown }).eventCtx = {
+      get model() { throw otherErr; },
       get modelRegistry() { throw otherErr; },
       get compact() { throw otherErr; },
       get newSession() { throw otherErr; },
-      get getModel() { throw otherErr; },
     };
 
     expect(() => projection.freshActionCtx()).toThrow(otherErr);
