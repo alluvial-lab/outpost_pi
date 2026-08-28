@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-stale-actor-dispatch-dead-code-allow
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []

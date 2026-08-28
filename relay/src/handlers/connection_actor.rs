@@ -106,7 +106,6 @@ impl RoomsDedupCache {
 #[derive(Debug)]
 pub(crate) enum ActorDispatch {
     Continue,
-    #[allow(dead_code)]
     Close,
     Send(String),
     SendMany(Vec<String>),
