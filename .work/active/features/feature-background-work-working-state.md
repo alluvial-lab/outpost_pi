@@ -1,7 +1,7 @@
 ---
 id: feature-background-work-working-state
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, ux]
 parent: null
 depends_on: []
@@ -342,3 +342,35 @@ Both checkpoints landed and verified:
 Both child checkpoints done + integrated verification green → feature
 advances to review. Effective review_weight: standard (default; no caller
 or project override).
+
+## Review record (2026-08-27)
+
+- **Effective weight**: standard (default). **Passes**: 1 independent
+  fresh-context pass (cross-model: gpt-5.6-sol xhigh) + receiver-confirmed
+  fix round, closed without a second pass per standard policy.
+- **Verdict**: Request changes → fixed → approved on re-verification.
+- **Findings adjudicated**:
+  - B1 (Blocker, confirmed): `background` bypassed the canonical
+    relay-control schema (`additionalProperties: false` in roomMeta /
+    roomMetaPatch / helloRoomMeta) — the relay dropped the field and the
+    feature could not work end-to-end. Design flaw from the feature-design
+    pass (assumed relay-opaque meta without checking the generated
+    contract). Fixed through the canonical path: schema + mergePatchSemantics
+    + regenerated TS/Dart/Rust + relay merge/broadcast (incl. room
+    announcements) + fixtures + SPEC/ARCHITECTURE roll-forward + round-trip
+    relay test (`d13b85fec`).
+  - B2 (Blocker, confirmed): `_goIdle()` cleared the tracker on ordinary
+    relay stop although background tasks outlive the relay connection —
+    orphaning the state and re-arming the hot-reload kill hazard. Clear
+    moved to true session-replacement/dispose boundaries; reconnect
+    republishes live background state; stop/start + drain tests added.
+  - I1 (Important, confirmed): done/stale agent labels suppressed the
+    background chip, violating the designed precedence. Background now wins
+    over done/stale (turn-active labels still win); widget cases added.
+  - Nits: none filed.
+- **Post-fix verification (orchestrator-run)**: protocol check green;
+  extension 63 files / 1,119 passed / 3 skipped (pre-existing); relay
+  fmt+clippy+tests green; app analyze clean / 996 passed.
+
+Feature complete: both child checkpoints done, integrated verification
+green, review blockers fixed and re-verified.
