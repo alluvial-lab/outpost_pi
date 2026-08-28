@@ -1,7 +1,7 @@
 ---
 id: story-background-work-app-surface
 kind: story
-stage: implementing
+stage: done
 tags: [app, ux]
 parent: feature-background-work-working-state
 depends_on: [story-background-work-ext-tracker]
@@ -41,3 +41,21 @@ acceptance criteria).
 
 Depends on `story-background-work-ext-tracker` — the wire field must
 exist before the app consumes it.
+
+## Implementation notes
+
+- Added the optional background axis to the app room snapshot and parsed it
+  through the control-frame boundary, preserving cached state for omitted
+  incremental metadata while treating room snapshots as authoritative.
+- Composed fresh active-room background state into `ChatStatusProjection` with
+  the same online/live-room gating as turn state.
+- Added `orchestrating…` rendering for idle, done, and stale turns while
+  retaining turn-status precedence; composer and cancellation remain turn-only.
+- Files: `app/lib/protocol/control_frames.dart`,
+  `app/lib/data/transport/relay_frame_decoder.dart`,
+  `app/lib/data/transport/connection_manager.dart`,
+  `app/lib/domain/session_state.dart`,
+  `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`,
+  `app/lib/ui/chat/chat_page.dart`, plus focused transport and widget tests.
+- Verification: `flutter analyze`; `flutter test --exclude-tags e2e
+  --concurrency=2`; focused connection-manager, widget, and codegen tests.

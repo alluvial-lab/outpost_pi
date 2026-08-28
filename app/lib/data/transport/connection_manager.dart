@@ -1102,6 +1102,7 @@ class ConnectionManager extends Service {
         :final model,
         :final thinking,
         :final working,
+        :final background,
       ):
         final key = toStandardB64(peer);
         final list = _roomsByPeer[key] ?? <RoomInfo>[];
@@ -1119,6 +1120,7 @@ class ConnectionManager extends Service {
         // relay that omits it (null) keeps the cached value instead of
         // forcing the room back to idle.
         var preservedWorking = false;
+        var preservedBackground = false;
         String? preservedSessionId;
         final existingIdx = list.indexWhere((r) => r.roomId == roomId);
         if (existingIdx >= 0) {
@@ -1126,6 +1128,7 @@ class ConnectionManager extends Service {
           preservedSessionId = list[existingIdx].sessionId;
           preservedThinking = list[existingIdx].thinking;
           preservedWorking = list[existingIdx].working;
+          preservedBackground = list[existingIdx].background;
         }
         final next = RoomInfo(
           roomId: roomId,
@@ -1136,6 +1139,7 @@ class ConnectionManager extends Service {
           model: model,
           thinking: thinking ?? preservedThinking,
           working: working ?? preservedWorking,
+          background: background ?? preservedBackground,
         );
         final liveAlready = _liveRoomIds[key]?.contains(roomId) ?? false;
         if (!next.working) {
@@ -1173,8 +1177,8 @@ class ConnectionManager extends Service {
           final idx = list.indexWhere((r) => r.roomId == roomId);
           if (idx >= 0) {
             _advanceWorkingAuthority(key, roomId, list[idx].sessionId);
-            if (list[idx].working) {
-              list[idx] = list[idx].copyWith(working: false);
+            if (list[idx].working || list[idx].background) {
+              list[idx] = list[idx].copyWith(working: false, background: false);
               clearedWorking = true;
             }
           }
@@ -1190,6 +1194,7 @@ class ConnectionManager extends Service {
         :final model,
         :final thinking,
         :final working,
+        :final background,
         :final hasModel,
         :final hasThinking,
         :final hasSessionId,
@@ -1209,6 +1214,9 @@ class ConnectionManager extends Service {
         final nextSessionId = hasSessionId ? sessionId : current.sessionId;
         final nextModel = hasModel ? model : current.model;
         final nextThinking = hasThinking ? thinking : current.thinking;
+        // Like working, an omitted background key maps to null and preserves
+        // the cached room value; explicit true/false replaces it.
+        final nextBackground = background ?? current.background;
         // Plan/32 — `working` is nullable-as-absent: null preserves the
         // cached value (e.g. a model-only update must not flip the dot),
         // non-null sets it. This is what carries the relay's
@@ -1220,7 +1228,8 @@ class ConnectionManager extends Service {
         if (current.sessionId == nextSessionId &&
             current.model == nextModel &&
             current.thinking == nextThinking &&
-            current.working == nextWorking) {
+            current.working == nextWorking &&
+            current.background == nextBackground) {
           break; // dedup: nothing actually changed
         }
         list[idx] = current.copyWith(
@@ -1228,6 +1237,7 @@ class ConnectionManager extends Service {
           model: nextModel,
           thinking: nextThinking,
           working: nextWorking,
+          background: nextBackground,
         );
         _logRoomSnapshot(room: roomId, working: nextWorking);
         roomsDirty = true;
@@ -1261,12 +1271,20 @@ class ConnectionManager extends Service {
             // `rooms_of` reads the current registry meta, so its
             // `working` reflects the latest turn_start/turn_end.
             working: r.working,
+            // Unlike incremental meta patches, a rooms snapshot is
+            // authoritative. Missing background from an older extension
+            // therefore means no known background work.
+            background: r.background,
           );
         }
         final newLive = rooms.map((r) => r.roomId).toSet();
         for (final entry in byId.entries.toList()) {
-          if (!newLive.contains(entry.key) && entry.value.working) {
-            byId[entry.key] = entry.value.copyWith(working: false);
+          if (!newLive.contains(entry.key) &&
+              (entry.value.working || entry.value.background)) {
+            byId[entry.key] = entry.value.copyWith(
+              working: false,
+              background: false,
+            );
           }
         }
         final newList = byId.values.toList();
@@ -1681,6 +1699,7 @@ class ConnectionManager extends Service {
       model: current?.model,
       thinking: current?.thinking,
       working: current?.working ?? false,
+      background: current?.background ?? false,
     );
     final liveAlready = _liveRoomIds[key]?.contains(msg.roomId) ?? false;
     if (current == next && liveAlready) return;
@@ -1716,6 +1735,9 @@ class ConnectionManager extends Service {
               cwd: c.cwd,
               startedAt: c.startedAt,
               model: c.model,
+              // Background activity is live relay state and must not survive
+              // a cold restart as a false positive.
+              background: false,
             ),
           )
           .toList();

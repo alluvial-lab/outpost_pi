@@ -158,6 +158,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         transport: const ChatTransportOnline(roomId: 'main'),
         turn: projectedStatus.turn,
         steering: projectedStatus.steering,
+        background: projectedStatus.background,
       );
     }
     return projectedStatus;
@@ -728,6 +729,19 @@ class _ChatStatusIndicator extends StatelessWidget {
       AppTurnStatus.error => ('error', colors.error),
       AppTurnStatus.stale => ('stale', colors.muted),
     };
+    final backgroundLabel =
+        status.background &&
+            switch (status.turn.status) {
+              AppTurnStatus.idle ||
+              AppTurnStatus.done ||
+              AppTurnStatus.stale => true,
+              AppTurnStatus.working ||
+              AppTurnStatus.awaitingTool ||
+              AppTurnStatus.streaming ||
+              AppTurnStatus.error => false,
+            }
+        ? 'orchestrating…'
+        : null;
     final steeringLabel = status.steering is SteeringPending
         ? 'steering…'
         : null;
@@ -744,6 +758,8 @@ class _ChatStatusIndicator extends StatelessWidget {
         ? (steeringLabel, colors.muted2)
         : agentLabel != null
         ? (agentLabel, agentColor)
+        : backgroundLabel != null
+        ? (backgroundLabel, colors.working)
         : (transportLabel, transportColor);
 
     return Row(
@@ -763,9 +779,12 @@ class _ChatStatusIndicator extends StatelessWidget {
           Flexible(child: label(priorityLabel, priorityColor))
         else ...[
           label(transportLabel, transportColor),
-          if (agentLabel != null) ...[
+          if (agentLabel != null || backgroundLabel != null) ...[
             const SizedBox(width: 6),
-            label(agentLabel, agentColor),
+            label(
+              agentLabel ?? backgroundLabel!,
+              agentLabel == null ? colors.working : agentColor,
+            ),
           ],
           if (steeringLabel != null) ...[
             const SizedBox(width: 6),

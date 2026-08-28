@@ -402,17 +402,22 @@ final class SteeringPending extends SteeringProjection {
   int get hashCode => Object.hash(clientMessageId, text);
 }
 
-/// Compose the independent transport, turn, and steering presentation axes.
+/// Compose the independent transport, turn, steering, and room-background
+/// presentation axes.
 final class ChatStatusProjection {
   const ChatStatusProjection({
     required this.transport,
     required this.turn,
     required this.steering,
+    this.background = false,
   });
 
   final ChatTransportProjection transport;
   final AppTurnProjection turn;
   final SteeringProjection steering;
+
+  /// True while the active room has background subagent work beyond its turn.
+  final bool background;
 
   bool get isOnline => transport is ChatTransportOnline;
   bool get canCancel => isOnline && turn.cancelTargetId != null;
@@ -422,8 +427,9 @@ final class ChatStatusProjection {
       other is ChatStatusProjection &&
       other.transport == transport &&
       other.turn == turn &&
-      other.steering == steering;
+      other.steering == steering &&
+      other.background == background;
 
   @override
-  int get hashCode => Object.hash(transport, turn, steering);
+  int get hashCode => Object.hash(transport, turn, steering, background);
 }
