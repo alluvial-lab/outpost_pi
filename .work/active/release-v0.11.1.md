@@ -26,3 +26,4 @@ capture-delivery — delivery across session replacement).
 
 ## Gate runs
 (populated as gates run)
+- 2026-08-29 — `security`: inline source-read-only scanner (reduced isolation per operator adaptation; no nested scanner); audited 2 bound items / 11 commit-union paths across authentication/authorization, API, input-validation, secrets/configuration, dependency, data-protection, cryptography, and error/logging domains; 1 finding (Critical=0, High=0, Medium=1, Low=0), routed to unbound backlog; skip list contained 2 existing gate-security items, with 1 duplicate room-discovery candidate skipped.
