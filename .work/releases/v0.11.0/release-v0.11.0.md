@@ -1,7 +1,7 @@
 ---
 id: release-v0.11.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
@@ -71,3 +71,61 @@ first-bound here):
 
 Awaiting operator UAT (runbook incl. stack-currency pertinence retests)
 before final tag + collapse.
+
+## UAT record (2026-08-29)
+
+- Operator UAT on v0.11.0-rc.1 (outpost-0.11.0-25 release-signed slim):
+  PASS — ack received. Offline liveness verified live (wake-from-sleep
+  retry countdown + recovery); mobile /new on a wrapped pi verified;
+  **orchestrating chip verified live end-to-end** after the relay-skew
+  fix.
+- **Incident (closed)**: the chip initially failed live UAT — root cause
+  was DEPLOYMENT SKEW, not code: the production relay container
+  (outpost-pi-relay:0.5.1, built 2026-08-23) predated the RoomMeta.background
+  schema and dropped the room-meta patch (invalid_json, 79 bytes). All
+  automated layers passed because the e2e stacks build relays from trunk.
+  Fix: relay rebuilt + redeployed as 0.5.2 (bdf6bd3c9), verified
+  background fields accepted. Post-UAT diagnosis commit c2a30fb80.
+- **Process fix (recorded)**: a minor cut touching wire schemas must
+  redeploy the relay at rc time, not at publish — relay-first deploy
+  order extended to the rc phase.
+- UAT feedback parked: backlog-orchestrating-room-tile-dot (room-list dot
+  should not read idle-green while orchestrating).
+
+## Shipped
+
+- Date: 2026-08-29. Mapping: tag-based (local tag; operator pushes +
+  publishes via gh release create v0.11.0 --latest with fat + slim-arm64
+  from the rc draft artifacts).
+- Total items: 17 (12 planned + 5 gate-produced, all fixed/verified
+  in-release).
+- Gate finding totals: security 0/0/1/1 (crit/high/med/low), tests
+  0/1/1(+2 low incl. one removal), cruft 1/4/0/0, docs 2 blocking/8
+  backlog, patterns 3 documented + tracking item, refactor 0. All
+  critical/high blocking findings driven to done pre-tag.
+- Battery: FULL minor-cut battery green 2026-08-28T23:11Z (pairing suite
+  18, five live lanes, 600s seeded soak) + e2e background seam lane.
+
+## Shipped items
+
+Bodies retained on disk under this directory (retain-bodies).
+
+| id | title | kind | archived_atop | git ref |
+|----|-------|------|---------------|---------|
+| feature-background-work-working-state | Background work should hold the working state — not a bare "online" bubble | feature | — | 986033863 |
+| gate-cruft-stale-actor-dispatch-dead-code-allow | Remove the stale dead-code allowance from ActorDispatch::Close | story | — | 986033863 |
+| gate-docs-architecture-room-meta-background | Architecture room metadata inventory omits the background axis | story | — | 986033863 |
+| gate-docs-changelog-v0110 | Root changelog has no v0.11.0 entry for the bound release work | story | — | 986033863 |
+| gate-patterns-v0.11.0 | Patterns extracted for v0.11.0 | story | — | 986033863 |
+| gate-tests-background-room-meta-e2e-seam | Exercise background-work metadata through the real extension → relay → app seam | story | — | 986033863 |
+| story-background-work-app-surface | App surface: orchestrating status chip from RoomMeta.background | story | — | 986033863 |
+| story-background-work-ext-tracker | Background-work tracker + RoomMeta.background + restart-gate hardening | story | — | 986033863 |
+| story-cleanup-app-flutter347-deprecations | App Flutter 3.47 deprecation cleanup | story | — | 986033863 |
+| story-cleanup-ext-sdk084-compat-batch | Remove pre-0.84 SDK compatibility surface from the extension (batch) | story | — | 986033863 |
+| story-fix-app-stale-ime-inset | Recover single-pane layout from a stale Android IME inset | story | — | 986033863 |
+| story-fix-midstream-hydrate-reorder-flicker | Mid-stream reconnect-hydrate causes transient message reorder + flicker in open chat | story | — | 986033863 |
+| story-fix-stale-ime-watchdog-single-shot | Stale-IME half-screen rendering persists: watchdog is single-shot and its recovery fails | story | — | 986033863 |
+| story-mobile-extension-command-invocation | Extension-command invocation from mobile (verify-first) | story | — | 986033863 |
+| story-offline-state-liveness-ux | Offline state must look alive — retry liveness + unreachable-cause hint | story | — | 986033863 |
+| story-pair-code-clipboard-copy | Pair-code dialog should offer a clipboard-copy action | story | — | 986033863 |
+| story-system-status-events-in-agent-turn-stream | System status events must never become agent turn input | story | — | 986033863 |
