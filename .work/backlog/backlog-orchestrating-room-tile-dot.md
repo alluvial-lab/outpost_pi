@@ -7,6 +7,10 @@ tags: [app, ux]
 
 # Room-list dot should reflect the orchestrating state (not plain green)
 
+**ABSORBED 2026-08-29** → `story-orchestrating-room-tile-dot` (active;
+design decided with operator: pulsing blue, no new token). Details below
+are the original UAT feedback record.
+
 Operator UAT feedback on v0.11.0-rc.1 (2026-08-29, live-verified chip):
 while a room's agent is orchestrating (background work active — chat chip
 shows `orchestrating…`), the HOME-SCREEN / room-list tile still renders
