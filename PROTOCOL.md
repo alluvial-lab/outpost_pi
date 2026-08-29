@@ -258,7 +258,7 @@ operation. The pi-extension handles it; the app parses nothing.
 | Set thinking | `thinking_set {level}` | `pi.setThinkingLevel(level)` |
 | List models | `list_models` | `ModelRegistry.getAvailable()` |
 
-`session_new` has two execution paths. In an in-process command context,
+`session_new` has three execution outcomes. In an in-process command context,
 `ctx.newSession()` replaces the SDK session and the extension re-captures fresh
 session capabilities before continuing. In daemon/restart-wrapper mode, where
 the command-only SDK capability is unavailable, the extension installs a
@@ -270,6 +270,14 @@ once teardown settles or the bounded shutdown deadline expires. The supervisor
 or wrapper relaunches the process
 without `--continue`; the deadline is a liveness fallback, not proof that
 delivery completed, so the app's durable outbox remains the recovery boundary.
+A bare process with no command context and no supervisor ownership cannot
+initiate in-process replacement; it completes the same graceful teardown the
+wrapper path uses and then exits with `EXIT_FRESH_SESSION` as the fail-closed
+terminal fallback — nothing relaunches it. The contract this enforces: after a
+`session_new`, the owner room is always re-bound to a usable successor or the
+process is exiting; there is no detached-but-alive state. The wrapper's
+relaunch-owned exit and the bare process's terminal exit share the teardown
+path and differ only in who (if anyone) relaunches.
 
 ### Wire — examples
 
