@@ -3290,13 +3290,11 @@ export function _routeClientMessageFrom(
       const newSession = actionCtx?.newSession;
       if (!newSession) {
         if (!_isFreshSessionRestartManaged()) {
-          sender.send({
-            type: "action_error",
-            session_id: msg.session_id,
-            in_reply_to: msg.id,
-            action: "session_new",
-            error: "fresh_session_restart_unavailable: /new is not available in this agent mode",
-          });
+          // A bare process has no command context, so Pi cannot initiate the
+          // in-process withSession replacement. Do not report an unavailable
+          // action after a lifecycle teardown has begun: terminating is the
+          // fail-closed side of the room-bound-or-exited invariant.
+          process.exit(EXIT_FRESH_SESSION);
           break;
         }
         const runtime = _activeOutpostPiRuntime;

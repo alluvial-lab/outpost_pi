@@ -1,7 +1,7 @@
 ---
 id: story-fix-new-wedge-bare-pi
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, bug, lifecycle]
 parent: null
 depends_on: []
@@ -25,11 +25,15 @@ the wrapper).
 
 ## Root cause shape
 
-The /new shutdown path has a branch for "no restart wrapper, no daemon"
-that neither exits nor replaces the session in-process — it performs the
-room teardown and stops. The exit-42 mechanism is gated on the wrapper
-(`OUTPOST_PI_UNDER_RESTART_WRAPPER`) / daemon child; nothing backfills
-the bare-launch case.
+The precise stranded branch was `pi-extension/src/index.ts:3291-3298`
+(`!newSession` followed by `!_isFreshSessionRestartManaged()`). A bare
+mobile action with no captured `ExtensionCommandContext` could not enter
+`handleSessionNew`/`bindReplacementContext`; this branch instead emitted the
+old `fresh_session_restart_unavailable` error and returned without either an
+in-process successor or a terminal exit. If the owner runtime had already
+started its fence/drain/dispose teardown, that return left the process alive
+with no room owner. Managed wrapper/daemon requests continue through the
+separate coordinator branch at `src/index.ts:3315-3345` and retain exit 42.
 
 ## Fix approach (from the incident record)
 
@@ -59,3 +63,35 @@ down. Preserve the existing wrapper/daemon exit-42 behavior exactly.
   admits one).
 - `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
   green from pi-extension/.
+
+## Implementation notes
+
+- **Named branch:** the bare no-context branch in
+  `pi-extension/src/index.ts:3291-3298` now terminates with
+  `EXIT_FRESH_SESSION` rather than returning after an unavailable-action
+  response. A command-capable bare path remains in-process through
+  `handleSessionNew` and `_bindReplacementSessionContext`, which delegates to
+  `SdkSessionProjection.bindReplacementContext` at
+  `pi-extension/src/session/sdk_session_projection.ts:350-371`.
+- **Files:** changed `pi-extension/src/index.ts`,
+  `pi-extension/src/extension.test.ts`, and this story item only. No app,
+  relay, or script files changed.
+- **Tests:** first changed the old bare no-context regression to assert the
+  terminal invariant; the old implementation failed because `process.exit`
+  was never called. Added an explicit no-wrapper/no-daemon in-process test
+  asserting fresh room metadata, empty `session_history`, no exit, and a
+  successor prompt delivered through the fresh message API. Wrapper and daemon
+  tests remain in place and continue to assert exit 42 and their existing ACK /
+  reset ordering. Targeted fresh-session tests and typecheck pass.
+- **Four-step incident re-walk:** (1) admitted delivery is fenced by the
+  existing managed coordinator, or replacement begins through the SDK
+  `withSession` callback; (2) admitted work drains before the managed
+  ACK/reset tail; (3) the predecessor room may detach during runtime teardown,
+  but a no-context bare request can no longer remain alive after that boundary;
+  (4) the normal bare command-capable path rebinds the fresh session, publishes
+  the new `room_meta.session_id` and empty `session_history`, then serves the
+  next owner message. The only path without in-process replacement now exits,
+  making “re-bound or exited” exhaustive.
+- **Execution capability:** implemented inline with direct repository reads,
+  a failing-first Vitest regression, and bounded TypeScript verification; no
+  delegated worker or external dependency was used.
