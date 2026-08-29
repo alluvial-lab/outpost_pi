@@ -7,6 +7,9 @@ tags: [pi-extension, bug, lifecycle]
 
 # Mobile /new on a bare (unwrapped) pi tears down the room but never exits — half-dead wedge
 
+**ABSORBED 2026-08-29** → `story-fix-new-wedge-bare-pi` (active). The
+evidence below is the original incident record.
+
 ## Incident (2026-08-28, field + live diagnosis)
 
 Operator issued mobile `/new` to their NextUp session (room `Vwjew_J1wVKU`,
