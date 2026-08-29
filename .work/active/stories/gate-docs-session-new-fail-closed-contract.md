@@ -1,7 +1,7 @@
 ---
 id: gate-docs-session-new-fail-closed-contract
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
