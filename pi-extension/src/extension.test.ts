@@ -2292,6 +2292,77 @@ describe("multi-channel broadcast (W2D)", () => {
     });
   });
 
+  test("bare session_new uses withSession replacement and rebinds the owner room", async () => {
+    const peer = "owner-bare-session-new";
+    const previousDaemonMode = process.env["OUTPOST_PI_DAEMON"];
+    const previousWrapperMode = process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    try {
+      delete process.env["OUTPOST_PI_DAEMON"];
+      delete process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+      await _pairForTest(peer);
+      const oldSessionId = currentSessionIdFromSends();
+      const freshSendUserMessage = vi.fn(async () => undefined);
+      const freshSendMessage = vi.fn(async () => undefined);
+      const ctx = {
+        ...makeMockCtx("/tmp/outpost-pi-bare-session-new"),
+        newSession: vi.fn(async (opts?: { withSession?: (freshCtx: unknown) => Promise<void> }) => {
+          await opts?.withSession?.({
+            ...makeMockCtx("/tmp/outpost-pi-bare-session-new"),
+            newSession: vi.fn(),
+            sessionManager: { getSessionId: () => "fresh-bare-sdk-session" },
+            sendUserMessage: freshSendUserMessage,
+            sendMessage: freshSendMessage,
+            appendEntry: appendDurableEntry,
+          });
+          return { cancelled: false };
+        }),
+      };
+      const status = captureHandler("outpost-pi status");
+      await status("", ctx);
+      const controlBefore = relayRef.current!.sendControl.mock.calls.length;
+      const sendsBefore = relayRef.current!.send.mock.calls.length;
+
+      emitClientMessage(peer, {
+        type: "session_new",
+        id: "bare-new-1",
+        session_id: oldSessionId,
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      const freshSessionId = _getRemoteSessionIdForTest();
+      expect(freshSessionId).toBe("fresh-bare-sdk-session");
+      expect(freshSessionId).not.toBe(oldSessionId);
+      expect(exit).not.toHaveBeenCalled();
+      expect(relayRef.current!.sendControl.mock.calls.slice(controlBefore)
+        .map((call) => call[0] as { type: string; meta?: { session_id?: string } })
+        .some((frame) => frame.type === "room_meta_update" && frame.meta?.session_id === freshSessionId))
+        .toBe(true);
+      expect(sentToPeerSince(sendsBefore, peer).map(({ inner }) => inner)).toContainEqual(expect.objectContaining({
+        type: "session_history",
+        in_reply_to: "bare-new-1",
+        session_id: freshSessionId,
+        events: [],
+        truncated: false,
+      }));
+
+      emitClientMessage(peer, {
+        type: "user_message",
+        id: "bare-message-after-new",
+        session_id: freshSessionId!,
+        text: "successor serves this prompt",
+      });
+      await vi.waitFor(() => expect(freshSendUserMessage).toHaveBeenCalledWith("successor serves this prompt"));
+      expect(exit).not.toHaveBeenCalled();
+    } finally {
+      exit.mockRestore();
+      if (previousDaemonMode === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemonMode;
+      if (previousWrapperMode === undefined) delete process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+      else process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] = previousWrapperMode;
+    }
+  });
+
   test("app session_new recaptures fresh message API for the next app prompt", async () => {
     await _pairForTest("ownerA__1234567890");
     const sessionId = currentSessionIdFromSends();
@@ -2573,7 +2644,7 @@ describe("multi-channel broadcast (W2D)", () => {
     }
   });
 
-  test("unmanaged session_new without command ctx returns a structured error and never exits or resets", async () => {
+  test("bare session_new without command ctx fails closed instead of leaving a live detached room", async () => {
     const peer = "owner-unmanaged-session-new";
     await _pairForTest(peer);
     const oldSessionId = currentSessionIdFromSends();
@@ -2581,9 +2652,8 @@ describe("multi-channel broadcast (W2D)", () => {
     await status("", makeMockCtx("/tmp/outpost-pi-unmanaged-session-new"));
     _clearSdkContextsForTest();
     _setMessageBufferForTest([
-      { role: "user", content: "history must survive rejected new", timestamp: 1_700_001_000_100 },
+      { role: "user", content: "history is abandoned only with process exit", timestamp: 1_700_001_000_100 },
     ]);
-    const oldEvents = _getTranscriptEventsForTest();
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
     const previousDaemonMode = process.env["OUTPOST_PI_DAEMON"];
@@ -2602,18 +2672,9 @@ describe("multi-channel broadcast (W2D)", () => {
       await vi.advanceTimersByTimeAsync(200);
 
       const sent = sentToPeerSince(sendsBefore, peer).map(({ inner }) => inner);
-      expect(sent).toContainEqual({
-        type: "action_error",
-        session_id: oldSessionId,
-        in_reply_to: "unmanaged-new-1",
-        action: "session_new",
-        error: "fresh_session_restart_unavailable: /new is not available in this agent mode",
-      });
       expect(sent.some((message) => message.type === "action_ok")).toBe(false);
       expect(sent.some((message) => message.type === "session_history")).toBe(false);
-      expect(_getTranscriptEventsForTest()).toEqual(oldEvents);
-      expect(_getRemoteSessionIdForTest()).toBe(oldSessionId);
-      expect(exit).not.toHaveBeenCalled();
+      expect(exit).toHaveBeenCalledWith(EXIT_FRESH_SESSION);
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();
