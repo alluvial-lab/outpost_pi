@@ -1,7 +1,7 @@
 ---
 id: story-fix-new-wedge-bare-pi
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug, lifecycle]
 parent: null
 depends_on: []
