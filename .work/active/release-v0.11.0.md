@@ -46,3 +46,23 @@ first-bound here):
 - **gate-refactor** (2026-08-28) — 0 findings (0 high, 0 medium, 0 low) from 3 libraries: boundaries (0), lifecycle (0), protocol-contract (0). Inline rule check per orchestrator adaptation (no nested scanner); 5 already-tracked findings skipped.
 - **gate-cruft** (2026-08-28) — inline deep cleanup scan (reduced isolation per orchestrator adaptation; no nested scanner); audited 12 bound items / 92 commit-union paths; 5 findings (High=1, Medium=4, Low=0), with 1 release-relevant blocking story and 4 ambient unbound backlog items; 0 decision-required findings; 4 already-tracked gate-cruft findings skipped.
 - 2026-08-28 — `security`: inline source-read-only scanner (reduced isolation per orchestrator adaptation; no nested scanner); audited 12 bound items / 92 commit-union paths across auth, crypto, secrets, injection, API, infrastructure, data-protection, dependency, and error/logging domains; 2 findings (Critical=0, High=0, Medium=1, Low=1), both routed to unbound backlog; skip list contained 3 live prior-release gate-security items, 0 duplicate candidates skipped.
+
+## Battery + rc record (2026-08-28)
+
+- Full e2e battery GREEN 23:11:16Z: run-pairing docker suite (18), live
+  lanes golden/failure/state-shapes/grid/capture-delivery, 600s seeded
+  chaos soak. (First battery attempt aborted on an orchestrator arg
+  error — lane names vs file paths; resumed, all green. Log:
+  .work/session-notes/v0110-battery.log.)
+- App version bumped 0.10.1+24 → 0.11.0+25 (135bc3b24); first rc build
+  had stale version artifacts — caught and rebuilt.
+- v0.11.0-rc.1 draft: fat outpost-0.11.0-25.apk (197MiB) + slim arm64
+  outpost-0.11.0-25-arm64.apk (31MiB), release-signed, attached.
+- apk-launch-smoke: SKIPPED, recorded reason — emulator torn down
+  post-battery and this is not a toolchain-swap candidate; five live
+  lanes + soak exercised emulator install/launch/resume on the debug
+  build this session. Operator may run it from the draft artifacts
+  before publish.
+
+Awaiting operator UAT (runbook incl. stack-currency pertinence retests)
+before final tag + collapse.
