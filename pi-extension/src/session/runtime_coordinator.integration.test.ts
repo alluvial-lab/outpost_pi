@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createEventBus,
   createExtensionRuntime,
@@ -400,6 +400,64 @@ describe("OutpostPiRuntimeCoordinator with the real Pi SDK factory/runtime", () 
 });
 
 describe("production index pending-delivery queue across SDK replacement", () => {
+  test("mobile session_new rebinds through the installed AgentSessionRuntime", async () => {
+    const previousDaemonMode = process.env["OUTPOST_PI_DAEMON"];
+    const previousWrapperMode = process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    try {
+      delete process.env["OUTPOST_PI_DAEMON"];
+      delete process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+      const harness = await createProductionHarness();
+      const predecessorSessionId = harness.currentRemoteSessionId();
+      await harness.primeCommandContext();
+
+      const channel = harness.routeCurrent({
+        type: "session_new",
+        id: "mobile-installed-host-new",
+        session_id: predecessorSessionId,
+      });
+      await channel.waitForMessage((message) => message.type === "action_ok"
+        && message.in_reply_to === "mobile-installed-host-new");
+
+      const successorSessionId = harness.currentRemoteSessionId();
+      expect(successorSessionId).not.toBe(predecessorSessionId);
+      expect(harness.lifecycleEvents).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "session_shutdown", reason: "new", sessionId: predecessorSessionId }),
+        expect.objectContaining({ type: "session_start", reason: "new", sessionId: successorSessionId }),
+      ]));
+      expect(harness.currentSession.agent.state.messages).toEqual([]);
+      expect(exit).not.toHaveBeenCalled();
+
+      const syncChannel = harness.routeCurrent({
+        type: "session_sync",
+        id: "mobile-successor-sync",
+        session_id: successorSessionId,
+      });
+      await syncChannel.waitForMessage((message) => message.type === "session_history"
+        && message.in_reply_to === "mobile-successor-sync"
+        && message.events.length === 0);
+
+      harness.routeCurrent(userMessage(
+        "mobile-successor-message",
+        successorSessionId,
+        "delivered through the fresh host binding",
+      ));
+      await harness.waitForDelivery((delivery) =>
+        delivery.method === "sendUserMessage"
+        && delivery.content === "delivered through the fresh host binding",
+      );
+      expect(harness.deliveries.filter((delivery) =>
+        delivery.content === "delivered through the fresh host binding",
+      )).toHaveLength(1);
+    } finally {
+      exit.mockRestore();
+      if (previousDaemonMode === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemonMode;
+      if (previousWrapperMode === undefined) delete process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+      else process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] = previousWrapperMode;
+    }
+  });
+
   test("an active content-suppression gate cannot suppress successor session binding", async () => {
     const harness = await createProductionHarness();
     // createProductionHarness resets the module registry before loading the

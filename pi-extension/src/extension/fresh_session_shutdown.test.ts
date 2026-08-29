@@ -126,6 +126,26 @@ describe("FreshSessionShutdownCoordinator", () => {
     expect(coordinator.fenceReason).toBeNull();
   });
 
+  test("bare requests reuse the fence, drain, lifecycle shutdown, and exit sequence", async () => {
+    const order: string[] = [];
+    const coordinator = new FreshSessionShutdownCoordinator({
+      isRestartManaged: () => false,
+      drainAcceptedDeliveries: async () => { order.push("drain"); },
+      terminate: (exitCode) => { order.push(`exit:${exitCode}`); },
+      shutdownDeadlineMs: 10_000,
+      exitCode: 42,
+    });
+
+    await expect(coordinator.request({
+      shutdownRuntime: async () => { order.push("shutdown"); return true; },
+    }, { allowUnmanaged: true })).resolves.toEqual({
+      status: "exiting",
+      drain: "complete",
+    });
+    expect(order).toEqual(["drain", "shutdown", "exit:42"]);
+    expect(coordinator.fenceReason).toBe("fresh_session");
+  });
+
   test("unmanaged and hot-reload-owned requests do not start fresh shutdown", async () => {
     const unmanaged = new FreshSessionShutdownCoordinator({
       isRestartManaged: () => false,
