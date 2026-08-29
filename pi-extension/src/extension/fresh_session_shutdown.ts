@@ -10,8 +10,15 @@ export type FreshSessionShutdownResult =
 
 /** Supply the request-local effects that must precede runtime teardown. */
 export interface FreshSessionShutdownRequest {
-  stageAcknowledgementAndReset(): void;
+  /** Stage the managed-process ACK/reset tail before its runtime is disposed. */
+  stageAcknowledgementAndReset?(): void;
   shutdownRuntime(reason: "new"): Promise<boolean>;
+}
+
+/** Configure whether a bare process may use the managed teardown sequence. */
+export interface FreshSessionShutdownOptions {
+  /** Permit the same fenced teardown for a bare process without a supervisor. */
+  allowUnmanaged?: boolean;
 }
 
 export interface FreshSessionShutdownDependencies {
@@ -49,8 +56,11 @@ export class FreshSessionShutdownCoordinator {
    * The fence changes before the first await. Deadline exhaustion deliberately
    * leaves the underlying cleanup running until process termination wins.
    */
-  request(input: FreshSessionShutdownRequest): Promise<FreshSessionShutdownResult> {
-    if (!this.deps.isRestartManaged()) {
+  request(
+    input: FreshSessionShutdownRequest,
+    options: FreshSessionShutdownOptions = {},
+  ): Promise<FreshSessionShutdownResult> {
+    if (!this.deps.isRestartManaged() && !options.allowUnmanaged) {
       return Promise.resolve({ status: "unavailable" });
     }
     if (this.fence !== null || this.transitionActive) {
@@ -116,7 +126,7 @@ export class FreshSessionShutdownCoordinator {
     if (deadlineExceeded()) return "ready_to_exit";
 
     try {
-      input.stageAcknowledgementAndReset();
+      input.stageAcknowledgementAndReset?.();
     } catch {
       // A lost final action ACK/reset frame is recovered through canonical room
       // rotation and the app outbox; teardown must still release resources.

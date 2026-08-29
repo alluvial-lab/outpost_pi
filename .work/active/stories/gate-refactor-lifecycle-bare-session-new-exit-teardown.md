@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-bare-session-new-exit-teardown
 kind: story
-stage: implementing
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -33,3 +33,8 @@ The no-context bare `/new` branch calls `process.exit(EXIT_FRESH_SESSION)` direc
 
 ## Fix
 Route this terminal fallback through the lifecycle owner so runtime resources are disposed and `working=false` is published before the bounded exit; retain the exit as the fail-closed fallback only after cleanup ownership has been established.
+
+## Resolution (2026-08-29)
+The bare `/new` path now enters `FreshSessionShutdownCoordinator` with the same synchronous owner-delivery fence, admitted-delivery drain, runtime disposal, and exit-code-42 deadline as wrapper/daemon mode. The lifecycle-owned runtime teardown detaches owner channels, converges the session projection, and closes relay/mesh resources before termination; managed wrapper/daemon staging remains unchanged. The regression test observes detached owners, disposed state, relay close, and exit 42 ordering.
+
+Verified with `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` from `pi-extension/`.

@@ -3289,15 +3289,22 @@ export function _routeClientMessageFrom(
       const actionCtx = _sdkSessionProjection.freshCommandActionCtx();
       const newSession = actionCtx?.newSession;
       if (!newSession) {
+        const runtime = _activeOutpostPiRuntime;
         if (!_isFreshSessionRestartManaged()) {
           // A bare process has no command context, so Pi cannot initiate the
-          // in-process withSession replacement. Do not report an unavailable
-          // action after a lifecycle teardown has begun: terminating is the
-          // fail-closed side of the room-bound-or-exited invariant.
-          process.exit(EXIT_FRESH_SESSION);
+          // in-process withSession replacement. Use the same synchronous fence,
+          // admitted-delivery drain, lifecycle disposal, and bounded exit as a
+          // managed process; the room is never left backed by stale resources.
+          void _freshSessionShutdown.request({
+            shutdownRuntime: (reason) => runtime?.isOwner()
+              ? runtime.dispose(reason)
+              : Promise.resolve(true),
+          }, { allowUnmanaged: true }).catch(() => {
+            // Process-manager recovery owns terminal failure. Do not emit a
+            // second action result after teardown has begun.
+          });
           break;
         }
-        const runtime = _activeOutpostPiRuntime;
         if (!runtime?.isOwner()) {
           sender.send({
             type: "action_error",

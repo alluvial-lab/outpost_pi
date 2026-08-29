@@ -1,7 +1,7 @@
 ---
 id: gate-tests-bare-session-new-real-pi-host
 kind: story
-stage: implementing
+stage: done
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
@@ -22,13 +22,13 @@ Item: `story-fix-new-wedge-bare-pi`
 Contract / risk / regression / maintenance cost: the field incident left a bare
 Pi process alive after its owner room had torn down, and the release contract is
 now exhaustive: a mobile `session_new` must either rebind a usable successor or
-terminate the process. The new production test at
-`pi-extension/src/extension.test.ts:2295-2363` protects the in-process branch,
-but it supplies a hand-written `newSession` function and hand-written
-`withSession` context. It therefore assumes the host behavior at the exact seam
+terminate the process. The prior production test (formerly at
+`pi-extension/src/extension.test.ts:2295-2363`) protected the in-process branch,
+but supplied a hand-written `newSession` function and hand-written
+`withSession` context. It therefore assumed the host behavior at the exact seam
 that failed in production.
 
-The repository already has stronger infrastructure, but no current test routes
+The repository already has stronger infrastructure, but no prior test routed
 the mobile `session_new` action through it. `SdkSessionReplacementHarness`
 loads the real production extension factory through Pi's installed
 `loader.js`, uses the installed `ExtensionRunner`, and delegates replacement to
@@ -60,7 +60,7 @@ test("bare mobile session_new rebinds through installed AgentSessionRuntime", as
 });
 ```
 
-Keep the existing no-command-context fail-closed exit test and wrapper/daemon
+Keep the existing no-command-context terminal-exit test and wrapper/daemon
 exit-42 tests; this seam specifically proves that the command-capable bare path
 matches Pi's installed loader/runner/runtime behavior rather than a test-owned
 `newSession` model.
@@ -68,3 +68,8 @@ matches Pi's installed loader/runner/runtime behavior rather than a test-owned
 ## Test location (suggested)
 `pi-extension/src/session/runtime_coordinator.integration.test.ts`, using
 `pi-extension/test/support/sdk_session_replacement_harness.ts`
+
+## Resolution (2026-08-29)
+Replaced the hand-written `/new` host context with a production-index test that primes the real registered command context, routes mobile `session_new` through the installed Pi loader, `ExtensionRunner`, and `AgentSessionRuntime`, and verifies predecessor shutdown, successor startup, fresh session identity, empty history, fresh message delivery, and no exit. The bare no-command test separately verifies lifecycle teardown completes before exit 42.
+
+Verified with `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` from `pi-extension/`.
