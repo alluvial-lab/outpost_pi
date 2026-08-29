@@ -374,3 +374,38 @@ or project override).
 
 Feature complete: both child checkpoints done, integrated verification
 green, review blockers fixed and re-verified.
+
+## Post-UAT defect (2026-08-28)
+
+UAT initially appeared to show that a real interactive Pi process never
+published `room_meta.background=true`, while the inline SDK/e2e host remained
+green. The proposed child-runtime invalidation mechanism was falsified before
+changing source:
+
+- A Pi 0.84.4 real-loader probe mirrored `pi-subagents` child construction and
+  `AgentSession.bindExtensions`. `subagents:created` was emitted before child
+  construction, the child received a distinct event bus/runtime, the parent
+  runtime had zero invalidations, and the parent tracker published both before
+  and after child binding.
+- Loading the actual `pi-subagents` and Outpost package entries through the real
+  loader likewise drove the tracker's 0→1 transition. Package order is
+  `pi-subagents` before Outpost; the configured project has no second package
+  set overriding that order.
+
+The live relay log then identified the real boundary. At
+`2026-08-29T04:03:20.932663Z`, exactly when the background subagent was created,
+the relay rejected an `invalid_json` frame of 79 bytes. The exact serialized
+extension frame
+`{"type":"room_meta_update","room_id":"83MK6OkhBrcQ","meta":{"background":true}}`
+is 79 bytes. Ten milliseconds later, ordinary `working` patches were accepted.
+The running container used `outpost-pi-relay:0.5.1`, created 2026-08-23, before
+the canonical `background` relay schema fix in `d13b85fec` on 2026-08-28.
+Therefore the extension was publishing correctly; the stale deployed relay
+rejected the new field before it could enter room metadata.
+
+No extension lifecycle change is warranted: moving or duplicating subscriptions
+would not make an old strict relay schema accept the frame. The release remains
+paused until the relay is rebuilt/redeployed from current trunk, followed by a
+full Pi restart and live background UAT in the documented safe deploy order.
+The existing extension verification remains green: typecheck, 63 test files /
+1,119 passed with 3 pre-existing skips, and build.

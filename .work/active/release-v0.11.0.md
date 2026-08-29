@@ -63,6 +63,11 @@ first-bound here):
   lanes + soak exercised emulator install/launch/resume on the debug
   build this session. Operator may run it from the draft artifacts
   before publish.
+- Post-UAT diagnosis landed before the final tag: the extension's 79-byte
+  `background:true` patch was present on the live wire but rejected as
+  `invalid_json` by the stale 2026-08-23 relay image, which predates the
+  `d13b85fec` schema fix. Final tag remains paused for current-trunk relay
+  redeploy, full Pi restart, and operator re-verification.
 
 Awaiting operator UAT (runbook incl. stack-currency pertinence retests)
 before final tag + collapse.
