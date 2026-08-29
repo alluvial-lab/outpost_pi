@@ -14,6 +14,7 @@ See individual pattern files for full details with code examples.
 
 Available patterns:
 - [lifecycle-boundary-state-convergence.md](lifecycle-boundary-state-convergence.md) — Reset active lifecycle projections before transport teardown so replacement and shutdown cannot strand stale state.
+- [lifecycle-owned-repeating-animation.md](lifecycle-owned-repeating-animation.md) — Own repeating animation controllers in StatefulWidget state and dispose them at the widget boundary.
 - [durable-first-visibility-gating.md](durable-first-visibility-gating.md) — Append canonical transcript facts before publishing replayable live visibility, and gate on recorded or duplicate authority.
 - [presence-aware-patch-merging.md](presence-aware-patch-merging.md) — Distinguish omitted patch fields from explicit values so partial updates preserve cached state.
 - [edge-triggered-convergence.md](edge-triggered-convergence.md) — Notify, persist, or publish only when a validated semantic projection changes.
