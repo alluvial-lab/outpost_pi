@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, bug, lifecycle]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.11.1
 gate_origin: null
 created: 2026-08-29
 updated: 2026-08-29
