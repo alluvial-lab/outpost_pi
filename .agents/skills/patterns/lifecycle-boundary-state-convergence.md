@@ -2,16 +2,16 @@
 
 ## Rationale
 
-A replaced session, disposed owner, or stopped transport can leave the last live projection stuck in an active state because its normal terminal callback never arrives. Converge lifecycle-owned activity to its inactive state before tearing down the channel that carries the correction. This makes restart, replacement, and shutdown observable as ordinary state transitions instead of leaving stale working or background indicators behind.
+A replaced session, disposed owner, or stopped transport can leave the last live projection stuck in an active state because its normal terminal callback never arrives. Converge lifecycle-owned activity to its inactive state before tearing down the channel that carries the correction. If the lifecycle cannot safely bind a successor or publish that correction, take a terminal fail-closed path instead of returning with a live owner and a torn-down room. This makes restart, replacement, and shutdown observable as ordinary state transitions instead of leaving stale working or background indicators behind.
 
 ## When to use
 
 Use for state that drives a remote or persistent projection and whose normal completion event can be skipped:
 
 1. Identify every active axis owned by the lifecycle (for example turn work and background subagents).
-2. Reset each axis at the replacement or disposal boundary.
-3. Publish the correction while the outbound transport is still usable.
-4. Tear down subscriptions, sockets, and timers only after the correction has been attempted.
+2. Reset each axis at the replacement or disposal boundary, or terminate when the replacement machinery is unavailable.
+3. Publish the correction while the outbound transport is still usable when an in-process reset is possible.
+4. Tear down subscriptions, sockets, and timers only after the correction has been attempted; a fail-closed terminal path must not return to a live process.
 5. Keep the reset idempotent and edge-triggered so already-idle state does not create noise.
 
 ## When not to use
@@ -78,6 +78,27 @@ void clearForSessionBoundary(): void {
 
 The tracker emits one idle edge only when the session boundary actually had tracked activity.
 
+### Example 5: Bare `/new` exits when no successor binding can run
+
+**File**: `pi-extension/src/index.ts:3292-3298`
+
+```ts
+if (!newSession) {
+  if (!_isFreshSessionRestartManaged()) {
+    // In-process replacement is unavailable for this bare launch mode.
+    process.exit(EXIT_FRESH_SESSION);
+    break;
+  }
+  // Managed mode continues through its staged ACK/reset/disposal path.
+}
+```
+
+A bare process cannot invoke the SDK's `withSession` replacement from a
+missing command context. Once the owner room teardown boundary is reached, it
+exits with the shared fresh-session code rather than returning an error while
+the process remains alive without its room; managed wrapper and daemon modes
+retain their staged reset path.
+
 ## Common violations
 
 - Relying only on `turn_end`, `agent_end`, or `subagents:completed` when shutdown can skip those callbacks.
@@ -85,6 +106,7 @@ The tracker emits one idle edge only when the session boundary actually had trac
 - Clearing one activity axis while leaving a related background/turn projection active.
 - Emitting repeated false corrections without an edge check.
 - Resetting state after a new owner has already taken over, allowing an old lifecycle to clear successor state.
+- Returning from a replacement path after teardown has begun when neither a successor binding nor a terminal process exit is possible; this leaves a live process with a detached owner room.
 
 ## Related
 

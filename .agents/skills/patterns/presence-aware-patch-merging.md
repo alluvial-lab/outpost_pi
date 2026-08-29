@@ -2,7 +2,7 @@
 
 ## Rationale
 
-Incremental metadata updates must distinguish an omitted field from an explicit value. A patch representation carries field presence separately from the field value, so consumers preserve cached state when a producer sends a partial update while still applying explicit `false`, `null`, or replacement values according to the field contract. The same rule keeps relay state, app room caches, and compatibility metadata convergent across mixed versions.
+Incremental metadata updates must distinguish an omitted field from an explicit value. A patch representation carries field presence separately from the field value, so consumers preserve cached state when a producer sends a partial update while still applying explicit `false`, `null`, or replacement values according to the field contract. The same rule keeps relay state, app room caches, and compatibility metadata convergent across mixed versions. When cached metadata projects live activity, current room liveness is the independent presence signal: do not treat a cached `background` or `working` value as authoritative until the relay confirms that room is live.
 
 ## When to use
 
@@ -12,6 +12,7 @@ Use for partial room/session metadata, persisted record updates, and other merge
 2. Preserve the cached field when the patch omits it.
 3. Apply explicit values, including `false` and explicit clears, rather than using truthiness or a null-coalescing default that loses intent.
 4. Make full snapshots authoritative when their contract differs from incremental patches, and test both forms.
+5. Gate cached live-state projections on an independent freshness/presence signal, such as current live-room membership after a transport reconnect.
 
 ## When not to use
 
@@ -88,6 +89,42 @@ background: r.background,
 ```
 
 This deliberately separates compatibility preservation for omitted descriptive metadata from authoritative replacement of live state in a full snapshot.
+
+### Example 5: Chat projection rejects cached background while the room is not live
+
+**File**: `app/lib/ui/chat/viewmodels/chat_viewmodel.dart:138-147`
+
+```dart
+bool _backgroundProjection() {
+  final peer = _activePeer;
+  if (peer == null || !_conn.isRoomLive(peer.remoteEpk, _activeRoomId)) {
+    return false;
+  }
+  return activeRoom?.background ?? false;
+}
+```
+
+The chat status consumes `RoomInfo.background` only after the connection
+manager's live-room set confirms the active room; reconnecting or stale cache
+therefore cannot keep the background indicator active.
+
+### Example 6: Home projection applies the same live-room gate to a second consumer
+
+**File**: `app/lib/ui/home/viewmodels/home_viewmodel.dart:72-79`
+
+```dart
+bool isRoomOrchestrating(String epk, String roomId) {
+  if (!_conn.isRoomLive(epk, roomId)) return false;
+  for (final room in _conn.roomsFor(epk)) {
+    if (room.roomId == roomId) return room.background;
+  }
+  return false;
+}
+```
+
+The home tile uses the same freshness boundary before rendering its
+orchestrating pulse. Both chat and home derive from cached room metadata, but
+neither trusts it after disconnect until a live snapshot restores authority.
 
 ## Common violations
 
