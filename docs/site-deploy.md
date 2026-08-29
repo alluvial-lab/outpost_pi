@@ -48,8 +48,9 @@ EDGE:  /etc/caddy/Caddyfile          # + blocks below
 ## 3. Build + stage (on the dev VM) — deploy is two-hop
 
 The dev VM has **no network path to the LXC or the edge Caddy** (operator
-confirmed 2026-08-26). The operator relays artifacts via their machine
-(operator-relay-machine):
+confirmed 2026-08-26). The operator relays artifacts via their relay
+machine (address recorded in `AGENTS.local.md`, not in this public
+doc):
 
 On the dev VM:
 
