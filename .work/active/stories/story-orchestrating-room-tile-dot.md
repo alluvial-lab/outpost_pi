@@ -1,7 +1,7 @@
 ---
 id: story-orchestrating-room-tile-dot
 kind: story
-stage: review
+stage: done
 tags: [app, ux]
 parent: null
 depends_on: []
