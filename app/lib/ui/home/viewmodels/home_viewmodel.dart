@@ -69,6 +69,17 @@ class HomeViewModel extends ViewModel<HomeState> {
   bool isRoomWorking(String epk, String roomId) =>
       _conn.isRoomWorking(epk, roomId);
 
+  /// `true` only when a fresh live-room snapshot reports background work.
+  /// Cached metadata is suppressed until [ConnectionManager] confirms that
+  /// the room is live, matching ChatViewModel's background projection.
+  bool isRoomOrchestrating(String epk, String roomId) {
+    if (!_conn.isRoomLive(epk, roomId)) return false;
+    for (final room in _conn.roomsFor(epk)) {
+      if (room.roomId == roomId) return room.background;
+    }
+    return false;
+  }
+
   Future<void> _load() async {
     final peers = await _storage.listPeers();
     if (_disposed) return;

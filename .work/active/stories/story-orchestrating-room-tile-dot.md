@@ -1,7 +1,7 @@
 ---
 id: story-orchestrating-room-tile-dot
 kind: story
-stage: implementing
+stage: review
 tags: [app, ux]
 parent: null
 depends_on: []
@@ -53,3 +53,13 @@ palette token, no theme-contract change (animation only).
 - Animation has no persistent timer leak (controller disposed; tile is
   currently StatelessWidget — converting the dot to a small StatefulWidget
   with proper dispose is acceptable).
+
+## Implementation notes
+
+- Added a live-room-gated `isRoomOrchestrating` projection to
+  `HomeViewModel`, threaded into `SessionTile` without changing theme tokens.
+- Converted the presence dot into a small stateful widget with a subtle
+  opacity pulse using a disposable repeating animation controller. Working,
+  reconnecting, and non-live states suppress the pulse and retain precedence.
+- Added widget coverage for all five states, liveness suppression, precedence,
+  and animation disposal.

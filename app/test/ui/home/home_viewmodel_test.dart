@@ -240,6 +240,39 @@ void main() {
       },
     );
 
+    test('isRoomOrchestrating follows live background metadata and suppresses '
+        'the cached value after disconnect', () async {
+      final ch = _ControllableChannel();
+      final storage = _FakeStorage([_peerA]);
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      final prefs = Preferences(_FakeSecureStorage());
+      final vm = HomeViewModel(storage, prefs, conn);
+
+      await conn.connectTo(_peerA);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      ch.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_A',
+          roomId: 'r1',
+          startedAt: 1,
+          background: true,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(vm.isRoomOrchestrating('epk_A', 'r1'), isTrue);
+
+      await conn.disconnect();
+      expect(vm.isRoomOrchestrating('epk_A', 'r1'), isFalse);
+
+      vm.dispose();
+      conn.dispose();
+    });
+
     test('initial state is HomeLoading', () {
       final storage = _FakeStorage([_peerA]);
       final prefs = Preferences(_FakeSecureStorage());
