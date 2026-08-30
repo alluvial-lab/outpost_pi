@@ -48,3 +48,13 @@ capture-delivery — delivery across session replacement).
   install/launch on the emulator build).
 
 Awaiting operator UAT before final tag + collapse.
+
+## UAT iteration 1 (2026-08-30)
+
+- rc.1 UAT feedback: pulse illegible at dot scale; "orchestrating" label
+  over-specifies the signal (background bash/tests should join later).
+- v2 landed in-release (story-background-state-surface-v2, b8ea04ee9):
+  steady blue dot for any work; `background work` subtitle swap;
+  `background…` chip label. Golden lane re-run green; 1,006 app tests.
+- Changelog wording updated; rc.1 draft removed. Current candidate:
+  v0.11.1-rc.2 (same 0.11.1+26 artifacts, rebuilt).
