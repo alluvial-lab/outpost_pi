@@ -740,7 +740,7 @@ class _ChatStatusIndicator extends StatelessWidget {
               AppTurnStatus.streaming ||
               AppTurnStatus.error => false,
             }
-        ? 'orchestrating…'
+        ? 'background…'
         : null;
     final visibleAgentLabel = backgroundLabel ?? agentLabel;
     final visibleAgentColor = backgroundLabel != null

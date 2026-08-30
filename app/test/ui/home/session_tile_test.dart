@@ -17,11 +17,17 @@ Widget _tile({
   bool isReconnecting = false,
   bool isWorking = false,
   bool isOrchestrating = false,
+  String? model = 'gpt-5',
 }) => MaterialApp(
   theme: buildDarkTheme(),
   home: SessionTile(
     peer: _peer,
-    room: const RoomInfo(roomId: 'main', startedAt: 1, background: true),
+    room: RoomInfo(
+      roomId: 'main',
+      startedAt: 1,
+      model: model,
+      background: true,
+    ),
     isLive: isLive,
     isReconnecting: isReconnecting,
     isWorking: isWorking,
@@ -38,65 +44,62 @@ Color _dotColor(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('renders all five room status states', (tester) async {
+  testWidgets('renders steady blue for turn and background work', (
+    tester,
+  ) async {
     final colors = AppColors.dark;
-    final pulse = find.byKey(const Key('home-presence-pulse'));
-
-    await tester.pumpWidget(_tile());
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(_dotColor(tester), colors.muted);
-    expect(pulse, findsNothing);
-
-    await tester.pumpWidget(_tile(isLive: true));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(_dotColor(tester), colors.success);
-    expect(pulse, findsNothing);
-
-    await tester.pumpWidget(_tile(isReconnecting: true));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(_dotColor(tester), colors.warning);
-    expect(pulse, findsNothing);
 
     await tester.pumpWidget(_tile(isLive: true, isOrchestrating: true));
-    await tester.pump(const Duration(milliseconds: 500));
     expect(_dotColor(tester), colors.working);
-    expect(pulse, findsOneWidget);
+    expect(find.byKey(const Key('home-presence-pulse')), findsNothing);
 
-    await tester.pumpWidget(_tile(isLive: true, isWorking: true));
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpWidget(
+      _tile(isLive: true, isWorking: true, isOrchestrating: true),
+    );
     expect(_dotColor(tester), colors.working);
-    expect(pulse, findsNothing);
+    expect(find.byKey(const Key('home-presence-pulse')), findsNothing);
+
+    await tester.pumpWidget(_tile());
+    expect(_dotColor(tester), colors.muted);
+
+    await tester.pumpWidget(_tile(isLive: true));
+    expect(_dotColor(tester), colors.success);
+
+    await tester.pumpWidget(_tile(isReconnecting: true));
+    expect(_dotColor(tester), colors.warning);
+  });
+
+  testWidgets('background subtitle swaps and restores when work drains', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_tile(isLive: true));
+    expect(find.text('gpt-5'), findsOneWidget);
+    expect(find.text('background work'), findsNothing);
+
+    await tester.pumpWidget(_tile(isLive: true, isOrchestrating: true));
+    expect(find.text('background work'), findsOneWidget);
+    expect(find.text('gpt-5'), findsNothing);
+
+    await tester.pumpWidget(_tile(isLive: true));
+    expect(find.text('gpt-5'), findsOneWidget);
+    expect(find.text('background work'), findsNothing);
   });
 
   testWidgets('suppresses cached background state when the room is not live', (
     tester,
   ) async {
     await tester.pumpWidget(_tile(isOrchestrating: true));
-    await tester.pump(const Duration(milliseconds: 500));
 
     expect(_dotColor(tester), AppColors.dark.muted);
-    expect(find.byKey(const Key('home-presence-pulse')), findsNothing);
+    expect(find.text('background work'), findsNothing);
   });
 
-  testWidgets(
-    'working takes precedence over background and disposes its pulse',
-    (tester) async {
-      final pulse = find.byKey(const Key('home-presence-pulse'));
-      await tester.pumpWidget(_tile(isLive: true, isOrchestrating: true));
-      await tester.pump(const Duration(milliseconds: 500));
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(pulse, findsOneWidget);
+  testWidgets('background surface is safe to unmount', (tester) async {
+    await tester.pumpWidget(_tile(isLive: true, isOrchestrating: true));
+    expect(find.text('background work'), findsOneWidget);
 
-      await tester.pumpWidget(
-        _tile(isLive: true, isWorking: true, isOrchestrating: true),
-      );
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(pulse, findsNothing);
-      expect(_dotColor(tester), AppColors.dark.working);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-    },
-  );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 }
