@@ -3,7 +3,7 @@
 ### Fixes
 
 - **`/new` never strands a session again** — a mobile `/new` against a pi with no restart wrapper and no daemon previously tore down the room and left the process half-dead (room gone, actions permanently gated; recovered only manually). It now completes in-process when a command context exists, and a bare no-context process runs the full graceful teardown (fence → drain → dispose) before a fail-closed exit — the room is always re-bound or the process is exiting, never in between. `PROTOCOL.md` documents the three-outcome contract.
-- **Room tile shows background work** — the home-screen dot gains a fifth state: pulsing blue while the room's agent orchestrates background work (steady blue = turn, green = idle, amber = reconnecting, grey = offline). No more "looks idle while working" from the room list.
+- **Background work is visible at a glance** — while a room's agent runs background work, the home tile's subtitle shows `background work` (in place of model/time) with a steady work-blue dot, and the chat status chip reads `background…`. The dot stays simple (blue = any work, green = idle, amber = reconnecting, grey = offline); the text carries the distinction.
 
 ### Internal
 
