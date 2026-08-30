@@ -1,7 +1,7 @@
 ---
 id: story-background-state-surface-v2
 kind: story
-stage: review
+stage: done
 tags: [app, ux]
 parent: null
 depends_on: []
