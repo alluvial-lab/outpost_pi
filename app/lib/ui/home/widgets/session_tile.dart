@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 /// A row in the Home list.
 ///
 /// Renders an inline presence dot (plan 12) driven by fresh room and relay
-/// state: green = live, steady blue = turn working, pulsing blue = background
-/// work, amber = reconnecting, and grey = offline or not yet reported.
+/// state: green = live, steady blue = work, amber = reconnecting, and grey =
+/// offline or not yet reported.
 class SessionTile extends StatelessWidget {
   final PeerRecord peer;
 
@@ -25,7 +25,8 @@ class SessionTile extends StatelessWidget {
   final bool isWorking;
 
   /// `true` when live-room metadata reports background work beyond the
-  /// current turn. Renders as a pulsing working-blue dot.
+  /// current turn. Renders as a steady working-blue dot and swaps the
+  /// subtitle text.
   final bool isOrchestrating;
   final RoomInfo? room;
   final VoidCallback onOpen;
@@ -83,7 +84,12 @@ class SessionTile extends StatelessWidget {
                 _Avatar(name: _avatarName()),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: _TitleBlock(peer: peer, room: room),
+                  child: _TitleBlock(
+                    peer: peer,
+                    room: room,
+                    isBackgroundActive:
+                        isOrchestrating && isLive && !isReconnecting,
+                  ),
                 ),
                 _PresenceDot(
                   isLive: isLive,
@@ -114,7 +120,7 @@ class SessionTile extends StatelessWidget {
   }
 }
 
-class _PresenceDot extends StatefulWidget {
+class _PresenceDot extends StatelessWidget {
   final bool isLive;
   final bool isReconnecting;
   final bool isWorking;
@@ -128,79 +134,27 @@ class _PresenceDot extends StatefulWidget {
   });
 
   @override
-  State<_PresenceDot> createState() => _PresenceDotState();
-}
-
-class _PresenceDotState extends State<_PresenceDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    if (_isPulsing) _pulse.repeat(reverse: true);
-  }
-
-  bool _isOrchestrating(_PresenceDot value) =>
-      value.isOrchestrating && value.isLive && !value.isReconnecting;
-
-  bool get _isPulsing => _isOrchestrating(widget) && !widget.isWorking;
-
-  @override
-  void didUpdateWidget(covariant _PresenceDot oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_isPulsing == (_isOrchestrating(oldWidget) && !oldWidget.isWorking)) {
-      return;
-    }
-    if (_isPulsing) {
-      _pulse.repeat(reverse: true);
-    } else {
-      _pulse.stop();
-      _pulse.value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     // Priority high → low:
-    //   working (agent streaming)        → steady blue
-    //   orchestrating (background work)  → pulsing blue
-    //   reconnecting (relay down)        → amber
-    //   live (relay up + announced)      → green
-    //   else (cached / offline)          → grey
+    //   working (agent streaming)       → steady blue
+    //   background work                 → steady blue
+    //   reconnecting (relay down)       → amber
+    //   live (relay up + announced)     → green
+    //   else (cached / offline)         → grey
     final colors = context.colors;
-    final isOrchestrating = _isOrchestrating(widget);
-    final color = widget.isWorking
+    final hasBackgroundWork = isOrchestrating && isLive && !isReconnecting;
+    final color = isWorking || hasBackgroundWork
         ? colors.working
-        : isOrchestrating
-        ? colors.working
-        : widget.isReconnecting
+        : isReconnecting
         ? colors.warning
-        : widget.isLive
+        : isLive
         ? colors.success
         : colors.muted;
-    final dot = Container(
+    return Container(
       key: const Key('home-presence-dot'),
       width: 10,
       height: 10,
       decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-    );
-    if (!_isPulsing) return dot;
-
-    return FadeTransition(
-      key: const Key('home-presence-pulse'),
-      opacity: Tween<double>(begin: 0.62, end: 1).animate(_pulse),
-      child: dot,
     );
   }
 }
@@ -208,7 +162,13 @@ class _PresenceDotState extends State<_PresenceDot>
 class _TitleBlock extends StatelessWidget {
   final PeerRecord peer;
   final RoomInfo? room;
-  const _TitleBlock({required this.peer, required this.room});
+  final bool isBackgroundActive;
+
+  const _TitleBlock({
+    required this.peer,
+    required this.room,
+    required this.isBackgroundActive,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -258,13 +218,17 @@ class _TitleBlock extends StatelessWidget {
             final model = room?.model;
             final hasModel = model != null && model.isNotEmpty;
             return Text(
-              hasModel
+              isBackgroundActive
+                  ? 'background work'
+                  : hasModel
                   ? _truncateModel(model)
                   : 'Last paired: ${_relativeTime(peer.pairedAt)}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: hasModel ? colors.accent : colors.muted,
+                color: isBackgroundActive || !hasModel
+                    ? colors.muted
+                    : colors.accent,
                 fontSize: 12,
                 fontFamily: kMonoFamily,
               ),

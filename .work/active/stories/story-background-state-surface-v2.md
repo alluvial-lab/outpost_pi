@@ -1,7 +1,7 @@
 ---
 id: story-background-state-surface-v2
 kind: story
-stage: implementing
+stage: review
 tags: [app, ux]
 parent: null
 depends_on: []
@@ -41,3 +41,9 @@ survive that broadening).
   `orchestrating…`).
 - Pulse animation removed with its controller/state fully cleaned up.
 - `flutter analyze && flutter test --exclude-tags e2e` green from app/.
+
+## Implementation notes
+
+- Removed the tile presence-dot animation and kept background work steady blue.
+- Added the live-gated `background work` subtitle swap with model/time restoration.
+- Updated the chat status chip and widget coverage to use `background…`.

@@ -171,24 +171,27 @@ void main() {
 
     viewModel.showStatus(onlineIdle);
     await tester.pump();
-    expect(find.text('orchestrating…'), findsOneWidget);
+    expect(find.text('background…'), findsOneWidget);
 
     viewModel.showStatus(onlineWorking);
     await tester.pump();
     expect(find.text('working…'), findsOneWidget);
-    expect(find.text('orchestrating…'), findsNothing);
+    expect(find.text('background…'), findsNothing);
 
     for (final terminalStatus in [onlineDone, onlineStale]) {
       viewModel.showStatus(terminalStatus);
       await tester.pump();
-      expect(find.text('orchestrating…'), findsOneWidget);
-      expect(find.text(terminalStatus == onlineDone ? 'done' : 'stale'), findsNothing);
+      expect(find.text('background…'), findsOneWidget);
+      expect(
+        find.text(terminalStatus == onlineDone ? 'done' : 'stale'),
+        findsNothing,
+      );
     }
 
     viewModel.showStatus(onlineWithoutBackground);
     await tester.pump();
     expect(find.text('online'), findsOneWidget);
-    expect(find.text('orchestrating…'), findsNothing);
+    expect(find.text('background…'), findsNothing);
 
     viewModel.dispose();
     sync.dispose();
