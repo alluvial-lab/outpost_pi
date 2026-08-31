@@ -1,7 +1,7 @@
 ---
 id: release-v0.11.1
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
@@ -58,3 +58,38 @@ Awaiting operator UAT before final tag + collapse.
   `background…` chip label. Golden lane re-run green; 1,006 app tests.
 - Changelog wording updated; rc.1 draft removed. Current candidate:
   v0.11.1-rc.2 (same 0.11.1+26 artifacts, rebuilt).
+
+## UAT record (2026-08-30)
+
+- rc.1 UAT: pulse illegible + label feedback → in-release v2 iteration
+  (story-background-state-surface-v2) — steady dot, `background work`
+  subtitle, `background…` chip. Golden lane re-run green.
+- rc.2 UAT: PASS — operator ack 2026-08-30 (live-verified subtitle + dot
+  via background demo worker).
+
+## Shipped
+
+- Date: 2026-08-30. Mapping: tag-based (local tag; operator-side push +
+  publish delegated to the orchestrator this cut per session convention).
+- Total items: 7 (3 planned incl. in-release v2; 4 gate-produced incl.
+  the patterns tracking item; all blocking findings fixed in-release).
+- Gate totals: security 0/0/1/0, tests 0/1/1/0, cruft 0/0/0/0, docs
+  0/1/0/1, patterns 1 new + 2 extended, refactor 0/1/0/0
+  (crit/high/med/low). Critical/high all driven to done pre-tag.
+- Battery: patch-lane green 2026-08-29T18:59Z (pairing suite + golden +
+  state-shapes + capture-delivery) + golden re-run after the v2 surface
+  iteration. No relay deploy needed (no wire change).
+
+## Shipped items
+
+Bodies retained on disk under this directory (retain-bodies).
+
+| id | title | kind | archived_atop | git ref |
+|----|-------|------|---------------|---------|
+| gate-docs-session-new-fail-closed-contract | Session-new documentation omits the bare-process fail-closed path | story | — | 5e8ecccf8 |
+| gate-patterns-v0.11.1 | Patterns extracted for v0.11.1 | story | — | 5e8ecccf8 |
+| gate-refactor-lifecycle-bare-session-new-exit-teardown | Bare `/new` exit bypasses lifecycle-owned runtime teardown | story | — | 5e8ecccf8 |
+| gate-tests-bare-session-new-real-pi-host | Exercise bare mobile session replacement through Pi's installed host runtime | story | — | 5e8ecccf8 |
+| story-background-state-surface-v2 | Background-state surface v2: text bar + simplified dot + honest label | story | — | 5e8ecccf8 |
+| story-fix-new-wedge-bare-pi | Mobile /new on a bare pi must complete in-process — never the half-dead wedge | story | — | 5e8ecccf8 |
+| story-orchestrating-room-tile-dot | Room tile: pulsing-blue orchestrating dot (from parked UAT feedback) | story | — | 5e8ecccf8 |
