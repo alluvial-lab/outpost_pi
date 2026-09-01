@@ -124,6 +124,21 @@ operator-owned public releases roll out:
 
 ---
 
+## Feature dependencies
+
+Most of what the extension does is self-contained. These features depend on
+something outside the extension itself — install accordingly:
+
+| Feature | Requires | Behavior without it |
+|---|---|---|
+| Background-work status (`background` room meta → the app's `background work` tile bar and `background…` chip; hot-reload deferral while background work runs) | **`@gotgenes/pi-subagents`** (third-party pi package; pi has no native subagents). The signal sources its `subagents:*` lifecycle events on the pi event bus. | Fail-quiet: the tracker subscribes to channels nobody emits — no `background` is ever published, the app shows no background state, nothing errors. Note the deferral and the status share the source: without the package, hot reload also never defers. |
+| Background shell work lighting the same status | Nothing yet — a `background-tasks`-style extension joining the `background` field is a planned extension point, not wired today. | Background shell work does not show in the app. |
+| Mobile `/new` auto-relaunch | The restart wrapper (`scripts/pi-restart-loop.sh`) or the daemon supervisor owning the process. | Bare pis replace in-process when a command context exists, else exit fail-closed (nothing relaunches them) — see [`PROTOCOL.md`](../PROTOCOL.md) `session_new`. |
+| Pair-code clipboard copy | An OSC 52-capable terminal (virtually all modern ones, incl. over SSH). | The dialog shows a copy-failed state; the URI is still displayed. |
+| Android stale-IME recovery | Nothing extra — built-in platform channel (needs the app, minSdk 34). | — |
+
+---
+
 ## Mobile app actions
 
 Beyond the chat, the app surfaces a small set of typed actions you can run
