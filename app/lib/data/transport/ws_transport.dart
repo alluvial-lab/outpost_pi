@@ -86,6 +86,11 @@ const int maxPendingWsInboundBytes = 8 * 1024 * 1024;
 const int _wsOverflowAuditSummaryEvents = 100;
 const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
 
+String? _categorizeCloseReason(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  return 'present';
+}
+
 /// Carry peer envelopes and relay control frames over one authenticated WebSocket.
 ///
 /// [connect] completes only after a validated post-auth relay frame proves
@@ -98,7 +103,8 @@ class WsTransport
         PeerTransport,
         PeerTransportCloseSignal,
         IControlLink,
-        IActiveRoomTarget {
+        IActiveRoomTarget,
+        IChannelCloseDiagnostics {
   final WebSocketChannel _ws;
   final DebugLog? _debugLog;
   late final WsInboundMessageQueue _queue;
@@ -108,6 +114,7 @@ class WsTransport
   int _droppedQueueBytes = 0;
   bool _queueOverflowAuditEmitted = false;
   bool _closed = false;
+  ChannelCloseDetails? _closeDetails;
   Timer? _queueOverflowAuditTimer;
   ConnectionCancellation? _connectCancellation;
   ConnectionCancellationListener? _connectCancellationListener;
@@ -335,6 +342,7 @@ class WsTransport
         }
       },
       onError: (e) {
+        transport._recordStreamError(e);
         if (!challengeCompleter.isCompleted) {
           challengeCompleter.completeError(e);
         }
@@ -349,6 +357,7 @@ class WsTransport
         }
       },
       onDone: () {
+        transport._recordStreamDone();
         if (!challengeCompleter.isCompleted) {
           challengeCompleter.completeError(
             const WsTransportError(
@@ -375,8 +384,13 @@ class WsTransport
     );
 
     Future<void>? connectCleanup;
-    Future<void> closeConnectResources() => connectCleanup ??=
-        settleWsCleanupForTesting([() => sub.cancel(), () => ws.sink.close()]);
+    Future<void> closeConnectResources(ChannelLocalClosePath path) {
+      transport._recordLocalClose(path);
+      return connectCleanup ??= settleWsCleanupForTesting([
+        () => sub.cancel(),
+        () => ws.sink.close(),
+      ]);
+    }
 
     Future<void> cancelConnect() async {
       cancelled = true;
@@ -391,10 +405,12 @@ class WsTransport
         );
       }
       if (handedOff) {
-        await transport.close();
+        await transport.closeWithPath(
+          ChannelLocalClosePath.connectCancellation,
+        );
         return;
       }
-      await closeConnectResources();
+      await closeConnectResources(ChannelLocalClosePath.connectCancellation);
     }
 
     void throwIfCancelled() {
@@ -458,7 +474,11 @@ class WsTransport
       handedOff = true;
       return transport;
     } catch (e) {
-      await closeConnectResources();
+      await closeConnectResources(
+        cancelled
+            ? ChannelLocalClosePath.connectCancellation
+            : ChannelLocalClosePath.connectFailureCleanup,
+      );
       rethrow;
     } finally {
       if (!handedOff) {
@@ -511,6 +531,45 @@ class WsTransport
   }
 
   @override
+  ChannelCloseDetails? get closeDetails => _closeDetails;
+
+  void _recordStreamError(Object error) {
+    if (_closeDetails != null) return;
+    final inner = error is WebSocketChannelException && error.inner != null
+        ? error.inner!
+        : error;
+    _closeDetails = ChannelCloseDetails(
+      origin: ChannelCloseOrigin.streamError,
+      closeCode: _ws.closeCode,
+      closeReason: _categorizeCloseReason(_ws.closeReason),
+      errorType: inner.runtimeType.toString(),
+    );
+  }
+
+  void _recordStreamDone() {
+    if (_closeDetails != null) return;
+    final code = _ws.closeCode;
+    final hasRemoteCloseFrame =
+        code != null &&
+        code != WebSocketStatus.noStatusReceived &&
+        code != WebSocketStatus.abnormalClosure;
+    _closeDetails = ChannelCloseDetails(
+      origin: hasRemoteCloseFrame
+          ? ChannelCloseOrigin.serverCloseFrame
+          : ChannelCloseOrigin.streamDone,
+      closeCode: code,
+      closeReason: _categorizeCloseReason(_ws.closeReason),
+    );
+  }
+
+  void _recordLocalClose(ChannelLocalClosePath path) {
+    _closeDetails ??= ChannelCloseDetails(
+      origin: ChannelCloseOrigin.localClose,
+      localPath: path,
+    );
+  }
+
+  @override
   Future<void> get transportClosed => _transportClosedCompleter.future;
 
   /// Active target room on the Pi side. The outer envelope embeds this so
@@ -558,7 +617,11 @@ class WsTransport
   // -------------------------------------------------------------------------
 
   @override
-  Future<void> close() async {
+  Future<void> close() => closeWithPath(ChannelLocalClosePath.unspecified);
+
+  @override
+  Future<void> closeWithPath(ChannelLocalClosePath path) async {
+    _recordLocalClose(path);
     if (_closed) return;
     _closed = true;
     final cancellation = _connectCancellation;

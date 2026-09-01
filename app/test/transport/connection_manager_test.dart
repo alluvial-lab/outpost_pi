@@ -797,6 +797,62 @@ void main() {
     );
 
     test(
+      'late racing socket cannot supersede the authenticated winner',
+      () async {
+        const convergenceTimeout = Duration(seconds: 5);
+        final relay = await _FakeAuthRelay.start(
+          autoCompleteFromAuth: 2,
+          replaceOnAdmission: true,
+        );
+        addTearDown(relay.close);
+        final ownerKey = await Ed25519().newKeyPair();
+        final initial = _ControllableChannel();
+        var calls = 0;
+        final cm = ConnectionManager(
+          factory: (_, token) async {
+            calls++;
+            if (calls == 1) return initial;
+            final transport = await WsTransport.connect(
+              relayUrl: relay.url,
+              peerPubkey: 'cGVlcg==',
+              ed25519Key: ownerKey,
+              deviceId: 'hedge-winning-socket-survives',
+              cancellation: token,
+            );
+            return PlainPeerChannel(transport: transport);
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 20),
+        );
+        addTearDown(cm.dispose);
+
+        await cm.connectTo(_fakePeer());
+        await initial.closeStream();
+        await relay.waitForAuthCount(2).timeout(convergenceTimeout);
+        await cm.statusStream
+            .where((status) => status is StatusOnline)
+            .first
+            .timeout(convergenceTimeout);
+        final winningChannel = cm.channel;
+
+        expect(relay.admittedIndexes, [2]);
+        expect(relay.socketIsOpen(2), isTrue);
+
+        // Model delayed relay handling after the losing socket already sent
+        // auth. Cancellation must have closed that transport, so releasing its
+        // handler cannot register it and evict the adopted winner.
+        relay.completeAuth(1);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        expect(relay.admittedIndexes, [2]);
+        expect(relay.socketIsOpen(2), isTrue);
+        expect(cm.channel, same(winningChannel));
+        expect(cm.status, isA<StatusOnline>());
+      },
+    );
+
+    test(
       'fallback adoption survives primary cancellation cleanup failure',
       () async {
         final initial = _ControllableChannel();
@@ -1718,15 +1774,24 @@ class _ControllableChannel
 }
 
 class _FakeAuthRelay {
-  _FakeAuthRelay._(this._server, this._autoCompleteFromAuth, this._ordering);
+  _FakeAuthRelay._(
+    this._server,
+    this._autoCompleteFromAuth,
+    this._ordering,
+    this._replaceOnAdmission,
+  );
 
   final HttpServer _server;
   final int? _autoCompleteFromAuth;
   final List<String>? _ordering;
+  final bool _replaceOnAdmission;
   final List<WebSocket> _sockets = [];
+  final Map<int, WebSocket> _authenticatedSockets = {};
   final Map<int, Completer<void>> _authReleases = {};
   final Map<int, Completer<void>> _socketCloses = {};
   final StreamController<int> _authCounts = StreamController<int>.broadcast();
+  final List<int> admittedIndexes = [];
+  WebSocket? _incumbent;
   int authCount = 0;
 
   String get url => 'ws://${_server.address.host}:${_server.port}';
@@ -1734,9 +1799,15 @@ class _FakeAuthRelay {
   static Future<_FakeAuthRelay> start({
     int? autoCompleteFromAuth,
     List<String>? ordering,
+    bool replaceOnAdmission = false,
   }) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final relay = _FakeAuthRelay._(server, autoCompleteFromAuth, ordering);
+    final relay = _FakeAuthRelay._(
+      server,
+      autoCompleteFromAuth,
+      ordering,
+      replaceOnAdmission,
+    );
     server.listen((request) async {
       final socket = await WebSocketTransformer.upgrade(request);
       relay._sockets.add(socket);
@@ -1768,6 +1839,7 @@ class _FakeAuthRelay {
         stage = 2;
         final index = ++authCount;
         authenticatedIndex = index;
+        _authenticatedSockets[index] = socket;
         _ordering?.add('auth:$index');
         _authCounts.add(authCount);
         _socketCloses.putIfAbsent(index, Completer<void>.new);
@@ -1776,12 +1848,20 @@ class _FakeAuthRelay {
           release.complete();
         }
         unawaited(
-          release.future.then((_) {
-            if (socket.readyState == WebSocket.open) {
-              socket.add(
-                jsonEncode({'type': 'presence', 'states': <Object>[]}),
-              );
+          release.future.then((_) async {
+            if (socket.readyState != WebSocket.open) return;
+            if (_replaceOnAdmission) {
+              final incumbent = _incumbent;
+              if (incumbent != null &&
+                  !identical(incumbent, socket) &&
+                  incumbent.readyState == WebSocket.open) {
+                await incumbent.close(1008, 'relay_same_device_superseded');
+              }
+              if (socket.readyState != WebSocket.open) return;
+              _incumbent = socket;
             }
+            admittedIndexes.add(index);
+            socket.add(jsonEncode({'type': 'presence', 'states': <Object>[]}));
           }),
         );
       },
@@ -1818,6 +1898,9 @@ class _FakeAuthRelay {
 
   Future<void> waitForSocketClose(int index) =>
       _socketCloses.putIfAbsent(index, Completer<void>.new).future;
+
+  bool socketIsOpen(int index) =>
+      _authenticatedSockets[index]?.readyState == WebSocket.open;
 
   Future<void> close() async {
     for (final release in _authReleases.values) {

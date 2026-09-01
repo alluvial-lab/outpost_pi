@@ -1,5 +1,72 @@
 import 'package:app/protocol/protocol.dart';
 
+/// Attribute the first event that made a channel unusable.
+enum ChannelCloseOrigin {
+  serverCloseFrame,
+  streamError,
+  streamDone,
+  localClose,
+  unknown,
+}
+
+/// Name locally initiated close paths without retaining free-form labels.
+enum ChannelLocalClosePath {
+  unspecified,
+  connectCancellation,
+  connectFailureCleanup,
+  managerAdoptReplacement,
+  managerDisconnect,
+  managerDispose,
+  managerConnectReplacement,
+  connectSupersededAfterFactory,
+  connectLateCompletion,
+  hedgeLoser,
+  secureOutboundOverflow,
+  secureSequenceExhausted,
+  securePersistenceFailure,
+  secureInvalidFrameThreshold,
+  secureTransportCleanup,
+}
+
+/// Carry content-free WebSocket closure evidence through channel adapters.
+final class ChannelCloseDetails {
+  const ChannelCloseDetails({
+    required this.origin,
+    this.closeCode,
+    this.closeReason,
+    this.localPath,
+    this.errorType,
+  });
+
+  final ChannelCloseOrigin origin;
+  final int? closeCode;
+  final String? closeReason;
+  final ChannelLocalClosePath? localPath;
+  final String? errorType;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChannelCloseDetails &&
+      other.origin == origin &&
+      other.closeCode == closeCode &&
+      other.closeReason == closeReason &&
+      other.localPath == localPath &&
+      other.errorType == errorType;
+
+  @override
+  int get hashCode =>
+      Object.hash(origin, closeCode, closeReason, localPath, errorType);
+}
+
+/// Expose causative close evidence and path-attributed local teardown.
+abstract interface class IChannelCloseDiagnostics {
+  /// Return the first recorded close cause, or null while the channel is live.
+  ChannelCloseDetails? get closeDetails;
+
+  /// Close locally while recording the owning lifecycle path.
+  Future<void> closeWithPath(ChannelLocalClosePath path);
+}
+
 /// Exchange typed app/Pi messages while exposing explicit stream ownership.
 ///
 /// The channel owner must call [close] to release the underlying transport and

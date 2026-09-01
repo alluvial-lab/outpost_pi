@@ -194,6 +194,26 @@ class _FakeChannel implements IChannel, IControlLink {
   void pushControl(ControlInbound frame) => _control.add(frame);
 }
 
+class _DiagnosticChannel extends _FakeChannel
+    implements IChannelCloseDiagnostics {
+  @override
+  ChannelCloseDetails? closeDetails;
+
+  @override
+  Future<void> closeWithPath(ChannelLocalClosePath path) async {
+    closeDetails ??= ChannelCloseDetails(
+      origin: ChannelCloseOrigin.localClose,
+      localPath: path,
+    );
+    await close();
+  }
+
+  Future<void> lose(ChannelCloseDetails details) async {
+    closeDetails = details;
+    await close();
+  }
+}
+
 /// A room-aware channel that records active-room propagation.
 class _FailingCloseChannel extends _FakeChannel {
   @override
@@ -222,6 +242,60 @@ Future<({ConnectionManager conn, _FakeChannel channel})> _connected() async {
 Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 5));
 
 void main() {
+  test('channel loss event carries transport close attribution', () async {
+    final log = _RecordingDebugLog();
+    final channel = _DiagnosticChannel();
+    final conn = ConnectionManager(
+      factory: (_, _) async => _FakeChannel(),
+      storage: _FakeStorage(),
+      debugLog: log,
+    );
+    conn.adopt(channel, _peer);
+
+    await channel.lose(
+      const ChannelCloseDetails(
+        origin: ChannelCloseOrigin.serverCloseFrame,
+        closeCode: 4001,
+        closeReason: 'present',
+      ),
+    );
+    await _settle();
+
+    final event = log.events.whereType<ConnChannelLostEvent>().single.toJson();
+    expect(event['cause'], 'channelDone');
+    expect(event['closeOrigin'], 'serverCloseFrame');
+    expect(event['closeCode'], 4001);
+    expect(event['closeReason'], 'present');
+    expect(event['closePath'], 'none');
+    conn.dispose();
+  });
+
+  test('channel loss event carries the local close owner path', () async {
+    final log = _RecordingDebugLog();
+    final channel = _DiagnosticChannel();
+    final conn = ConnectionManager(
+      factory: (_, _) async => _FakeChannel(),
+      storage: _FakeStorage(),
+      debugLog: log,
+    );
+    conn.adopt(channel, _peer);
+
+    await channel.lose(
+      const ChannelCloseDetails(
+        origin: ChannelCloseOrigin.localClose,
+        localPath: ChannelLocalClosePath.connectCancellation,
+      ),
+    );
+    await _settle();
+
+    final event = log.events.whereType<ConnChannelLostEvent>().single.toJson();
+    expect(event['closeOrigin'], 'localClose');
+    expect(event['closePath'], 'connectCancellation');
+    expect(event['closeCode'], isNull);
+    expect(event['closeReason'], 'none');
+    conn.dispose();
+  });
+
   group('ConnectionManager semantic room changes', () {
     test(
       'classifies presentation, session, fresh-live, and duplicate edges',

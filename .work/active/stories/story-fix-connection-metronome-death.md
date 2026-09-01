@@ -37,19 +37,29 @@ release build, 22h span) shows the underlying disease:
 - pi-side delivery.log healthy throughout (message delivered to the
   NextUp session; turn committed).
 
-## Unknown (the blocking gap)
+## Current diagnosis (instrumentation stride 2026-09-01)
 
-WHO closes the socket. Both sides see the close nearly simultaneously;
-the relay logs nothing at close (INFO+debug level) — no relay-initiated
-reason. The app ring records `channelDone` WITHOUT the WebSocket close
-code/detail. Candidates, ranked:
-1. **Client self-close from racing connection paths** — resume/reconnect
-   ladder supersession opening duplicate sockets (the two auth-phase
-   failures are racing sockets being rejected); a stale-supersession bug
-   could close the WINNER.
-2. Intermediary cut (tailscale path / docker port-forward idle) —
-   weakened by the send-correlation and 13s median.
-3. Relay-initiated close without logging — no evidence, lowest.
+The historic capture cannot identify who closed the socket: the app recorded
+only `channelDone`, and the relay did not attribute its close branches. No
+behavioral fix is justified from that evidence alone.
+
+Code reading and a real-WebSocket interleaving harness changed the candidate
+ranking:
+
+1. **Relay outbound-mailbox saturation is plausible but unproven.** Each
+   connection has a 16-frame bounded mailbox
+   (`relay/src/resource_limits.rs`); one `try_send(Full)` requests immediate
+   disconnect (`relay/src/peers/connections.rs`). That close branch previously
+   had no per-connection log. Send-correlated room/working/turn bursts can
+   exercise this path, but the old relay capture cannot prove that it did.
+2. **Intermediary transport loss remains plausible.** A content-free stream
+   error/done with no same-time relay close row will isolate this branch.
+3. **The late racing-socket hypothesis is now deprioritized for the exercised
+   sequence.** The transport-seam regression opens two real sockets, admits
+   the fallback winner, releases the delayed loser's auth handling, and proves
+   that the loser was already closed and cannot evict the winner. This does not
+   prove every Android lifecycle interleaving safe, but it falsifies the
+   leading concrete winner-gets-closed sequence.
 
 ## Fix approach (two strides, instrumentation FIRST)
 
@@ -65,10 +75,59 @@ code/detail. Candidates, ranked:
 3. Re-run the operator repro loop (send → 30s window) to confirm
    connection stability and turn acquisition.
 
+## Instrumentation delivered
+
+- `WsTransport` records the first close cause: close-frame vs stream error vs
+  content-free stream completion vs local close, including WebSocket close
+  code, a reason presence/absence category, runtime error type, and the exact
+  local lifecycle path.
+- `PlainPeerChannel`/`SecurePeerChannel` preserve that evidence through the
+  transport seam; `ConnectionManager` writes it into every observed
+  `connChannelLost` row as `closeOrigin`, `closeCode`, `closeReason`,
+  `closePath`, and optional `errorType`.
+- Server reason text is reduced to `present`/`none`; no payload or arbitrary
+  exception text enters the debug ring.
+- Relay-initiated mailbox saturation, same-device supersession, and Pi-forward
+  rate-limit closes now emit structured close-origin/reason rows with
+  peer/room/connection attribution.
+- Focused local harnesses cover remote close metadata, reason scrubbing,
+  local-path attribution, manager-event projection, and the racing-socket
+  winner-survival sequence.
+
+## Next conclusive repro
+
+1. Deploy the instrumented app and relay together with `RUST_LOG=relay=debug`;
+   do not change reconnect timing or mailbox limits.
+2. Run the operator loop (open chat, send, leave foreground, wait at least 45s)
+   until one loss, then export the app capture and the matching relay log
+   window.
+3. Classify the first non-stale loss:
+   - `closeOrigin=localClose`: `closePath` names the app owner that killed it.
+   - `closeOrigin=serverCloseFrame`: use the code/reason-presence category and
+     the same-time relay close row.
+   - matching relay `close_reason=relay_outbound_mailbox_saturated`: reproduce
+     queue pressure and fix the producer/backpressure path, not the capacity by
+     guesswork.
+   - matching `relay_same_device_superseded`: correlate the new connection's
+     auth row and extend the seam harness to that exact lifecycle ordering.
+   - `streamDone`/`streamError` with no matching relay-close row: capture the
+     Tailscale/docker network path and inspect the close code/error category.
+4. Only after one branch is named from that evidence, add the minimal behavior
+   fix, rerun the repro, and advance this story to review.
+
+## Verification (instrumentation stride)
+
+- `flutter analyze` — pass.
+- `flutter test --exclude-tags e2e` — 1,012 passed.
+- `cargo fmt --check && cargo clippy -- -D warnings` — pass.
+- `cargo test` — 235 passed across unit/integration suites.
+
 ## Acceptance criteria
 
-- Instrumentation: connChannelLost rows carry close code/reason/origin.
-- Root cause named with instrumented evidence (file:line).
-- Fix + regression test; `flutter analyze && flutter test --exclude-tags
-  e2e` green; relay touched only if the evidence lands there
-  (`cargo fmt --check && cargo clippy -- -D warnings && cargo test`).
+- [x] Instrumentation: connChannelLost rows carry close
+  code/reason/origin/path.
+- [ ] Root cause named with instrumented evidence (file:line).
+- [ ] Minimal fix confirmed by the operator repro.
+- [x] Transport-seam test proves the winning racing socket survives.
+- [ ] `flutter analyze && flutter test --exclude-tags e2e` green after the
+  final fix; relay checks green if relay remains touched.
