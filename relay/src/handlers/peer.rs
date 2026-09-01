@@ -21,7 +21,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::handshake::server::create_response_with_body;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Role, WebSocketConfig};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::AppState;
 use crate::auth::challenge::{challenge_line, gen_nonce, parse_hello_bootstrap, verify_auth};
@@ -34,6 +34,10 @@ use crate::resource_limits::{
 
 pub use crate::resource_limits::{MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW, MAX_CONTROL_FRAME_PEERS};
 type PeerWebSocket = WebSocketStream<PreAuthGuard<TokioIo<hyper::upgrade::Upgraded>>>;
+
+const CLOSE_OUTBOUND_MAILBOX_SATURATED: &str = "relay_outbound_mailbox_saturated";
+const CLOSE_SAME_DEVICE_SUPERSEDED: &str = "relay_same_device_superseded";
+const CLOSE_PI_FORWARD_RATE_LIMITED: &str = "relay_pi_forward_rate_limited";
 
 /// Validate and upgrade a peer WebSocket with pre-authentication admission.
 ///
@@ -149,7 +153,8 @@ async fn handle_peer(
         info!(
             peer = %peer_short,
             room = %room_id,
-            closed = registration.superseded_same_device_conn_ids.len(),
+            conn_id = %registration.conn_id,
+            superseded_conn_ids = ?registration.superseded_same_device_conn_ids,
             "duplicate auth from same device; closed prior conn(s)"
         );
     }
@@ -190,6 +195,14 @@ async fn handle_peer(
             _ = registration.disconnect.cancelled() => {
                 // A bounded mailbox dropped an update. Disconnect so this
                 // recipient rehydrates authoritative state on reconnect.
+                debug!(
+                    peer = %peer_short,
+                    room = %room_id,
+                    conn_id = %registration.conn_id,
+                    close_origin = "relay",
+                    close_reason = CLOSE_OUTBOUND_MAILBOX_SATURATED,
+                    "relay initiated peer socket close"
+                );
                 break;
             }
             item = stream.next() => {
@@ -224,7 +237,17 @@ async fn handle_peer(
 
                         match actor.dispatch(frame).await {
                             ActorDispatch::Continue => {}
-                            ActorDispatch::Close => break,
+                            ActorDispatch::Close => {
+                                debug!(
+                                    peer = %peer_short,
+                                    room = %room_id,
+                                    conn_id = %registration.conn_id,
+                                    close_origin = "relay",
+                                    close_reason = CLOSE_PI_FORWARD_RATE_LIMITED,
+                                    "relay initiated peer socket close"
+                                );
+                                break;
+                            },
                             ActorDispatch::Send(text) => {
                                 if sink.send(Message::text(text)).await.is_err() {
                                     break;
@@ -248,7 +271,17 @@ async fn handle_peer(
                             break;
                         }
                     }
-                    None => break,
+                    None => {
+                        debug!(
+                            peer = %peer_short,
+                            room = %room_id,
+                            conn_id = %registration.conn_id,
+                            close_origin = "relay",
+                            close_reason = CLOSE_SAME_DEVICE_SUPERSEDED,
+                            "relay initiated peer socket close"
+                        );
+                        break;
+                    },
                 }
             }
             _ = heartbeat.tick() => {

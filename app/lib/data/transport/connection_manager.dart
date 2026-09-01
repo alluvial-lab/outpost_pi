@@ -632,7 +632,10 @@ class ConnectionManager extends Service {
     _controlSub?.cancel();
     _controlSub = null;
     if (_status is StatusOnline) {
-      _closeBestEffort((_status as StatusOnline).channel);
+      _closeBestEffort(
+        (_status as StatusOnline).channel,
+        path: ChannelLocalClosePath.managerAdoptReplacement,
+      );
     }
     _reachability.onRelayConnectionEstablished();
     _activePeer = peer;
@@ -671,7 +674,12 @@ class ConnectionManager extends Service {
     _controlSub?.cancel();
     _controlSub = null;
     if (_status is StatusOnline) {
-      await (_status as StatusOnline).channel.close();
+      await _closeOwned(
+        (_status as StatusOnline).channel,
+        peerTail: _peerTail(_activePeer?.remoteEpk),
+        room: _activeRoomId,
+        path: ChannelLocalClosePath.managerDisconnect,
+      );
     }
     _reachability.onStopRequested();
     if (emitNoPeer) {
@@ -710,7 +718,10 @@ class ConnectionManager extends Service {
     _controlSub = null;
     final active = _status;
     if (active is StatusOnline) {
-      _closeBestEffort(active.channel);
+      _closeBestEffort(
+        active.channel,
+        path: ChannelLocalClosePath.managerDispose,
+      );
     }
     _reachability.onStopRequested();
     _statusController.close();
@@ -755,7 +766,12 @@ class ConnectionManager extends Service {
         _channelSub = null;
         _controlSub?.cancel();
         _controlSub = null;
-        await active.channel.close();
+        await _closeOwned(
+          active.channel,
+          peerTail: _peerTail(_activePeer?.remoteEpk),
+          room: _activeRoomId,
+          path: ChannelLocalClosePath.managerConnectReplacement,
+        );
         if (_disposed || generation != _connectGeneration) return;
       }
       await _performConnect(peer);
@@ -832,6 +848,7 @@ class ConnectionManager extends Service {
             lateChannel,
             peerTail: _peerTail(peer.remoteEpk),
             room: _activeRoomId,
+            path: ChannelLocalClosePath.connectLateCompletion,
           );
         }, onError: (Object _, StackTrace _) {}),
       );
@@ -841,7 +858,12 @@ class ConnectionManager extends Service {
       ]);
       supervisorSettled = true;
       if (token.isCancelled) {
-        await ch.close();
+        await _closeOwned(
+          ch,
+          peerTail: _peerTail(peer.remoteEpk),
+          room: _activeRoomId,
+          path: ChannelLocalClosePath.connectSupersededAfterFactory,
+        );
         return;
       }
       _reachability.onRelayConnectionEstablished();
@@ -928,6 +950,7 @@ class ConnectionManager extends Service {
                 channel,
                 peerTail: _peerTail(peer.remoteEpk),
                 room: _activeRoomId,
+                path: ChannelLocalClosePath.hedgeLoser,
               );
               if (ownerToken.isCancelled && !winner.isCompleted) {
                 winner.completeError(const _ConnectSuperseded());
@@ -939,6 +962,7 @@ class ConnectionManager extends Service {
                 channel,
                 peerTail: _peerTail(peer.remoteEpk),
                 room: _activeRoomId,
+                path: ChannelLocalClosePath.hedgeLoser,
               );
               return;
             }
@@ -954,6 +978,7 @@ class ConnectionManager extends Service {
                 channel,
                 peerTail: _peerTail(peer.remoteEpk),
                 room: _activeRoomId,
+                path: ChannelLocalClosePath.hedgeLoser,
               );
               if (!winner.isCompleted) {
                 winner.completeError(const _ConnectSuperseded());
@@ -2007,26 +2032,10 @@ class ConnectionManager extends Service {
       // relay typically kicks the previous WS when our retry authenticates
       // again — that close would otherwise trigger an immediate
       // self-sustaining retry loop.
-      _logDebug(
-        ConnChannelLostEvent(
-          ts: DateTime.now(),
-          peerTail: _peerTail(peer.remoteEpk),
-          room: _activeRoomId,
-          stale: true,
-          cause: cause,
-        ),
-      );
+      _logDebug(_channelLostEvent(peer, ch, stale: true, cause: cause));
       return;
     }
-    _logDebug(
-      ConnChannelLostEvent(
-        ts: DateTime.now(),
-        peerTail: _peerTail(peer.remoteEpk),
-        room: _activeRoomId,
-        stale: false,
-        cause: cause,
-      ),
-    );
+    _logDebug(_channelLostEvent(peer, ch, stale: false, cause: cause));
     _cancelPing();
     _reachability.onTransportClosed();
     // A transport-loss edge can arrive while the platform socket is still
@@ -2038,6 +2047,29 @@ class ConnectionManager extends Service {
       peer,
       failureKind: classifyWsTransportFailure(error),
       countFailure: true,
+    );
+  }
+
+  ConnChannelLostEvent _channelLostEvent(
+    PeerRecord peer,
+    IChannel channel, {
+    required bool stale,
+    required ReconnectCause cause,
+  }) {
+    final details = channel is IChannelCloseDiagnostics
+        ? (channel as IChannelCloseDiagnostics).closeDetails
+        : null;
+    return ConnChannelLostEvent(
+      ts: DateTime.now(),
+      peerTail: _peerTail(peer.remoteEpk),
+      room: _activeRoomId,
+      stale: stale,
+      cause: cause,
+      closeOrigin: details?.origin.name ?? ChannelCloseOrigin.unknown.name,
+      closeCode: details?.closeCode,
+      closeReason: details?.closeReason,
+      closePath: details?.localPath?.name,
+      errorType: details?.errorType,
     );
   }
 
@@ -2099,19 +2131,27 @@ class ConnectionManager extends Service {
     }
   }
 
-  void _closeBestEffort(IChannel channel) {
+  void _closeBestEffort(
+    IChannel channel, {
+    required ChannelLocalClosePath path,
+  }) {
     final peerTail = _peerTail(_activePeer?.remoteEpk);
     final room = _activeRoomId;
-    unawaited(_closeOwned(channel, peerTail: peerTail, room: room));
+    unawaited(_closeOwned(channel, peerTail: peerTail, room: room, path: path));
   }
 
   Future<void> _closeOwned(
     IChannel channel, {
     String? peerTail,
     String? room,
+    required ChannelLocalClosePath path,
   }) async {
     try {
-      await channel.close();
+      if (channel is IChannelCloseDiagnostics) {
+        await (channel as IChannelCloseDiagnostics).closeWithPath(path);
+      } else {
+        await channel.close();
+      }
     } on Object catch (error) {
       _logLifecycleFailure(
         LifecycleOperation.channelClose,

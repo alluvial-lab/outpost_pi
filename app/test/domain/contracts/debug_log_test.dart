@@ -26,7 +26,17 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
   DebugTag.sessionGate: {'messageType', 'reason', 'sessionIdTail'},
   DebugTag.sessionSync: {},
   DebugTag.connStatus: {'status', 'attempt', 'delayMs', 'peerTail', 'room'},
-  DebugTag.connChannelLost: {'stale', 'cause', 'peerTail', 'room'},
+  DebugTag.connChannelLost: {
+    'stale',
+    'cause',
+    'closeOrigin',
+    'closeCode',
+    'closeReason',
+    'closePath',
+    'errorType',
+    'peerTail',
+    'room',
+  },
   DebugTag.connHydrate: {'action', 'room', 'snapshotCount'},
   DebugTag.roomSnapshot: {'room', 'presenceCount', 'working'},
   DebugTag.workingConv: {'room', 'working', 'reason'},
@@ -156,6 +166,11 @@ void main() {
         room: huge,
         stale: true,
         cause: ReconnectCause.channelDone,
+        closeOrigin: huge,
+        closeCode: 4001,
+        closeReason: huge,
+        closePath: huge,
+        errorType: huge,
       ),
       ConnChannelLostEvent(
         ts: now,
@@ -329,6 +344,7 @@ void main() {
     expect(staleTrue.toJson()['stale'], isTrue);
     expect(staleFalse.toJson()['stale'], isFalse);
     expect(staleTrue.toJson()['cause'], 'unknown');
+    expect(staleTrue.toJson()['closeOrigin'], 'unknown');
   });
 
   test('new queue and route events serialize bounded diagnostic shapes', () {

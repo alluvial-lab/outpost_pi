@@ -29,7 +29,12 @@ class PeerChannelError implements Exception {
 ///
 /// Starts receiving on the first server-message subscription, forwards unknown
 /// wire types as typed errors, and owns transport/controller closure.
-class PlainPeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
+class PlainPeerChannel
+    implements
+        IChannel,
+        IControlLink,
+        IActiveRoomTarget,
+        IChannelCloseDiagnostics {
   final PeerTransport _transport;
   final DebugLog? _debugLog;
 
@@ -84,10 +89,23 @@ class PlainPeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
   }
 
   @override
-  Future<void> close() async {
+  ChannelCloseDetails? get closeDetails =>
+      _transport is IChannelCloseDiagnostics
+      ? (_transport as IChannelCloseDiagnostics).closeDetails
+      : null;
+
+  @override
+  Future<void> close() => closeWithPath(ChannelLocalClosePath.unspecified);
+
+  @override
+  Future<void> closeWithPath(ChannelLocalClosePath path) async {
     if (_closed) return;
     _closed = true;
-    await _transport.close();
+    if (_transport case final IChannelCloseDiagnostics diagnostic) {
+      await diagnostic.closeWithPath(path);
+    } else {
+      await _transport.close();
+    }
     if (!_controller.isClosed) await _controller.close();
   }
 
@@ -168,7 +186,12 @@ const int maxPendingOwnerOutboundBytes = 16 * 1024 * 1024;
 /// session sync recover instead of silently dropping a streaming suffix.
 /// Invalid inbound frames are dropped and audited; five consecutive failures
 /// close the transport so recovery cannot downgrade to plaintext.
-class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
+class SecurePeerChannel
+    implements
+        IChannel,
+        IControlLink,
+        IActiveRoomTarget,
+        IChannelCloseDiagnostics {
   SecurePeerChannel({
     required PeerTransport transport,
     required PairingStorage storage,
@@ -288,14 +311,14 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
   }
 
   Future<void> _closeForOutboundOverflow() async {
-    await close();
+    await closeWithPath(ChannelLocalClosePath.secureOutboundOverflow);
     throw const PeerChannelError('owner-channel outbound queue overflow');
   }
 
   Future<void> _sendOne(String json) async {
     if (_closed) throw const PeerChannelError('channel is closed');
     if (_sendSequence == 0x7fffffffffffffff) {
-      await close();
+      await closeWithPath(ChannelLocalClosePath.secureSequenceExhausted);
       throw const PeerChannelError('owner-channel sequence exhausted');
     }
     final next = _sendSequence + 1;
@@ -310,7 +333,7 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     try {
       await _persistState();
     } on Object {
-      await close();
+      await closeWithPath(ChannelLocalClosePath.securePersistenceFailure);
       rethrow;
     }
     if (_closed) throw const PeerChannelError('channel is closed');
@@ -325,7 +348,7 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
       }
     } on Object {
       if (!_closed) {
-        await close();
+        await closeWithPath(ChannelLocalClosePath.securePersistenceFailure);
       } else if (!_controller.isClosed) {
         await _controller.close();
       }
@@ -379,7 +402,9 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
       ),
     );
     _consecutiveFailures++;
-    if (_consecutiveFailures >= _failureThreshold) await close();
+    if (_consecutiveFailures >= _failureThreshold) {
+      await closeWithPath(ChannelLocalClosePath.secureInvalidFrameThreshold);
+    }
   }
 
   Future<void> _persistState() {
@@ -401,7 +426,13 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     _closed = true;
     if (!_controller.isClosed) await _controller.close();
     try {
-      await _transport.close();
+      if (_transport case final IChannelCloseDiagnostics diagnostic) {
+        await diagnostic.closeWithPath(
+          ChannelLocalClosePath.secureTransportCleanup,
+        );
+      } else {
+        await _transport.close();
+      }
     } on Object {
       // The close signal already established transport loss. Cleanup is
       // best-effort and must not hide the channel-facing close event.
@@ -409,11 +440,24 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
   }
 
   @override
-  Future<void> close() async {
+  ChannelCloseDetails? get closeDetails =>
+      _transport is IChannelCloseDiagnostics
+      ? (_transport as IChannelCloseDiagnostics).closeDetails
+      : null;
+
+  @override
+  Future<void> close() => closeWithPath(ChannelLocalClosePath.unspecified);
+
+  @override
+  Future<void> closeWithPath(ChannelLocalClosePath path) async {
     if (_closed) return;
     _closed = true;
     try {
-      await _transport.close();
+      if (_transport case final IChannelCloseDiagnostics diagnostic) {
+        await diagnostic.closeWithPath(path);
+      } else {
+        await _transport.close();
+      }
     } finally {
       if (!_controller.isClosed) await _controller.close();
     }

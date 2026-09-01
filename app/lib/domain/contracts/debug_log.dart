@@ -355,12 +355,17 @@ enum ReconnectCause {
   simulated,
 }
 
-/// Channel-lost transition with a closed cause attribution.
+/// Channel-lost transition with content-free transport attribution.
 final class ConnChannelLostEvent extends DebugEvent {
   final String? peerTail;
   final String? room;
   final bool stale;
   final ReconnectCause cause;
+  final String closeOrigin;
+  final int? closeCode;
+  final String? closeReason;
+  final String? closePath;
+  final String? errorType;
 
   const ConnChannelLostEvent({
     required super.ts,
@@ -368,6 +373,11 @@ final class ConnChannelLostEvent extends DebugEvent {
     this.room,
     required this.stale,
     this.cause = ReconnectCause.unknown,
+    this.closeOrigin = 'unknown',
+    this.closeCode,
+    this.closeReason,
+    this.closePath,
+    this.errorType,
   }) : super(tag: DebugTag.connChannelLost);
 
   @override
@@ -376,6 +386,11 @@ final class ConnChannelLostEvent extends DebugEvent {
     'ts': ts.toUtc().toIso8601String(),
     'stale': stale,
     'cause': cause.name,
+    'closeOrigin': _cap(closeOrigin),
+    'closeCode': closeCode,
+    'closeReason': _cap(closeReason ?? 'none'),
+    'closePath': _cap(closePath ?? 'none'),
+    if (errorType != null) 'errorType': _cap(errorType!),
     if (peerTail != null) 'peerTail': _cap(peerTail!),
     if (room != null) 'room': _cap(room!),
   };
