@@ -158,3 +158,14 @@ is honest/by-design; its novelty is diagnostic. Follow-ups once the
 metronome is dead: (a) consider raising the default sync limit (30 is
 smaller than one busy turn) — operator call; (b) confirm the notice
 returns to its quiet once-per-attach behavior.
+
+## Network context (operator, 2026-09-05)
+
+Phone runs Tailscale with split tunneling (5G); currently home Wi-Fi.
+Either way the tailscale interface is in the path (relay is 100.106.7.70,
+CGNAT range — routed through tailscale on every underlay). Implications:
+underlay varies while tunnel is constant — underlay likely cleared given
+the endpoint-generated 1002 close frame (a tunnel cannot fabricate WS
+close frames); tailscale's Android VPN socket-rebind behavior remains a
+plausible source of the teardown RSTs but not of the 1002. Open datum:
+whether the operator observes strikes on BOTH underlays.
