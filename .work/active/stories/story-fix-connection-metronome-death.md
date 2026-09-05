@@ -1,7 +1,7 @@
 ---
 id: story-fix-connection-metronome-death
 kind: story
-stage: implementing
+stage: review
 tags: [app, bug, relay]
 parent: null
 depends_on: []
@@ -37,29 +37,41 @@ release build, 22h span) shows the underlying disease:
 - pi-side delivery.log healthy throughout (message delivered to the
   NextUp session; turn committed).
 
-## Current diagnosis (instrumentation stride 2026-09-01)
+## Current diagnosis (frame-order stride 2026-09-05)
 
-The historic capture cannot identify who closed the socket: the app recorded
-only `channelDone`, and the relay did not attribute its close branches. No
-behavioral fix is justified from that evidence alone.
+The instrumented field capture establishes a server Close(1002) with no prior
+app-attributed local close. The relay's only surfaced error is the later
+`IO error: Connection reset by peer (os error 104)`: tungstenite consumed the
+original violation while auto-closing, so that row cannot identify the bad
+header. Relay mailbox saturation, same-device supersession, and an ordinary
+network loss do not produce this 1002 shape.
 
-Code reading and a real-WebSocket interleaving harness changed the candidate
-ranking:
+The owning frame is still not named, so no behavioral fix is justified. The
+remaining evidence is ranked as follows:
 
-1. **Relay outbound-mailbox saturation is plausible but unproven.** Each
-   connection has a 16-frame bounded mailbox
-   (`relay/src/resource_limits.rs`); one `try_send(Full)` requests immediate
-   disconnect (`relay/src/peers/connections.rs`). That close branch previously
-   had no per-connection log. Send-correlated room/working/turn bursts can
-   exercise this path, but the old relay capture cannot prove that it did.
-2. **Intermediary transport loss remains plausible.** A content-free stream
-   error/done with no same-time relay close row will isolate this branch.
-3. **The late racing-socket hypothesis is now deprioritized for the exercised
-   sequence.** The transport-seam regression opens two real sockets, admits
-   the fallback winner, releases the delayed loser's auth handling, and proves
-   that the loser was already closed and cannot evict the winner. This does not
-   prove every Android lifecycle interleaving safe, but it falsifies the
-   leading concrete winner-gets-closed sequence.
+1. **A target-only WebSocket emission failure remains possible.** Every app
+   write site passes a `jsonEncode(...)` String to dart:io, which makes invalid
+   UTF-8 impossible at the authored seam. The live x86 Android harness captured
+   147 additional client frames after this stride: every frame was final,
+   masked, RSV-clear, and used a valid TEXT/PONG/CLOSE opcode. The field device
+   is ARM Android, so a dart:io/AOT/platform-only header or length failure is
+   not excluded.
+2. **Frame-boundary corruption below the authored seam remains possible but
+   unproven.** A wrong encoded length can make payload bytes look like a later
+   reserved/unmasked header. TCP/Tailscale cannot normally reorder or fabricate
+   bytes, so this ranks below a target-specific emitter fault.
+3. **The app-level Close-race theory is now falsified for the suspected
+   sequence.** There are exactly two direct `WebSocketSink.close` sites
+   (`app/lib/data/transport/ws_transport.dart:406,697` after this stride), and
+   both record the initiating local path before closing. Every manager close
+   funnels through `_closeOwned` with a `ChannelLocalClosePath`; both peer
+   adapters preserve it. Dart's `_WebSocketConsumer` serializes queued writes
+   before Close and drops adds once its controller is closed
+   (`websocket_impl.dart:1258-1272`). A raw RFC 6455 regression queued four
+   512-KiB sends and immediately closed: all four arrived as legal masked TEXT
+   frames before one masked Close, with no DATA afterward. The only SDK-local
+   unattributed close is the 45s ping plus 45s pong timeout, incompatible with
+   8-35s strikes.
 
 ## Fix approach (two strides, instrumentation FIRST)
 
@@ -93,27 +105,51 @@ ranking:
 - Focused local harnesses cover remote close metadata, reason scrubbing,
   local-path attribution, manager-event projection, and the racing-socket
   winner-survival sequence.
+- `wsOut` ring rows now record each authored WebSocket write's per-connection
+  sequence, fixed write stage, expected first header byte, mask requirement,
+  UTF-8 payload length/class, and the exact local Close-initiation path. This is
+  an intent-side diagnostic, not a claim about bytes after dart:io encoding.
+- `OUTPOST_PI_E2E_RUST_LOG` makes the live relay log filter configurable. Use
+  only `tungstenite::protocol::frame::frame=trace,relay=debug`: that narrow
+  module logs the two header bytes/opcode/mask before validation and does not
+  log payloads. Broad `tungstenite=trace` is forbidden for field capture because
+  sibling modules print message content.
 
 ## Next conclusive repro
 
-1. Deploy the instrumented app and relay together with `RUST_LOG=relay=debug`;
-   do not change reconnect timing or mailbox limits.
-2. Run the operator loop (open chat, send, leave foreground, wait at least 45s)
-   until one loss, then export the app capture and the matching relay log
-   window.
-3. Classify the first non-stale loss:
-   - `closeOrigin=localClose`: `closePath` names the app owner that killed it.
-   - `closeOrigin=serverCloseFrame`: use the code/reason-presence category and
-     the same-time relay close row.
-   - matching relay `close_reason=relay_outbound_mailbox_saturated`: reproduce
-     queue pressure and fix the producer/backpressure path, not the capacity by
-     guesswork.
-   - matching `relay_same_device_superseded`: correlate the new connection's
-     auth row and extend the seam harness to that exact lifecycle ordering.
-   - `streamDone`/`streamError` with no matching relay-close row: capture the
-     Tailscale/docker network path and inspect the close code/error category.
-4. Only after one branch is named from that evidence, add the minimal behavior
-   fix, rerun the repro, and advance this story to review.
+1. Deploy this instrumented app and run the relay with exactly
+   `RUST_LOG='relay=debug,tungstenite::protocol::frame::frame=trace'`; do not
+   change reconnect timing or mailbox limits and do not enable broader
+   tungstenite trace targets.
+2. Run the operator loop (connect, switch rooms/replay subscriptions, send,
+   leave foreground, wait at least 45s) until one 1002, then export the app
+   capture and matching relay header window.
+3. Correlate `wsOut.connectionId`/`sequence` with the close timestamp:
+   - a `closeInitiated` row before the violation names the exact app owner; an
+     actual relay DATA header after the matching Close would revive the race
+     theory with a concrete ordering;
+   - no prior `closeInitiated` rules out all authored close paths, leaving the
+     dart:io/control-frame or below-SDK emitter;
+   - the relay's final `Parsed headers [first, second]`, `Opcode`, and `Masked`
+     rows name invalid RSV/FIN/opcode/mask/length-class headers without content;
+   - legal headers followed by 1002 narrow the fault to frame boundaries or
+     payload validation, which must be tested against that exact byte class.
+4. Only after the violating frame is named should a minimal behavior fix land.
+
+## Verification (frame-order stride 2026-09-05)
+
+- Focused debug/privacy, real-WebSocket diagnostics, raw RFC 6455 frame-order,
+  and capture-site routing tests — pass (32 tests in the combined focused run).
+- `flutter analyze` — pass.
+- `e2e/run-live.sh state-shapes` with the narrow tungstenite header trace —
+  pass: connect → room switches/replays → sends → reconnects; 147 parsed client
+  frames, zero invalid headers, zero 1002. The exported ring retained the final
+  12 `wsOut` rows, including per-connection Close paths.
+- First full test run found the new tag missing from the capture-site registry;
+  fixed by naming the production-seam routing test. The next full run reached
+  1,013 passes except one unrelated parallel-only
+  `chat_viewmodel_test.dart` timing failure; that exact test passed alone.
+  Final `flutter test --exclude-tags e2e` rerun — pass, 1,014 tests.
 
 ## Verification (instrumentation stride)
 
@@ -129,8 +165,10 @@ ranking:
 - [ ] Root cause named with instrumented evidence (file:line).
 - [ ] Minimal fix confirmed by the operator repro.
 - [x] Transport-seam test proves the winning racing socket survives.
-- [ ] `flutter analyze && flutter test --exclude-tags e2e` green after the
-  final fix; relay checks green if relay remains touched.
+- [x] Raw transport-seam test proves queued app DATA is ordered before Close
+  and no DATA follows it.
+- [x] `flutter analyze && flutter test --exclude-tags e2e` green after this
+  final instrumentation stride; relay source remained untouched.
 
 ## Linked symptom (operator report 2026-09-05)
 

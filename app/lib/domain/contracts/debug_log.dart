@@ -56,6 +56,7 @@ const Set<String> kForbiddenDiagnosticKeys = {
 /// acceptance).
 enum DebugTag {
   wsIn,
+  wsOut,
   peerFrame,
   msgSend,
   msgEcho,
@@ -139,6 +140,62 @@ final class WsInEvent extends DebugEvent {
     if (senderRoom != null) 'senderRoom': _cap(senderRoom!),
     if (controlType != null) 'controlType': _cap(controlType!),
     if (error != null) 'error': _cap(error!),
+  };
+}
+
+/// Closed WebSocket write sites admissible into transport diagnostics.
+enum WsOutboundStage {
+  hello,
+  auth,
+  readinessProbe,
+  envelope,
+  control,
+  closeInitiated,
+}
+
+/// RFC 6455 payload-length encoding selected by the intended frame size.
+enum WsPayloadLengthClass { inline7, extended16, extended64 }
+
+/// Record one content-free outbound frame intent or local Close initiation.
+///
+/// [firstByte] is the FIN/RSV/opcode byte the app asks the Dart WebSocket
+/// client to emit. The paired relay header trace remains the authority for the
+/// bytes that actually reached the wire; [connectionId] and [sequence] order
+/// overlapping reconnect hedges without recording an endpoint or payload.
+final class WsOutEvent extends DebugEvent {
+  const WsOutEvent({
+    required super.ts,
+    required this.connectionId,
+    required this.sequence,
+    required this.stage,
+    required this.firstByte,
+    required this.masked,
+    required this.payloadBytes,
+    required this.lengthClass,
+    this.closePath,
+  }) : super(tag: DebugTag.wsOut);
+
+  final int connectionId;
+  final int sequence;
+  final WsOutboundStage stage;
+  final int firstByte;
+  final bool masked;
+  final int payloadBytes;
+  final WsPayloadLengthClass lengthClass;
+  final String? closePath;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'tag': tag.name,
+    'ts': ts.toUtc().toIso8601String(),
+    'connectionId': connectionId,
+    'sequence': sequence,
+    'stage': stage.name,
+    'firstByte': firstByte,
+    'masked': masked,
+    'payloadBytes': payloadBytes,
+    'lengthClass': lengthClass.name,
+    if (closePath != null) 'closePath': _cap(closePath!),
   };
 }
 

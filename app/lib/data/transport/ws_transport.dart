@@ -85,6 +85,14 @@ const int maxPendingWsInboundBytes = 8 * 1024 * 1024;
 
 const int _wsOverflowAuditSummaryEvents = 100;
 const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
+const int _finalTextFrameFirstByte = 0x81;
+const int _finalCloseFrameFirstByte = 0x88;
+
+WsPayloadLengthClass _wsPayloadLengthClass(int bytes) {
+  if (bytes <= 125) return WsPayloadLengthClass.inline7;
+  if (bytes <= 0xffff) return WsPayloadLengthClass.extended16;
+  return WsPayloadLengthClass.extended64;
+}
 
 String? _categorizeCloseReason(String? raw) {
   if (raw == null || raw.isEmpty) return null;
@@ -105,8 +113,11 @@ class WsTransport
         IControlLink,
         IActiveRoomTarget,
         IChannelCloseDiagnostics {
+  static int _lastDiagnosticConnectionId = 0;
+
   final WebSocketChannel _ws;
   final DebugLog? _debugLog;
+  late final int _diagnosticConnectionId;
   late final WsInboundMessageQueue _queue;
   final _controlController = StreamController<ControlInbound>.broadcast();
   final _transportClosedCompleter = Completer<void>();
@@ -118,6 +129,7 @@ class WsTransport
   Timer? _queueOverflowAuditTimer;
   ConnectionCancellation? _connectCancellation;
   ConnectionCancellationListener? _connectCancellationListener;
+  int _outboundSequence = 0;
 
   WsTransport._(
     this._ws, {
@@ -127,6 +139,7 @@ class WsTransport
     int maxPendingInboundBytes = maxPendingWsInboundBytes,
   }) : _debugLog = debugLog,
        _activeRoom = activeRoom {
+    _diagnosticConnectionId = ++_lastDiagnosticConnectionId;
     _queue = WsInboundMessageQueue(
       maxFrames: maxPendingInboundFrames,
       maxBytes: maxPendingInboundBytes,
@@ -385,8 +398,10 @@ class WsTransport
 
     Future<void>? connectCleanup;
     Future<void> closeConnectResources(ChannelLocalClosePath path) {
+      if (connectCleanup != null) return connectCleanup!;
       transport._recordLocalClose(path);
-      return connectCleanup ??= settleWsCleanupForTesting([
+      transport._logCloseInitiated(path);
+      return connectCleanup = settleWsCleanupForTesting([
         () => sub.cancel(),
         () => ws.sink.close(),
       ]);
@@ -428,7 +443,8 @@ class WsTransport
       // room_id (one per cwd) AND room_meta; that's not our concern here.
       final pub = await ed25519Key.extractPublicKey();
       throwIfCancelled();
-      ws.sink.add(
+      transport._sendText(
+        WsOutboundStage.hello,
         jsonEncode({
           'type': 'hello',
           'pubkey': base64.encode(pub.bytes),
@@ -454,7 +470,8 @@ class WsTransport
         keyPair: ed25519Key,
       );
       throwIfCancelled();
-      ws.sink.add(
+      transport._sendText(
+        WsOutboundStage.auth,
         jsonEncode({'type': 'auth', 'sig': base64.encode(sig.bytes)}),
       );
       authDone = true;
@@ -465,7 +482,10 @@ class WsTransport
       // cover a socket that sent auth but whose relay handler is stalled.
       // Empty is schema-valid and avoids consuming the real hydration reply:
       // ConnectionManager's later peer list differs, so relay dedup still emits it.
-      ws.sink.add(jsonEncode(presenceCheckFrame(const [])));
+      transport._sendText(
+        WsOutboundStage.readinessProbe,
+        jsonEncode(presenceCheckFrame(const [])),
+      );
       await authenticatedFrameCompleter.future;
       throwIfCancelled();
       transport._sub = sub;
@@ -491,6 +511,42 @@ class WsTransport
   StreamSubscription? _sub;
 
   void _logWsIn(WsInEvent event) => _debugLog?.log(event);
+
+  void _sendText(WsOutboundStage stage, String text) {
+    final sequence = ++_outboundSequence;
+    if (_debugLog != null) {
+      final payloadBytes = utf8.encode(text).length;
+      _debugLog.log(
+        WsOutEvent(
+          ts: DateTime.now(),
+          connectionId: _diagnosticConnectionId,
+          sequence: sequence,
+          stage: stage,
+          firstByte: _finalTextFrameFirstByte,
+          masked: true,
+          payloadBytes: payloadBytes,
+          lengthClass: _wsPayloadLengthClass(payloadBytes),
+        ),
+      );
+    }
+    _ws.sink.add(text);
+  }
+
+  void _logCloseInitiated(ChannelLocalClosePath path) {
+    _debugLog?.log(
+      WsOutEvent(
+        ts: DateTime.now(),
+        connectionId: _diagnosticConnectionId,
+        sequence: ++_outboundSequence,
+        stage: WsOutboundStage.closeInitiated,
+        firstByte: _finalCloseFrameFirstByte,
+        masked: true,
+        payloadBytes: 0,
+        lengthClass: WsPayloadLengthClass.inline7,
+        closePath: path.name,
+      ),
+    );
+  }
 
   void _recordQueueOverflow(int bytes) {
     _droppedQueueFrames++;
@@ -592,7 +648,8 @@ class WsTransport
 
   @override
   Future<void> send(Uint8List data) async {
-    _ws.sink.add(
+    _sendText(
+      WsOutboundStage.envelope,
       jsonEncode({
         'peer': _peerPubkey,
         'room': _activeRoom,
@@ -611,7 +668,7 @@ class WsTransport
 
   @override
   void sendControl(Map<String, dynamic> json) {
-    _ws.sink.add(jsonEncode(json));
+    _sendText(WsOutboundStage.control, jsonEncode(json));
   }
 
   // -------------------------------------------------------------------------
@@ -621,9 +678,10 @@ class WsTransport
 
   @override
   Future<void> closeWithPath(ChannelLocalClosePath path) async {
-    _recordLocalClose(path);
     if (_closed) return;
     _closed = true;
+    _recordLocalClose(path);
+    _logCloseInitiated(path);
     final cancellation = _connectCancellation;
     final listener = _connectCancellationListener;
     _connectCancellation = null;

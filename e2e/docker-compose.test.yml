@@ -7,7 +7,7 @@ services:
     environment:
       OUTPOSTPI_RELAY_PORT: "3000"
       OUTPOSTPI_MESH_DB_PATH: /data/mesh.db
-      RUST_LOG: info
+      RUST_LOG: ${OUTPOST_PI_E2E_RUST_LOG:-info}
     volumes:
       - relay-data:/data
     healthcheck:

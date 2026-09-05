@@ -5,6 +5,8 @@ import 'dart:typed_data';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
+import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/protocol/protocol.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -61,14 +63,62 @@ void main() {
       ),
     );
   });
+
+  test('outbound diagnostics order frame intents before local Close', () async {
+    final relay = await _CloseRelay.start();
+    addTearDown(relay.close);
+    final log = _RecordingDebugLog();
+    final transport = await _connect(relay, debugLog: log);
+
+    await transport.send(Uint8List(256));
+    transport.sendControl(presenceCheckFrame(const []));
+    await transport.closeWithPath(ChannelLocalClosePath.hedgeLoser);
+
+    final events = log.events.whereType<WsOutEvent>().toList();
+    expect(events.map((event) => event.stage), <WsOutboundStage>[
+      WsOutboundStage.hello,
+      WsOutboundStage.auth,
+      WsOutboundStage.readinessProbe,
+      WsOutboundStage.envelope,
+      WsOutboundStage.control,
+      WsOutboundStage.closeInitiated,
+    ]);
+    expect(events.map((event) => event.sequence), <int>[1, 2, 3, 4, 5, 6]);
+    expect(events.map((event) => event.connectionId).toSet(), hasLength(1));
+    expect(events.take(5).map((event) => event.firstByte), everyElement(0x81));
+    expect(events.take(5).map((event) => event.masked), everyElement(isTrue));
+    expect(events[3].lengthClass, WsPayloadLengthClass.extended16);
+    expect(events.last.firstByte, 0x88);
+    expect(events.last.payloadBytes, 0);
+    expect(events.last.lengthClass, WsPayloadLengthClass.inline7);
+    expect(events.last.closePath, ChannelLocalClosePath.hedgeLoser.name);
+  });
 }
 
-Future<WsTransport> _connect(_CloseRelay relay) async => WsTransport.connect(
-  relayUrl: relay.url,
-  peerPubkey: 'cGVlcg==',
-  ed25519Key: await Ed25519().newKeyPair(),
-  deviceId: 'close-diagnostics-device',
-);
+final class _RecordingDebugLog implements DebugLog {
+  final events = <DebugEvent>[];
+
+  @override
+  void log(DebugEvent event) => events.add(event);
+
+  @override
+  Future<String?> export() async => null;
+
+  @override
+  Future<void> clear() async {}
+
+  @override
+  void dispose() {}
+}
+
+Future<WsTransport> _connect(_CloseRelay relay, {DebugLog? debugLog}) async =>
+    WsTransport.connect(
+      relayUrl: relay.url,
+      peerPubkey: 'cGVlcg==',
+      ed25519Key: await Ed25519().newKeyPair(),
+      deviceId: 'close-diagnostics-device',
+      debugLog: debugLog,
+    );
 
 final class _CloseRelay {
   _CloseRelay._(this._server);

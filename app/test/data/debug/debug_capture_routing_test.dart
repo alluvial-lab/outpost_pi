@@ -36,8 +36,13 @@ final Set<DebugTag> _assertedRoutingTags = <DebugTag>{};
 ///
 /// `layoutMode` requires `MediaQuery`, router DI, and window metrics; its real
 /// emission is asserted in `test/routing/app_router_test.dart` rather than
-/// duplicating that composition harness in this data-routing suite.
-const Set<DebugTag> _externallyAssertedRoutingTags = {DebugTag.layoutMode};
+/// duplicating that composition harness in this data-routing suite. `wsOut`
+/// is asserted through a real WebSocket in
+/// `test/data/transport/ws_transport_close_diagnostics_test.dart`.
+const Set<DebugTag> _externallyAssertedRoutingTags = {
+  DebugTag.layoutMode,
+  DebugTag.wsOut,
+};
 
 /// Every event ever asserted by _assertEvent, for the site-coverage registry
 /// test to confirm each required capture site's discriminant actually matched
