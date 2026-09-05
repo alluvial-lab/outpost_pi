@@ -131,3 +131,16 @@ ranking:
 - [x] Transport-seam test proves the winning racing socket survives.
 - [ ] `flutter analyze && flutter test --exclude-tags e2e` green after the
   final fix; relay checks green if relay remains touched.
+
+## Linked symptom (operator report 2026-09-05)
+
+TUI-authored user messages occasionally missing on mobile. Mechanism
+hypothesis: TUI messages reach the app only via transcript sync/replay
+(they never cross app ingress); if the app is mid-flap when one commits,
+acquisition depends on the next rehydrate — a replay cursor/high-water
+that advances past an unrendered event would skip it permanently.
+Prediction: misses correlate with the 1002 flap windows and affect only
+TUI-authored user_input. Verify when tracing: pick a known-missed TUI
+message (operator timestamps it), confirm it committed to the pi
+transcript, then trace which sync/replay windows carried it and whether
+the app's cursor skipped past it.
