@@ -144,3 +144,17 @@ TUI-authored user_input. Verify when tracing: pick a known-missed TUI
 message (operator timestamps it), confirm it committed to the pi
 transcript, then trace which sync/replay windows carried it and whether
 the app's cursor skipped past it.
+
+## Linked symptom 2 (operator report 2026-09-05, later same day)
+
+"Earlier history is not synced on this device" notice, first time seen.
+Mechanics: full session rehydrations replay only the last 30 transcript
+events (SYNC_LIMIT_DEFAULT=30, overridable via OUTPOST_PI_SYNC_LIMIT);
+active multi-day sessions carry thousands of events, so every full
+rehydrate reports truncated. On a stable connection the app hydrates
+once and rides incremental deltas — the notice surfacing now is the flap
+forcing repeated FULL rehydrations (same root as symptom 1). The notice
+is honest/by-design; its novelty is diagnostic. Follow-ups once the
+metronome is dead: (a) consider raising the default sync limit (30 is
+smaller than one busy turn) — operator call; (b) confirm the notice
+returns to its quiet once-per-attach behavior.
