@@ -207,7 +207,19 @@ async fn handle_peer(
             }
             item = stream.next() => {
                 match item {
-                    None | Some(Err(_)) => break,
+                    // Log the WS-layer error before breaking: tungstenite auto-closes
+                    // with 1002 on inbound protocol violations and the error discriminant
+                    // names the violation — discarding it made these closes
+                    // undiagnosable (2026-09-05 incident).
+                    None => break,
+                    Some(Err(e)) => {
+                        warn!(
+                            peer = %peer_short,
+                            err = %e,
+                            "websocket stream error, closing"
+                        );
+                        break;
+                    }
                     Some(Ok(msg)) => {
                         let text = match msg {
                             Message::Text(t) => t,
