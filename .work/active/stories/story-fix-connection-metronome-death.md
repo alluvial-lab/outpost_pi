@@ -1,7 +1,7 @@
 ---
 id: story-fix-connection-metronome-death
 kind: story
-stage: review
+stage: implementing
 tags: [app, bug, relay]
 parent: null
 depends_on: []
