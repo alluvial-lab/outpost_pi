@@ -207,3 +207,26 @@ the endpoint-generated 1002 close frame (a tunnel cannot fabricate WS
 close frames); tailscale's Android VPN socket-rebind behavior remains a
 plausible source of the teardown RSTs but not of the 1002. Open datum:
 whether the operator observes strikes on BOTH underlays.
+
+## Verdict (2026-09-06, stride-3 capture)
+
+Adjudication capture app-capture-2026-09-06T15-52-58: two strikes, both
+with complete stride-3 evidence. Every outbound INTENT legal (masked
+FIN+TEXT, control ~80B + envelope 193B); no local close preceded either
+1002 (the 0.0s closeInitiated row is dart's close-handshake ECHO of the
+server's frame). The relay's tungstenite rejected bytes the app never
+authored. Harness control: same app+relay on a clean path emit only
+legal frames (147 captured, zero 1002). CONCLUSION: byte-stream
+alteration between the phone's dart layer and the relay — prime suspect
+tailscale's Android userspace network stack (constant across underlays,
+phone-only, activity-shaped, harness-clean).
+
+## Differential test + mitigation (operator, at home on Wi-Fi)
+
+Point the app at the relay over LAN (direct 192.168.50.x:3300, bypassing
+tailscale; relay-failover candidates support this). Strikes stop on LAN
++ resume on tailscale = verdict sealed. Options after: LAN-primary at
+home, wss (TLS) hop to convert corruption into clean network errors,
+upstream tailscale issue with the full evidence package. Remaining
+luxury proof if ever needed: tcpdump on host:3300 during a strike shows
+the corrupted frame bytes directly.
