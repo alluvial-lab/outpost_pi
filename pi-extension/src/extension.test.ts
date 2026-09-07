@@ -6953,6 +6953,53 @@ describe("model meta", () => {
     expect(capturedOpts[0]!.roomMeta?.model).toBeUndefined();
   });
 
+  test("onConnected flushes telemetry sampled while relay authentication was pending", async () => {
+    let signalConnectStarted!: () => void;
+    let releaseConnect!: () => void;
+    const connectStarted = new Promise<void>((resolve) => { signalConnectStarted = resolve; });
+    const connectRelease = new Promise<void>((resolve) => { releaseConnect = resolve; });
+    _defaultConnectImpl = async () => {
+      signalConnectStarted();
+      await connectRelease;
+    };
+
+    captureHandler("outpost-pi");
+    const onSessionStart = captureEventHandler("session_start");
+    const onAgentStart = captureEventHandler("agent_start");
+    const ctx = {
+      ...makeMockCtx("/tmp/outpost-pi-deferred-telemetry"),
+      mode: "print",
+      sessionManager: { getSessionId: () => "deferred-telemetry-session" },
+      getContextUsage: vi.fn(() => ({
+        tokens: 77_000,
+        contextWindow: 100_000,
+        percent: 77,
+      })),
+    } as unknown as ReturnType<typeof makeMockCtx>;
+    // Bind the latest session context without auto-starting another relay.
+    onSessionStart({ type: "session_start", reason: "startup" }, ctx);
+
+    const connecting = outpostPiTestHarness.connect(ctx);
+    await connectStarted;
+    const relay = relayRef.current!;
+    const controlsBeforeSample = relay.sendControl.mock.calls.length;
+
+    // The sample occurs while RelayClient.connect is awaiting auth. It can
+    // update only RelayTransport's cached metadata until the socket is live.
+    onAgentStart({ type: "agent_start" });
+    expect(relay.sendControl.mock.calls.length).toBe(controlsBeforeSample);
+
+    releaseConnect();
+    await connecting;
+    const postConnectControls = relay.sendControl.mock.calls
+      .map((call) => call[0] as { type: string; meta?: { ctx_percent?: number } });
+    expect(postConnectControls.some((frame) =>
+      frame.type === "room_meta_update" && frame.meta?.ctx_percent === 77,
+    )).toBe(true);
+
+    await outpostPiTestHarness.stop(makeMockCtx());
+  });
+
   test("pi.on('model_select') fires room_meta_update via relay.sendControl", async () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-model-switch"));

@@ -153,21 +153,30 @@ impl RegistryEventPublisher {
                 serde_json::Value::Bool(background),
             );
         }
-        if let Some(branch) = &snapshot.branch {
-            meta_obj.insert(
-                "branch".to_string(),
-                serde_json::Value::String(branch.clone()),
-            );
-        }
-        if let Some(ctx_percent) = snapshot.ctx_percent {
-            meta_obj.insert(
-                "ctx_percent".to_string(),
-                serde_json::Value::from(ctx_percent),
-            );
-        }
-        if let Some(ctx_max) = snapshot.ctx_max {
-            meta_obj.insert("ctx_max".to_string(), serde_json::Value::from(ctx_max));
-        }
+        // These nullable telemetry fields are part of the post-merge
+        // projection. Always include them so an authoritative clear is not
+        // mistaken for an omitted (preserve) patch by subscribers.
+        meta_obj.insert(
+            "branch".to_string(),
+            snapshot
+                .branch
+                .as_ref()
+                .map_or(serde_json::Value::Null, |branch| {
+                    serde_json::Value::String(branch.clone())
+                }),
+        );
+        meta_obj.insert(
+            "ctx_percent".to_string(),
+            snapshot
+                .ctx_percent
+                .map_or(serde_json::Value::Null, serde_json::Value::from),
+        );
+        meta_obj.insert(
+            "ctx_max".to_string(),
+            snapshot
+                .ctx_max
+                .map_or(serde_json::Value::Null, serde_json::Value::from),
+        );
         let msg = serde_json::json!({
             "type": "room_meta_updated",
             "peer": peer_id,

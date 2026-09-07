@@ -510,11 +510,9 @@ void main() {
 
       // ChatViewModel-style boot kicks in: must NOT override the active peer.
       await cm.boot();
-      expect(
-        factoryCalls,
-        ['epk_B'],
-        reason: 'boot must not cancel the in-flight connect and reroute',
-      );
+      expect(factoryCalls, [
+        'epk_B',
+      ], reason: 'boot must not cancel the in-flight connect and reroute');
       expect(cm.activePeer?.remoteEpk, 'epk_B');
 
       cm.dispose();
@@ -2288,6 +2286,131 @@ void _registerRoomsTests() {
         expect(cm.activeRoomId, 'main');
         expect(storage.savedPeers, isNotEmpty);
         expect(storage.savedPeers.last.roomId, 'main');
+
+        cm.dispose();
+      },
+    );
+
+    test(
+      'RoomAnnounced hydrates telemetry before a live patch updates it',
+      () async {
+        final ch = _ControllableChannel();
+        final cm = ConnectionManager(
+          factory: (_, _) async => ch,
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+        );
+        await cm.connectTo(_fakePeer());
+
+        ch.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_test',
+            roomId: 'r1',
+            startedAt: 1,
+            branch: 'main',
+            ctxPercent: 40,
+            ctxMax: 1000000,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        expect(cm.roomsFor('epk_test').single, isNotNull);
+        expect(cm.roomsFor('epk_test').single.branch, 'main');
+        expect(cm.roomsFor('epk_test').single.ctxPercent, 40);
+        expect(cm.roomsFor('epk_test').single.ctxMax, 1000000);
+
+        ch.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_test',
+            roomId: 'r1',
+            branch: 'feature/telemetry',
+            ctxPercent: 92,
+            ctxMax: 272000,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final patched = cm.roomsFor('epk_test').single;
+        expect(patched.branch, 'feature/telemetry');
+        expect(patched.ctxPercent, 92);
+        expect(patched.ctxMax, 272000);
+
+        // PairOk refreshes session identity after reconnect; it must not
+        // rebuild the room from scratch and drop the live telemetry cache.
+        ch.pushMessage(
+          const PairOk(
+            inReplyTo: 'pair-1',
+            sessionName: 'test session refreshed',
+            sessionStartedAt: 2,
+            roomId: 'r1',
+            sessionId: 'session-2',
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final reconstructed = cm.roomsFor('epk_test').single;
+        expect(reconstructed.sessionId, 'session-2');
+        expect(reconstructed.branch, 'feature/telemetry');
+        expect(reconstructed.ctxPercent, 92);
+        expect(reconstructed.ctxMax, 272000);
+
+        cm.dispose();
+      },
+    );
+
+    test(
+      'RoomsSnapshot preserves live telemetry when fields are omitted',
+      () async {
+        final ch = _ControllableChannel();
+        final cm = ConnectionManager(
+          factory: (_, _) async => ch,
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+        );
+        await cm.connectTo(_fakePeer());
+
+        ch.pushControl(
+          const RoomsSnapshot(
+            peer: 'epk_test',
+            rooms: [
+              RoomInfo(
+                roomId: 'r1',
+                startedAt: 1,
+                branch: 'main',
+                ctxPercent: 40,
+                ctxMax: 1000000,
+              ),
+            ],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        ch.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_test',
+            roomId: 'r1',
+            branch: 'feature/telemetry',
+            ctxPercent: 92,
+            ctxMax: 272000,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+
+        // An older relay snapshot has no additive telemetry fields. It must
+        // not erase the values learned from the live patch.
+        ch.pushControl(
+          const RoomsSnapshot(
+            peer: 'epk_test',
+            rooms: [RoomInfo(roomId: 'r1', startedAt: 2)],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final preserved = cm.roomsFor('epk_test').single;
+        expect(preserved.branch, 'feature/telemetry');
+        expect(preserved.ctxPercent, 92);
+        expect(preserved.ctxMax, 272000);
 
         cm.dispose();
       },
