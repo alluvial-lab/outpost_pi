@@ -20,6 +20,25 @@ python3 - "$WRAPPER" <<'PY'
 import json, subprocess, sys, time
 WRAPPER = sys.argv[1]
 
+# Self-exclusion: never wrap (i.e. never SIGTERM) the pi that is RUNNING this
+# script — its pane's pi is an ancestor of this process. Without this, a run
+# from inside a fleet pi kills its own executor first (observed 2026-09-07:
+# zero-output runs + orchestrator session loss).
+def ancestor_pids():
+    pids = set()
+    p = os.getppid()
+    while p > 1:
+        pids.add(p)
+        try:
+            with open(f"/proc/{p}/stat") as f:
+                p = int(f.read().split(')')[-1].split()[1])
+        except Exception:
+            break
+    return pids
+
+import os
+SELF_PIDS = ancestor_pids()
+
 def run(*a):
     return subprocess.run(a, capture_output=True, text=True)
 
@@ -59,6 +78,9 @@ for p in panes:
         skipped_busy += 1
         continue
     pid = pi_pid_of(procs)
+    if pid and pid in SELF_PIDS:
+        print(f'[skip] {label:<6} SELF (executor pane) — excluded')
+        continue
     if not pid:
         print(f'[skip] {label:<6} no pi pid found')
         failed.append(label)
