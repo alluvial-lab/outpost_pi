@@ -188,11 +188,18 @@ describe("decodeClient validator-backed compatibility", () => {
       { type: "model_set", id: "model-1", session_id: "session-1", provider: "openai", model_id: "gpt" },
       { type: "thinking_set", id: "thinking-1", session_id: "session-1", level: "high" },
       { type: "list_models", id: "models-1", session_id: "session-1" },
+      { type: "fleet_update", id: "fleet-1", session_id: "session-1" },
     ];
 
     for (const message of messages) {
       expect(decodeClient(JSON.stringify(message))).toEqual(message);
     }
+  });
+
+  test("rejects unknown client types with unsupported_type", () => {
+    const caught = captureDecodeError(() => decodeClient('{"type":"fleet_update_future"}'));
+    expect(caught.code).toBe("unsupported_type");
+    expect(caught.message).toMatch(/unknown type/);
   });
 
   test("rejects malformed known app-origin messages", () => {

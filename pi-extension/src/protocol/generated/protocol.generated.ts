@@ -152,6 +152,7 @@ export const CLIENT_MESSAGE_TYPES = [
   "session_sync",
   "session_new",
   "session_compact",
+  "fleet_update",
   "model_set",
   "thinking_set",
   "list_models",
@@ -170,6 +171,7 @@ export const CLIENT_MESSAGE_DISCRIMINATORS = {
   session_sync: "session_sync",
   session_new: "session_new",
   session_compact: "session_compact",
+  fleet_update: "fleet_update",
   model_set: "model_set",
   thinking_set: "thinking_set",
   list_models: "list_models",
@@ -187,6 +189,7 @@ export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = [
   "session_sync",
   "session_new",
   "session_compact",
+  "fleet_update",
   "model_set",
   "thinking_set",
   "list_models",
@@ -269,6 +272,12 @@ export interface SessionCompact {
   readonly session_id?: string;
 }
 
+export interface FleetUpdate {
+  readonly type: "fleet_update";
+  readonly id: string;
+  readonly session_id?: string;
+}
+
 export interface ModelSet {
   readonly type: "model_set";
   readonly id: string;
@@ -328,6 +337,7 @@ export type ClientMessage =
   | SessionSync
   | SessionNew
   | SessionCompact
+  | FleetUpdate
   | ModelSet
   | ThinkingSet
   | ListModels
@@ -355,6 +365,7 @@ export const SERVER_MESSAGE_TYPES = [
   "action_ok",
   "action_error",
   "models_list",
+  "fleet_update_status",
   "capture_upload_ack",
   "capture_upload_error",
 ] as const;
@@ -378,6 +389,7 @@ export const SERVER_MESSAGE_DISCRIMINATORS = {
   action_ok: "action_ok",
   action_error: "action_error",
   models_list: "models_list",
+  fleet_update_status: "fleet_update_status",
   capture_upload_ack: "capture_upload_ack",
   capture_upload_error: "capture_upload_error",
 } as const;
@@ -555,6 +567,18 @@ export interface ModelsList {
   readonly current?: WireModel;
 }
 
+export interface FleetUpdateStatus {
+  readonly type: "fleet_update_status";
+  readonly update_id: string;
+  readonly phase: "updating" | "arming" | "update_failed" | "already_running";
+  readonly detail?: string;
+  readonly peers?: Array<{
+  readonly peer: string;
+  readonly state: "armed" | "deferred" | "declined" | "no-ack";
+  readonly reason?: string;
+}>;
+}
+
 export interface CaptureUploadAck {
   readonly type: "capture_upload_ack";
   readonly session_id?: string;
@@ -596,6 +620,7 @@ export type ServerMessage =
   | ActionOk
   | ActionError
   | ModelsList
+  | FleetUpdateStatus
   | CaptureUploadAck
   | CaptureUploadError;
 
@@ -1057,6 +1082,10 @@ function isSessionCompact(value: unknown): value is SessionCompact {
   return isObjectLike(value, ["type", "id", "session_id"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "session_compact") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512))));
 }
 
+function isFleetUpdate(value: unknown): value is FleetUpdate {
+  return isObjectLike(value, ["type", "id", "session_id"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "fleet_update") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512))));
+}
+
 function isModelSet(value: unknown): value is ModelSet {
   return isObjectLike(value, ["type", "id", "session_id", "provider", "model_id"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "model_set") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "provider") && (typeof record["provider"] === "string" && record["provider"].length >= 1)) && (Object.hasOwn(record, "model_id") && (typeof record["model_id"] === "string" && record["model_id"].length >= 1))));
 }
@@ -1153,6 +1182,10 @@ function isModelsList(value: unknown): value is ModelsList {
   return isObjectLike(value, ["type", "session_id", "in_reply_to", "models", "current"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "models_list") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "models") && (Array.isArray(record["models"]) && record["models"].every((item) => isObjectLike(item, ["id", "name", "provider", "reasoning", "context_window", "vision"], (record) => ((Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "name") && (typeof record["name"] === "string" && record["name"].length >= 1)) && (Object.hasOwn(record, "provider") && (typeof record["provider"] === "string" && record["provider"].length >= 1)) && (Object.hasOwn(record, "reasoning") && typeof record["reasoning"] === "boolean") && (Object.hasOwn(record, "context_window") && isIntegerAtLeast(record["context_window"], 0)) && (record["vision"] === undefined || typeof record["vision"] === "boolean")))))) && (record["current"] === undefined || isObjectLike(record["current"], ["id", "name", "provider", "reasoning", "context_window", "vision"], (record) => ((Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "name") && (typeof record["name"] === "string" && record["name"].length >= 1)) && (Object.hasOwn(record, "provider") && (typeof record["provider"] === "string" && record["provider"].length >= 1)) && (Object.hasOwn(record, "reasoning") && typeof record["reasoning"] === "boolean") && (Object.hasOwn(record, "context_window") && isIntegerAtLeast(record["context_window"], 0)) && (record["vision"] === undefined || typeof record["vision"] === "boolean"))))));
 }
 
+function isFleetUpdateStatus(value: unknown): value is FleetUpdateStatus {
+  return isObjectLike(value, ["type", "update_id", "phase", "detail", "peers"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "fleet_update_status") && (Object.hasOwn(record, "update_id") && (typeof record["update_id"] === "string" && record["update_id"].length >= 1)) && (Object.hasOwn(record, "phase") && (record["phase"] === "updating" || record["phase"] === "arming" || record["phase"] === "update_failed" || record["phase"] === "already_running")) && (record["detail"] === undefined || typeof record["detail"] === "string") && (record["peers"] === undefined || (Array.isArray(record["peers"]) && record["peers"].every((item) => isObjectLike(item, ["peer", "state", "reason"], (record) => ((Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "state") && (record["state"] === "armed" || record["state"] === "deferred" || record["state"] === "declined" || record["state"] === "no-ack")) && (record["reason"] === undefined || typeof record["reason"] === "string"))))))));
+}
+
 function isCaptureUploadAck(value: unknown): value is CaptureUploadAck {
   return isObjectLike(value, ["type", "session_id", "in_reply_to", "upload_id", "stage", "next_sequence", "path", "bytes", "events"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "capture_upload_ack") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "upload_id") && (typeof record["upload_id"] === "string" && record["upload_id"].length >= 1 && record["upload_id"].length <= 128)) && (Object.hasOwn(record, "stage") && (record["stage"] === "begin" || record["stage"] === "chunk" || record["stage"] === "delivered")) && (record["next_sequence"] === undefined || isIntegerAtLeast(record["next_sequence"], 0)) && (record["path"] === undefined || (typeof record["path"] === "string" && record["path"].length >= 1 && record["path"].length <= 512)) && (record["bytes"] === undefined || isIntegerAtLeast(record["bytes"], 0)) && (record["events"] === undefined || isIntegerAtLeast(record["events"], 0))));
 }
@@ -1228,6 +1261,7 @@ const CLIENT_MESSAGE_VALIDATORS: { readonly [K in ClientMessageType]: ProtocolVa
   "session_sync": isSessionSync,
   "session_new": isSessionNew,
   "session_compact": isSessionCompact,
+  "fleet_update": isFleetUpdate,
   "model_set": isModelSet,
   "thinking_set": isThinkingSet,
   "list_models": isListModels,
@@ -1263,6 +1297,7 @@ const SERVER_MESSAGE_VALIDATORS: { readonly [K in ServerMessageType]: ProtocolVa
   "action_ok": isActionOk,
   "action_error": isActionError,
   "models_list": isModelsList,
+  "fleet_update_status": isFleetUpdateStatus,
   "capture_upload_ack": isCaptureUploadAck,
   "capture_upload_error": isCaptureUploadError,
 };

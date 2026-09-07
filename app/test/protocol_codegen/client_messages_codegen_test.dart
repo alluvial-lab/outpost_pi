@@ -49,6 +49,7 @@ void main() {
         'session_sync',
         'session_new',
         'session_compact',
+        'fleet_update',
         'model_set',
         'thinking_set',
         'list_models',
@@ -239,6 +240,22 @@ void main() {
               'generated ${pair.generatedMsg.type} matches handwritten JSON',
         );
       }
+    });
+
+    test('fleet update generated message preserves required session scope', () {
+      const message = generated.FleetUpdate(
+        id: 'fleet-1',
+        sessionId: 'sess-1',
+      );
+      expect(message.toJson(), {
+        'type': 'fleet_update',
+        'id': 'fleet-1',
+        'session_id': 'sess-1',
+      });
+      expect(
+        generated.ClientMessage.fromJson(message.toJson()),
+        isA<generated.FleetUpdate>(),
+      );
     });
 
     test('shared generated value types preserve wire strings and equality', () {

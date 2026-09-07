@@ -20,3 +20,7 @@
 {"type":"action_ok","in_reply_to":"compact-1","action":"session_compact"}
 {"type":"action_error","in_reply_to":"model-1","action":"model_set","error":"model not found"}
 {"type":"models_list","in_reply_to":"models-1","models":[{"id":"claude-opus-4-7","name":"Claude Opus 4.7","provider":"anthropic","reasoning":true,"context_window":200000,"vision":true}],"current":{"id":"claude-opus-4-7","name":"Claude Opus 4.7","provider":"anthropic","reasoning":true,"context_window":200000,"vision":true}}
+{"type":"fleet_update_status","update_id":"fleet-update-1","phase":"updating"}
+{"type":"fleet_update_status","update_id":"fleet-update-1","phase":"arming","peers":[{"peer":"/repo@worker","state":"armed"},{"peer":"/repo@deferred","state":"deferred","reason":"turn active"},{"peer":"/repo@declined","state":"declined","reason":"hot reload disabled"},{"peer":"/repo@missing","state":"no-ack","reason":"timeout"}]}
+{"type":"fleet_update_status","update_id":"fleet-update-1","phase":"update_failed","detail":"pi update failed: exit 1"}
+{"type":"fleet_update_status","update_id":"fleet-update-1","phase":"already_running","detail":"another fleet update is already running"}

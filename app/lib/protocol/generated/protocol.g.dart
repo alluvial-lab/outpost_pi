@@ -248,6 +248,7 @@ const Set<String> generatedClientMessageTypes = {
   'session_sync',
   'session_new',
   'session_compact',
+  'fleet_update',
   'model_set',
   'thinking_set',
   'list_models',
@@ -265,6 +266,7 @@ const Set<String> generatedSessionScopedClientMessageTypes = {
   'session_sync',
   'session_new',
   'session_compact',
+  'fleet_update',
   'model_set',
   'thinking_set',
   'list_models',
@@ -293,6 +295,7 @@ sealed class ClientMessage {
       'session_sync' => SessionSync.fromJson(json),
       'session_new' => SessionNew.fromJson(json),
       'session_compact' => SessionCompact.fromJson(json),
+      'fleet_update' => FleetUpdate.fromJson(json),
       'model_set' => ModelSet.fromJson(json),
       'thinking_set' => ThinkingSet.fromJson(json),
       'list_models' => ListModels.fromJson(json),
@@ -570,6 +573,28 @@ final class SessionCompact extends ClientMessage {
       };
 }
 
+final class FleetUpdate extends ClientMessage {
+  const FleetUpdate({required this.id, required this.sessionId});
+
+  @override
+  String get type => 'fleet_update';
+
+  final String id;
+  final String sessionId;
+
+  factory FleetUpdate.fromJson(Map<String, dynamic> json) => FleetUpdate(
+        id: json['id'] as String,
+        sessionId: json['session_id'] as String,
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'id': id,
+        'session_id': sessionId,
+      };
+}
+
 final class ModelSet extends ClientMessage {
   const ModelSet({required this.id, required this.sessionId, required this.provider, required this.modelId});
 
@@ -758,6 +783,7 @@ const Set<String> generatedServerMessageTypes = {
   'action_ok',
   'action_error',
   'models_list',
+  'fleet_update_status',
   'capture_upload_ack',
   'capture_upload_error',
 };
@@ -813,6 +839,7 @@ sealed class ServerMessage {
       'action_ok' => ActionOk.fromJson(json),
       'action_error' => ActionError.fromJson(json),
       'models_list' => ModelsList.fromJson(json),
+      'fleet_update_status' => FleetUpdateStatus.fromJson(json),
       'capture_upload_ack' => CaptureUploadAck.fromJson(json),
       'capture_upload_error' => CaptureUploadError.fromJson(json),
       final unknown => throw UnsupportedTypeException(unknown ?? ''),
@@ -1368,6 +1395,36 @@ final class ModelsList extends ServerMessage {
       };
 }
 
+final class FleetUpdateStatus extends ServerMessage {
+  const FleetUpdateStatus({required this.updateId, required this.phase, this.detail, this.peers});
+
+  @override
+  String get type => 'fleet_update_status';
+
+  final String updateId;
+  final String phase;
+  final String? detail;
+  final dynamic peers;
+
+  factory FleetUpdateStatus.fromJson(Map<String, dynamic> json) => FleetUpdateStatus(
+        updateId: json['update_id'] as String,
+        phase: json['phase'] as String,
+        detail: json['detail'] as String?,
+        peers: json['peers'],
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'update_id': updateId,
+        'phase': phase,
+        if (detail case final detail?)
+          'detail': detail,
+        if (peers case final peers?)
+          'peers': peers,
+      };
+}
+
 final class CaptureUploadAck extends ServerMessage {
   const CaptureUploadAck({required this.sessionId, required this.inReplyTo, required this.uploadId, required this.stage, this.nextSequence, this.path, this.bytes, this.events});
 
@@ -1465,6 +1522,7 @@ final class GeneratedServerMessageDecoders<T> {
     required this.actionOk,
     required this.actionError,
     required this.modelsList,
+    required this.fleetUpdateStatus,
     required this.captureUploadAck,
     required this.captureUploadError,
   });
@@ -1487,6 +1545,7 @@ final class GeneratedServerMessageDecoders<T> {
   final GeneratedServerMessageJsonDecoder<T> actionOk;
   final GeneratedServerMessageJsonDecoder<T> actionError;
   final GeneratedServerMessageJsonDecoder<T> modelsList;
+  final GeneratedServerMessageJsonDecoder<T> fleetUpdateStatus;
   final GeneratedServerMessageJsonDecoder<T> captureUploadAck;
   final GeneratedServerMessageJsonDecoder<T> captureUploadError;
 }
@@ -1516,6 +1575,7 @@ T decodeGeneratedServerMessage<T>(
     'action_ok' => decoders.actionOk(json),
     'action_error' => decoders.actionError(json),
     'models_list' => decoders.modelsList(json),
+    'fleet_update_status' => decoders.fleetUpdateStatus(json),
     'capture_upload_ack' => decoders.captureUploadAck(json),
     'capture_upload_error' => decoders.captureUploadError(json),
     final unknown => throw UnsupportedTypeException(unknown ?? ''),

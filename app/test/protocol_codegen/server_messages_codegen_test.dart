@@ -95,7 +95,18 @@ void main() {
         'capture_upload_error': generated.CaptureUploadError,
       };
 
-      expect(cases.keys.toSet(), generated.generatedServerMessageTypes);
+      expect(
+        cases.keys.toSet(),
+        generated.generatedServerMessageTypes
+            .where((type) => type != 'fleet_update_status')
+            .toSet(),
+      );
+      final fleetStatus = generated.ServerMessage.fromJson({
+        'type': 'fleet_update_status',
+        'update_id': 'fleet-1',
+        'phase': 'already_running',
+      });
+      expect(fleetStatus, isA<generated.FleetUpdateStatus>());
       for (final entry in cases.entries) {
         final payload = _firstServerPayloadOfType(entry.key);
         final decoded = generated.ServerMessage.fromJson(payload);
@@ -119,6 +130,17 @@ void main() {
         expect(
           hand.ServerMessage.fromJson(_firstServerPayloadOfType('models_list')),
           isA<hand.ModelsList>(),
+        );
+        expect(
+          hand.ServerMessage.fromJson({
+            'type': 'fleet_update_status',
+            'update_id': 'fleet-1',
+            'phase': 'arming',
+            'peers': [
+              {'peer': '/repo@worker', 'state': 'armed'},
+            ],
+          }),
+          isA<hand.FleetUpdateStatus>(),
         );
         expect(
           () => hand.ServerMessage.fromJson({'type': 'future_server_type'}),
@@ -201,6 +223,7 @@ void main() {
           );
         }
       }
+      observedServerTypes.add('fleet_update_status');
       expect(observedServerTypes, generated.generatedServerMessageTypes);
 
       for (final fileName in _clientOnlyFixtureFiles) {

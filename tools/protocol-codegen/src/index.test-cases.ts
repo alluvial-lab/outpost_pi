@@ -223,8 +223,8 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /readonly code: ErrorCode;/);
   assert.match(output, /readonly models: Array<WireModel>;/);
 
-  assert.match(output, /export type ClientMessage =\n  \| PairRequest\n  \| UserMessage\n  \| QueuedMessageSet\n  \| QueuedMessageClear\n  \| ApproveTool\n  \| Cancel\n  \| Ping\n  \| SessionSync\n  \| SessionNew\n  \| SessionCompact\n  \| ModelSet\n  \| ThinkingSet\n  \| ListModels\n  \| CaptureUploadBegin\n  \| CaptureUploadChunk\n  \| CaptureUploadEnd;/);
-  assert.match(output, /export type ServerMessage =\n  \| PairOk\n  \| PairError\n  \| UserInput\n  \| UserMessage\n  \| QueuedMessageState\n  \| AgentChunk\n  \| AgentDone\n  \| AgentMessage\n  \| Compaction\n  \| ToolRequest\n  \| ToolResult\n  \| ErrorMessage\n  \| Cancelled\n  \| Pong\n  \| Bye\n  \| SessionHistory\n  \| ActionOk\n  \| ActionError\n  \| ModelsList\n  \| CaptureUploadAck\n  \| CaptureUploadError;/);
+  assert.match(output, /export type ClientMessage =\n  \| PairRequest\n  \| UserMessage\n  \| QueuedMessageSet\n  \| QueuedMessageClear\n  \| ApproveTool\n  \| Cancel\n  \| Ping\n  \| SessionSync\n  \| SessionNew\n  \| SessionCompact\n  \| FleetUpdate\n  \| ModelSet\n  \| ThinkingSet\n  \| ListModels\n  \| CaptureUploadBegin\n  \| CaptureUploadChunk\n  \| CaptureUploadEnd;/);
+  assert.match(output, /export type ServerMessage =\n  \| PairOk\n  \| PairError\n  \| UserInput\n  \| UserMessage\n  \| QueuedMessageState\n  \| AgentChunk\n  \| AgentDone\n  \| AgentMessage\n  \| Compaction\n  \| ToolRequest\n  \| ToolResult\n  \| ErrorMessage\n  \| Cancelled\n  \| Pong\n  \| Bye\n  \| SessionHistory\n  \| ActionOk\n  \| ActionError\n  \| ModelsList\n  \| FleetUpdateStatus\n  \| CaptureUploadAck\n  \| CaptureUploadError;/);
   assert.match(output, /export const CLIENT_MESSAGE_DISCRIMINATORS = \{[\s\S]*pair_request: "pair_request",[\s\S]*capture_upload_end: "capture_upload_end",[\s\S]*\};/);
   assert.match(output, /export const SERVER_MESSAGE_TYPES = \[/);
   assert.match(output, /export const SERVER_MESSAGE_DISCRIMINATORS = \{[\s\S]*pair_ok: "pair_ok",[\s\S]*pair_error: "pair_error",[\s\S]*bye: "bye",/);
@@ -318,6 +318,7 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "action_ok",
     "action_error",
     "models_list",
+    "fleet_update_status",
     "capture_upload_ack",
     "capture_upload_error",
   ]);
@@ -335,6 +336,7 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "session_sync",
     "session_new",
     "session_compact",
+    "fleet_update",
     "model_set",
     "thinking_set",
     "list_models",
@@ -385,6 +387,7 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     { type: "session_sync", id: "c8", limit: 25 },
     { type: "session_new", id: "c9" },
     { type: "session_compact", id: "c10" },
+    { type: "fleet_update", id: "c17", session_id: "session-1" },
     { type: "model_set", id: "c11", provider: "openai", model_id: "gpt" },
     { type: "thinking_set", id: "c12", level: "high" },
     { type: "list_models", id: "c13" },
@@ -424,6 +427,15 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     { type: "action_ok", in_reply_to: "action-1", action: "session_new" },
     { type: "action_error", in_reply_to: "action-2", action: "model_set", error: "no model" },
     { type: "models_list", in_reply_to: "models-1", models: [model], current: model },
+    { type: "fleet_update_status", update_id: "fleet-1", phase: "updating" },
+    { type: "fleet_update_status", update_id: "fleet-1", phase: "arming", peers: [
+      { peer: "/repo@worker", state: "armed" },
+      { peer: "/repo@deferred", state: "deferred", reason: "turn active" },
+      { peer: "/repo@declined", state: "declined", reason: "disabled" },
+      { peer: "/repo@missing", state: "no-ack", reason: "timeout" },
+    ] },
+    { type: "fleet_update_status", update_id: "fleet-1", phase: "update_failed", detail: "update failed" },
+    { type: "fleet_update_status", update_id: "fleet-1", phase: "already_running" },
     { type: "capture_upload_ack", in_reply_to: "c14", upload_id: "upload-1", stage: "delivered", path: "debug/capture.bin", bytes: 2, events: 1 },
     { type: "capture_upload_error", in_reply_to: "c14", upload_id: "upload-1", code: "too_large", message: "too large" },
   ];

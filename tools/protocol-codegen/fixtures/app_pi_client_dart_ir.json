@@ -285,6 +285,25 @@
           "sessionScoped": true
         },
         {
+          "type": "fleet_update",
+          "className": "FleetUpdate",
+          "fields": [
+            {
+              "name": "id",
+              "wireName": "id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "sessionId",
+              "wireName": "session_id",
+              "dartType": "String",
+              "required": true
+            }
+          ],
+          "sessionScoped": true
+        },
+        {
           "type": "model_set",
           "className": "ModelSet",
           "fields": [
@@ -1128,6 +1147,36 @@
             }
           ],
           "sessionScoped": true
+        },
+        {
+          "type": "fleet_update_status",
+          "className": "FleetUpdateStatus",
+          "fields": [
+            {
+              "name": "updateId",
+              "wireName": "update_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "phase",
+              "wireName": "phase",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "detail",
+              "wireName": "detail",
+              "dartType": "String",
+              "required": false
+            },
+            {
+              "name": "peers",
+              "wireName": "peers",
+              "dartType": "dynamic",
+              "required": false
+            }
+          ]
         },
         {
           "type": "capture_upload_ack",
