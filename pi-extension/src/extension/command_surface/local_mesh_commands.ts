@@ -4,6 +4,8 @@ import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import type { ByeReason } from "../../protocol/types.js";
 import {
   type FleetArmRestartAck,
+  type FleetArmRestartPhase,
+  fleetArmRestartPhase,
   isFleetArmRestartRequest,
   localPeerAddresses,
 } from "../fleet_update.js";
@@ -63,7 +65,9 @@ export interface LocalMeshCommandsDeps {
   readonly refreshSessionPeerCount: (peer: MeshNode, ctx?: Pick<ExtensionContext, "ui"> | null) => void;
   readonly deliverMeshMessage: (env: MeshEnvelope) => void;
   /** Handle fleet arm requests before generic mesh delivery wakes the agent. */
-  readonly handleFleetArmRestart?: (updateId: string) => FleetArmRestartAck;
+  readonly handleFleetArmRestart?: (updateId: string, phase: FleetArmRestartPhase) => FleetArmRestartAck;
+  /** Return true only for an address currently registered in this broker. */
+  readonly isLocalMeshSender?: (address: string) => boolean;
   readonly attachBridgeIfReady: () => void;
   readonly notify: (
     msg: string,
@@ -330,10 +334,14 @@ export class LocalMeshCommands {
         return;
       }
       if (isFleetArmRestartRequest(body)) {
-        const ack: FleetArmRestartAck = this.deps.handleFleetArmRestart?.(body.update_id) ?? {
-          state: "declined",
-          reason: "fleet update handler unavailable",
-        };
+        const phase = fleetArmRestartPhase(body);
+        const localSender = this.deps.isLocalMeshSender?.(env.from) === true;
+        const ack: FleetArmRestartAck = !localSender
+          ? { state: "declined", reason: "sender is not a local mesh peer" }
+          : this.deps.handleFleetArmRestart?.(body.update_id, phase) ?? {
+              state: "declined",
+              reason: "fleet update handler unavailable",
+            };
         void peer.send(env.from, ack, env.id).catch(() => { /* peer is leaving */ });
         return;
       }

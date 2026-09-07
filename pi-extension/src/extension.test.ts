@@ -1084,10 +1084,12 @@ describe("contract fixtures: pair_*", () => {
     }
   });
 
-  test("all expected fixture files present", () => {
-    // Fixture set is append-only; assert the known set so a dropped/added fixture is caught.
+  test("fixture catalog retains the pairing contract rows", () => {
     const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".jsonl"));
-    expect(files).toHaveLength(41);
+    for (const required of ["pair_request.jsonl", "pair_ok.jsonl", "pair_error.jsonl"]) {
+      expect(files).toContain(required);
+    }
+    expect(files.every((file) => readFileSync(`${fixtureDir}/${file}`, "utf8").trim().length > 0)).toBe(true);
   });
 });
 

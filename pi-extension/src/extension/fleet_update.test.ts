@@ -180,8 +180,17 @@ describe("FleetUpdateCoordinator", () => {
     h.resolveUpdate(true);
     await run;
 
-    const mesh = h.log.find((entry): entry is { op: "mesh"; peer: string; body: unknown } => entry.op === "mesh");
-    expect(mesh?.body).toEqual({ kind: "outpost-pi.arm-restart", update_id: "run-body" });
+    const meshes = h.log.filter(
+      (entry): entry is { op: "mesh"; peer: string; body: unknown } => entry.op === "mesh",
+    );
+    expect(meshes[0]?.body).toEqual({
+      kind: "outpost-pi.arm-restart.prepare",
+      update_id: "run-body",
+    });
+    expect(meshes.at(-1)?.body).toEqual({
+      kind: "outpost-pi.arm-restart.commit",
+      update_id: "run-body",
+    });
   });
 
   test("hung subprocess is failed by the update timeout without arming", async () => {
@@ -224,6 +233,28 @@ describe("FleetUpdateCoordinator", () => {
     expect(log.some((entry) => entry.op === "arm")).toBe(true);
   });
 
+  test("coordinator reports a no-restart result after the arming report", async () => {
+    const log: LogEntry[] = [];
+    const coordinator = new FleetUpdateCoordinator({
+      emitStatus: (event) => { log.push({ op: "emit", event }); },
+      runUpdate: async () => ({ ok: true, outputTail: "" }),
+      armSelf: () => ({ ok: false, reason: "hot-reload disabled" }),
+      localPeers: () => [],
+      meshRequest: async () => null,
+    });
+
+    await coordinator.handleRequest("run-no-restart");
+
+    expect(phases(log)).toEqual(["updating", "arming", "update_failed"]);
+    expect(log.at(-1)).toMatchObject({
+      op: "emit",
+      event: {
+        phase: "update_failed",
+        detail: "fleet restart not armed: hot-reload disabled",
+      },
+    });
+  });
+
   test("update_failed detail is truncated to a bounded output tail", async () => {
     const h = harness();
     const run = h.coordinator.handleRequest("run-tail");
@@ -260,6 +291,32 @@ describe("createFleetArmRestartHandler", () => {
     const { ack, arm } = handler();
     expect(arm).toHaveBeenCalledTimes(1);
     expect(ack).toEqual({ state: "armed" });
+  });
+
+  test("prepare reports readiness without arming; commit arms exactly once", () => {
+    const arm = vi.fn(() => true);
+    let consumed = false;
+    const handle = createFleetArmRestartHandler({
+      isDisposed: () => false,
+      hotReloadEnabled: () => true,
+      hasActiveWork: () => false,
+      consumeUpdate: () => {
+        if (consumed) return false;
+        consumed = true;
+        return true;
+      },
+      arm,
+    });
+
+    expect(handle("run-two-phase", "prepare")).toEqual({ state: "armed" });
+    expect(arm).not.toHaveBeenCalled();
+    expect(handle("run-two-phase", "commit")).toEqual({ state: "armed" });
+    expect(arm).toHaveBeenCalledWith("run-two-phase");
+    expect(handle("run-two-phase", "commit")).toEqual({
+      state: "declined",
+      reason: "update already consumed",
+    });
+    expect(arm).toHaveBeenCalledTimes(1);
   });
 
   test("stages the arm and reports deferred while a turn is active", () => {

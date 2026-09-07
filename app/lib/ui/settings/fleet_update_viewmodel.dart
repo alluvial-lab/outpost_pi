@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app/data/actions/actions_repository.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/core/viewmodel/viewmodel.dart';
 import 'package:flutter/foundation.dart';
@@ -48,12 +49,6 @@ class FleetPeerAck {
 }
 
 /// Lifecycle of one fleet update run as shown in Settings.
-///
-/// `FleetUpdating`/`FleetArming` mirror the wire `fleet_update_status`
-/// phases; `FleetRestarting`/`FleetVerified`/`FleetUpdateLost` are DERIVED
-/// app-side from transport drop and room re-announce, because the
-/// coordinator Pi cannot report its own restart. `FleetUpdateFailed` is
-/// terminal for the run (a later run may start from it).
 sealed class FleetUpdateState {
   const FleetUpdateState();
 }
@@ -78,7 +73,7 @@ class FleetUpdating extends FleetUpdateState {
   int get hashCode => runtimeType.hashCode;
 }
 
-/// Siblings are arming; carries their acknowledgements (wire: `arming`).
+/// Siblings are ready to arm; carries their acknowledgements (wire: `arming`).
 class FleetArming extends FleetUpdateState {
   final List<FleetPeerAck> peers;
   const FleetArming(this.peers);
@@ -90,8 +85,7 @@ class FleetArming extends FleetUpdateState {
   int get hashCode => Object.hashAll(peers);
 }
 
-/// The run ended without arming (wire: `update_failed`/`already_running`,
-/// or a request that never produced status).
+/// The package update ended without a restart arm.
 class FleetUpdateFailed extends FleetUpdateState {
   final String detail;
   const FleetUpdateFailed(this.detail);
@@ -103,29 +97,45 @@ class FleetUpdateFailed extends FleetUpdateState {
   int get hashCode => detail.hashCode;
 }
 
-/// Derived: the transport dropped mid-run — the fleet is expected to be
+/// The coordinator explicitly declined or could not stage its own restart.
+class FleetNoRestart extends FleetUpdateState {
+  final String reason;
+  const FleetNoRestart(this.reason);
+
+  @override
+  bool operator ==(Object other) =>
+      other is FleetNoRestart && other.reason == reason;
+  @override
+  int get hashCode => reason.hashCode;
+}
+
+/// The transport or pinned room dropped mid-run; the fleet is expected to be
 /// restarting behind the disconnect.
 class FleetRestarting extends FleetUpdateState {
-  const FleetRestarting();
+  final List<FleetPeerAck> peers;
+  const FleetRestarting([this.peers = const <FleetPeerAck>[]]);
 
   @override
-  bool operator ==(Object other) => other is FleetRestarting;
+  bool operator ==(Object other) =>
+      other is FleetRestarting && listEquals(other.peers, peers);
   @override
-  int get hashCode => runtimeType.hashCode;
+  int get hashCode => Object.hashAll(peers);
 }
 
-/// Derived: the active room re-announced after the restart window.
+/// The pinned room re-announced with a new process-incarnation marker.
 class FleetVerified extends FleetUpdateState {
-  const FleetVerified();
+  final List<FleetPeerAck> peers;
+  const FleetVerified([this.peers = const <FleetPeerAck>[]]);
 
   @override
-  bool operator ==(Object other) => other is FleetVerified;
+  bool operator ==(Object other) =>
+      other is FleetVerified && listEquals(other.peers, peers);
   @override
-  int get hashCode => runtimeType.hashCode;
+  int get hashCode => Object.hashAll(peers);
 }
 
-/// Derived: no room recovery within the recovery window — normal
-/// connection-error UX resumes.
+/// No pinned-room recovery within the recovery window; normal connection-error
+/// UX resumes.
 class FleetUpdateLost extends FleetUpdateState {
   const FleetUpdateLost();
 
@@ -135,23 +145,9 @@ class FleetUpdateLost extends FleetUpdateState {
   int get hashCode => runtimeType.hashCode;
 }
 
-/// Drives the Settings fleet-update section: sends the `fleet_update`
-/// client message, folds `fleet_update_status` events into
-/// [FleetUpdateState], and derives `restarting`/`verified`/`lost` from
-/// transport and room-recovery signals.
-///
-/// While a run is live (updating/arming/restarting),
-/// [suppressConnectionErrors] is `true` — the expected mass disconnect of
-/// a fleet restart must not trip the app's reconnect-error UX. The flag is
-/// derived from the state, so every terminal transition (failed, verified,
-/// lost, or a fresh idle run) clears it by construction.
-///
-/// Wire status events are not filtered by `update_id`: every owner of the
-/// room sees the same broadcast events, and a second trigger while a run is
-/// live answers `already_running` whose follow-up events then belong to the
-/// in-flight run. A wire event arriving while the run is derived `restarting`
-/// resumes wire-following — it proves the coordinator Pi never exited (a
-/// transport flap, not the fleet restart).
+/// Drives the Settings fleet-update section: sends the `fleet_update` client
+/// message, folds status events into [FleetUpdateState], and derives restart
+/// recovery from pinned room metadata.
 class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
   final ConnectionManager _conn;
   final IActionsRepository _actions;
@@ -165,13 +161,14 @@ class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
   Timer? _requestTimer;
   String? _pendingRequestId;
 
-  /// Session id the live run is tracking; the restart window verifies
-  /// against it (a fresh Pi process announces a fresh session id).
-  String? _runSessionId;
-
-  /// Room the live run is watching, pinned at run start. The manager may
-  /// retarget its active room when this one dies; the run must not follow.
+  /// The complete target identity for the observed run. These values never
+  /// follow the app's currently selected peer/room while recovery is active.
+  String? _runPeerEpk;
   String? _runRoomId;
+  int? _runStartedAt;
+  String? _runUpdateId;
+  List<FleetPeerAck> _runPeers = const <FleetPeerAck>[];
+  final Set<String> _completedUpdateIds = <String>{};
   bool _disposed = false;
 
   FleetUpdateViewModel(
@@ -197,10 +194,11 @@ class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
   bool get canStart =>
       state is FleetIdle ||
       state is FleetUpdateFailed ||
+      state is FleetNoRestart ||
       state is FleetVerified ||
       state is FleetUpdateLost;
 
-  /// `true` when the active peer's owned room is connected.
+  /// `true` when the currently selected peer's owned room is connected.
   bool get roomConnected {
     if (_conn.status is! StatusOnline) return false;
     final epk = _conn.activePeer?.remoteEpk;
@@ -220,38 +218,43 @@ class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
   }
 
   /// Request a fleet update from the connected Pi after user confirmation.
-  ///
-  /// Returns `false` when a run is already live or no room is connected.
-  /// Send failures land in [state] as [FleetUpdateFailed]; a request that
-  /// never produces a status event (for example an old extension build)
-  /// fails via the request timeout.
+  /// The peer, room, session, and request id are pinned before recovery starts.
   Future<bool> start() async {
     if (_disposed || !canStart) return false;
     if (!roomConnected) return false;
     _cancelRequestWait();
-    // Pin the target before sending. ConnectionManager may retarget
-    // activeRoomId when the watched room disappears; recovery must still
-    // verify the room/session that this run actually addressed.
-    _runRoomId = _conn.activeRoomId;
-    _runSessionId = _conn.activeSessionId;
+    _runUpdateId = null;
+    _runPeers = const <FleetPeerAck>[];
+    _resetRunTarget();
 
     try {
       final id = await _actions.fleetUpdate();
       if (_disposed) return true;
+      _runUpdateId = id;
       _pendingRequestId = id;
-      _requestTimer = Timer(_requestTimeout, () {
-        if (_disposed || !canStart) return;
+      // A status can race the send completion. A terminal status may already
+      // have completed this id before the action future resolved as well.
+      if (_completedUpdateIds.contains(id)) {
         _pendingRequestId = null;
-        emit(
-          const FleetUpdateFailed(
-            'No fleet-update response from the Pi — is its extension up to date?',
-          ),
-        );
-      });
+        return true;
+      }
+      // If it already moved this run into an active state, its status handler
+      // cancelled the request wait.
+      if (!_isActiveState) {
+        _requestTimer = Timer(_requestTimeout, () {
+          if (_disposed || !canStart || _pendingRequestId != id) return;
+          _pendingRequestId = null;
+          _markTerminal(
+            const FleetUpdateFailed(
+              'No fleet-update response from the Pi — is its extension up to date?',
+            ),
+          );
+        });
+      }
     } on ActionFailure catch (e) {
-      if (!_disposed) emit(FleetUpdateFailed(e.message));
+      if (!_disposed) _markTerminal(FleetUpdateFailed(e.message));
     } catch (e) {
-      if (!_disposed) emit(FleetUpdateFailed(e.toString()));
+      if (!_disposed) _markTerminal(FleetUpdateFailed(e.toString()));
     }
     return true;
   }
@@ -265,15 +268,13 @@ class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
         _onServerMessage,
         onError: (Object _, StackTrace _) {},
       );
-    } else if (state is FleetUpdating || state is FleetArming) {
-      // Derivation rule: an active run + transport drop = the fleet is
-      // restarting behind the disconnect.
+    } else if (_isActiveState) {
+      // A selected-peer switch may also emit Connecting. Recovery remains
+      // pinned and can only verify after that pinned peer is selected again.
       _cancelRequestWait();
       _pendingRequestId = null;
       _enterRestarting();
     }
-    // Room connectivity is derived from live manager state; notify so the
-    // section re-evaluates its disabled-with-reason copy.
     notifyListeners();
   }
 
@@ -281,35 +282,23 @@ class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
     if (_disposed) return;
     switch (state) {
       case FleetUpdating() || FleetArming():
-        // Derive the restart window from ROOM loss, not only from an
-        // app-transport drop: a fleet restart ends the Pi's relay room
-        // while the app's own relay socket stays online.
+        if (_runStartedAt == null && _pinnedRoomLive()) {
+          _captureRunRoomBaseline();
+        }
+        // Room loss is a restart signal even when the relay socket remains up.
         if (!_pinnedRoomLive()) _enterRestarting();
       case FleetRestarting():
-        final epk = _conn.activePeer?.remoteEpk;
-        final roomId = _runRoomId ?? _conn.activeRoomId;
-        final room = epk == null
-            ? null
-            : (rooms[epk] ?? const <RoomInfo>[])
-                  .where((r) => r.roomId == roomId)
-                  .firstOrNull;
-        // Verified = the run's pinned room is back in the live set under a
-        // non-null FRESH session id. Cached-list replays after a reconnect
-        // carry the old session id (or none) and must not verify; a
-        // same-session return is a flap.
-        final baselineSessionId = _runSessionId;
+        final room = _pinnedRoomFromSnapshot(rooms);
         final recovered =
-            epk != null &&
-            _conn.isRoomLive(epk, roomId) &&
+            _runPeerEpk != null &&
+            _runRoomId != null &&
+            _conn.activePeer?.remoteEpk == _runPeerEpk &&
+            _conn.isRoomLive(_runPeerEpk!, _runRoomId!) &&
             room != null &&
-            baselineSessionId != null &&
-            baselineSessionId.isNotEmpty &&
-            room.sessionId?.isNotEmpty == true &&
-            room.sessionId != baselineSessionId;
+            _runStartedAt != null &&
+            room.startedAt != _runStartedAt;
         if (recovered) {
-          _recoveryTimer?.cancel();
-          _recoveryTimer = null;
-          emit(const FleetVerified());
+          _markTerminal(FleetVerified(_runPeers));
         }
       default:
         break;
@@ -319,48 +308,81 @@ class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
 
   void _onServerMessage(ServerMessage msg) {
     if (_disposed) return;
-    switch (msg) {
-      case FleetUpdateStatus(:final phase, :final detail, :final peers):
-        // A status event while restarting means the coordinator Pi is
-        // alive and still reporting — the drop was a flap, not the fleet
-        // restart. Resume wire-following (the recovery timer keeps
-        // guarding the window).
-        switch (phase) {
-          case 'updating':
-            _cancelRequestWait();
-            _adoptRunSession();
-            emit(const FleetUpdating());
-          case 'arming':
-            _cancelRequestWait();
-            _adoptRunSession();
-            emit(FleetArming(_parsePeers(peers)));
-          case 'update_failed':
-            _cancelRequestWait();
-            _pendingRequestId = null;
-            emit(
-              FleetUpdateFailed(
-                detail == null || detail.isEmpty ? 'update failed' : detail,
-              ),
-            );
-          case 'already_running':
-            _cancelRequestWait();
-            _pendingRequestId = null;
-            emit(
-              const FleetUpdateFailed(
-                'another fleet update is already running',
-              ),
-            );
-          default:
-            break; // unknown phase — forward compatibility
-        }
-      case ErrorMessage(:final inReplyTo, :final message):
-        if (inReplyTo == null || inReplyTo != _pendingRequestId) return;
-        _cancelRequestWait();
-        _pendingRequestId = null;
-        emit(FleetUpdateFailed('Pi rejected the fleet update: $message'));
-      default:
-        break;
+    if (msg case FleetUpdateStatus(:final updateId, :final phase)) {
+      // Server messages have no peer field; the channel carrying them is the
+      // current selected peer. Never let a switched-to peer mutate this run.
+      if (_runPeerEpk != null && _conn.activePeer?.remoteEpk != _runPeerEpk) {
+        return;
+      }
+      if (!_acceptUpdateId(updateId, phase)) return;
+      switch (msg) {
+        case FleetUpdateStatus(:final phase, :final detail, :final peers):
+          switch (phase) {
+            case 'updating':
+              _cancelRequestWait();
+              _pendingRequestId = null;
+              emit(const FleetUpdating());
+              _armRecoveryTimer();
+            case 'arming':
+              _cancelRequestWait();
+              _pendingRequestId = null;
+              _runPeers = _parsePeers(peers);
+              emit(FleetArming(_runPeers));
+              _armRecoveryTimer();
+            case 'update_failed':
+              _pendingRequestId = null;
+              final text = detail == null || detail.isEmpty
+                  ? 'update failed'
+                  : detail;
+              if (text.startsWith('fleet restart not armed:')) {
+                _markTerminal(
+                  FleetNoRestart(
+                    text.substring('fleet restart not armed:'.length).trim(),
+                  ),
+                );
+              } else {
+                _markTerminal(FleetUpdateFailed(text));
+              }
+            case 'already_running':
+              // A different owner's rejection is not a result for this run;
+              // _acceptUpdateId filters it before this branch.
+              _markTerminal(
+                const FleetUpdateFailed(
+                  'another fleet update is already running',
+                ),
+              );
+            default:
+              break;
+          }
+      }
+    } else if (msg case ErrorMessage(:final inReplyTo, :final message)) {
+      if (inReplyTo == null || inReplyTo != _pendingRequestId) return;
+      _cancelRequestWait();
+      _pendingRequestId = null;
+      _markTerminal(
+        FleetUpdateFailed('Pi rejected the fleet update: $message'),
+      );
     }
+  }
+
+  bool _acceptUpdateId(String updateId, String phase) {
+    if (_completedUpdateIds.contains(updateId)) return false;
+    final current = _runUpdateId;
+    if (current == null) {
+      if (phase == 'already_running') return false;
+      _runUpdateId = updateId;
+      _resetRunTarget();
+      return true;
+    }
+    if (current == updateId) return true;
+    // A live run is authoritative for this ViewModel. In particular, another
+    // owner's `already_running` must not terminate the observed run.
+    if (_isActiveState) return false;
+    _completedUpdateIds.add(current);
+    if (phase == 'already_running') return false;
+    _runUpdateId = updateId;
+    _resetRunTarget();
+    return true;
   }
 
   static List<FleetPeerAck> _parsePeers(dynamic wire) {
@@ -376,40 +398,93 @@ class FleetUpdateViewModel extends ViewModel<FleetUpdateState> {
         .toList(growable: false);
   }
 
-  void _cancelRequestWait() {
-    _requestTimer?.cancel();
-    _requestTimer = null;
+  bool get _isActiveState =>
+      state is FleetUpdating ||
+      state is FleetArming ||
+      state is FleetRestarting;
+
+  void _resetRunTarget() {
+    final epk = _conn.activePeer?.remoteEpk;
+    _runPeerEpk = epk;
+    _runRoomId = epk == null ? null : _conn.activeRoomId;
+    _runStartedAt = null;
+    if (epk != null) {
+      for (final room in _conn.roomsFor(epk)) {
+        if (room.roomId == _runRoomId) {
+          _runStartedAt = room.startedAt;
+          break;
+        }
+      }
+    }
   }
 
-  /// Pin the room and session id for wire-observed runs that did not originate
-  /// in [start]. User-triggered runs pin these values before sending.
-  void _adoptRunSession() {
-    if (_runRoomId != null) return;
-    final epk = _conn.activePeer?.remoteEpk;
-    if (epk == null) return;
+  void _captureRunRoomBaseline() {
+    final epk = _runPeerEpk;
+    final roomId = _runRoomId;
+    if (epk == null || roomId == null) return;
     for (final room in _conn.roomsFor(epk)) {
-      if (room.roomId == _conn.activeRoomId) {
-        _runRoomId = room.roomId;
-        _runSessionId = room.sessionId;
+      if (room.roomId == roomId) {
+        _runStartedAt = room.startedAt;
         return;
       }
     }
   }
 
   bool _pinnedRoomLive() {
-    if (_conn.status is! StatusOnline) return false;
-    final epk = _conn.activePeer?.remoteEpk;
-    final roomId = _runRoomId ?? _conn.activeRoomId;
-    return epk != null && _conn.isRoomLive(epk, roomId);
+    final epk = _runPeerEpk;
+    final roomId = _runRoomId;
+    if (_conn.status is! StatusOnline || epk == null || roomId == null) {
+      return false;
+    }
+    if (_conn.activePeer?.remoteEpk != epk) return false;
+    return _conn.isRoomLive(epk, roomId);
+  }
+
+  List<RoomInfo> _pinnedRoomsFromSnapshot(Map<String, List<RoomInfo>> rooms) =>
+      _runPeerEpk == null
+      ? const <RoomInfo>[]
+      : rooms.entries
+            .where(
+              (entry) =>
+                  toStandardB64(entry.key) == toStandardB64(_runPeerEpk!),
+            )
+            .expand((entry) => entry.value)
+            .toList(growable: false);
+
+  RoomInfo? _pinnedRoomFromSnapshot(Map<String, List<RoomInfo>> rooms) {
+    final roomId = _runRoomId;
+    if (roomId == null) return null;
+    for (final room in _pinnedRoomsFromSnapshot(rooms)) {
+      if (room.roomId == roomId) return room;
+    }
+    return null;
+  }
+
+  void _armRecoveryTimer() {
+    _recoveryTimer?.cancel();
+    _recoveryTimer = Timer(_recoveryTimeout, () {
+      if (_disposed || !_isActiveState) return;
+      _markTerminal(const FleetUpdateLost());
+    });
   }
 
   void _enterRestarting() {
-    emit(const FleetRestarting());
+    if (!_isActiveState && state is! FleetRestarting) return;
+    emit(FleetRestarting(_runPeers));
+    _armRecoveryTimer();
+  }
+
+  void _markTerminal(FleetUpdateState terminal) {
+    _cancelRequestWait();
     _recoveryTimer?.cancel();
-    _recoveryTimer = Timer(_recoveryTimeout, () {
-      if (_disposed || state is! FleetRestarting) return;
-      emit(const FleetUpdateLost());
-    });
+    _recoveryTimer = null;
+    if (_runUpdateId != null) _completedUpdateIds.add(_runUpdateId!);
+    emit(terminal);
+  }
+
+  void _cancelRequestWait() {
+    _requestTimer?.cancel();
+    _requestTimer = null;
   }
 
   @override

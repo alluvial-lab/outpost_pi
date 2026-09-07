@@ -466,12 +466,16 @@ class _FleetStatus extends StatelessWidget {
         'Update failed: $detail',
         colors.error,
       ),
+      FleetNoRestart(:final reason) => (
+        'Fleet not restarted: $reason',
+        colors.error,
+      ),
       FleetRestarting() => (
         'Fleet restarting — the Pis reconnect as they come back.',
         colors.accent,
       ),
-      FleetVerified() => (
-        'Fleet update verified — all Pis are back.',
+      FleetVerified(:final peers) => (
+        'coordinator verified · ${peers.where((p) => p.state == 'armed').length}/${peers.length} Pis acked',
         colors.accent,
       ),
       FleetUpdateLost() => (
