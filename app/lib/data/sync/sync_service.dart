@@ -1811,10 +1811,12 @@ class SyncService extends Service {
       case ActionOk():
       case ActionError():
       case ModelsList():
+      case FleetUpdateStatus():
       case CaptureUploadAck():
       case CaptureUploadError():
         // Capture control replies are consumed by DebugCaptureUploaderImpl and
-        // never projected into the chat transcript.
+        // never projected into the chat transcript. Fleet-update status is
+        // consumed by the Settings FleetUpdateViewModel, not the transcript.
         break;
     }
   }

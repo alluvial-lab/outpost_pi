@@ -51,6 +51,9 @@ class _FakeRepo implements IActionsRepository {
   }
 
   @override
+  Future<String> fleetUpdate() async => 'act_fleet_sheet_test';
+
+  @override
   Future<void> newSession() async {
     newSessionCalls++;
     if (failNewSession) throw const ActionFailure('new boom');

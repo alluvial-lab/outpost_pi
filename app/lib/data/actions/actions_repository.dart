@@ -115,6 +115,16 @@ abstract class IActionsRepository extends Repository {
   /// (peer, room) session if one exists; otherwise hits the Pi.
   Future<ModelsCatalogue> listModels({bool forceRefresh = false});
 
+  /// Request a fleet update on the connected Pi and return the request id.
+  ///
+  /// Unlike the other actions there is no `action_ok` handshake: progress
+  /// arrives as repeated `fleet_update_status` events on the channel. The
+  /// returned id lets the caller correlate a synchronous error reply (for
+  /// example an old-extension `unknown type` rejection) with this request.
+  ///
+  /// Throws [ActionFailure] when offline or the session id is unavailable.
+  Future<String> fleetUpdate();
+
   /// Snapshot of the active room's meta. Recomputed on every rooms
   /// snapshot and on every connection-status change.
   ActiveRoomMeta get activeRoomMeta;
@@ -376,6 +386,25 @@ class ActionsRepository extends Repository implements IActionsRepository {
     final epk = _conn.activePeer?.remoteEpk ?? '';
     final room = _conn.activeRoomId;
     return '$epk|$room';
+  }
+
+  @override
+  Future<String> fleetUpdate() async {
+    final ch = _channel;
+    if (ch == null) {
+      throw const ActionFailure('offline');
+    }
+    final sessionId = _conn.activeSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw const ActionFailure('session identity unavailable');
+    }
+    final id = 'act_${uuid7()}';
+    try {
+      await ch.send(FleetUpdate(id: id, sessionId: sessionId));
+    } catch (e) {
+      throw ActionFailure(e.toString());
+    }
+    return id;
   }
 
   @override

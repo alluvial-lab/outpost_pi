@@ -46,6 +46,7 @@ import 'package:app/ui/core/viewmodel/viewmodel.dart';
 import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
 import 'package:app/ui/onboarding/viewmodels/onboarding_viewmodel.dart';
 import 'package:app/ui/pairing/viewmodels/pairing_viewmodel.dart';
+import 'package:app/ui/settings/fleet_update_viewmodel.dart';
 import 'package:app/ui/settings/viewmodels/settings_viewmodel.dart';
 import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
 import 'package:cryptography/cryptography.dart';
@@ -210,6 +211,12 @@ Future<void> setupDependencies() async {
       _injector.get<Preferences>(),
       _injector.get<ConnectionManager>(),
       _injector.get<DebugLog>(),
+    ),
+  );
+  _injector.addViewModel<FleetUpdateViewModel>(
+    () => FleetUpdateViewModel(
+      _injector.get<ConnectionManager>(),
+      _injector.get<IActionsRepository>(),
     ),
   );
   _injector.addViewModel<PairingViewModel>(

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/ui/core/themes/themes.dart';
+import 'package:app/ui/settings/fleet_update_viewmodel.dart';
 import 'package:app/ui/settings/states/settings_state.dart';
 import 'package:app/ui/settings/viewmodels/settings_viewmodel.dart';
 import 'package:app/ui/settings/widgets/widgets.dart';
@@ -88,6 +89,8 @@ class SettingsPage extends StatelessWidget {
           const _RelaySection(),
           Divider(color: colors.border, height: 1),
           const _DisplaySection(),
+          Divider(color: colors.border, height: 1),
+          const _FleetSection(),
           Divider(color: colors.border, height: 1),
           _DebugSection(shareDebugLogFn: shareDebugLogFn),
           Divider(color: colors.border, height: 1),
@@ -334,6 +337,192 @@ class _DisplaySection extends StatelessWidget {
         ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+}
+
+/// Fleet device-ops section: confirmation-gated fleet update with live
+/// per-phase status. The section owns nothing — all state comes from its
+/// section-scoped [FleetUpdateViewModel] provider.
+class _FleetSection extends StatelessWidget {
+  const _FleetSection();
+
+  Future<void> _confirmAndStart(BuildContext context) async {
+    final vm = context.read<FleetUpdateViewModel>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Update + restart the fleet?'),
+        content: const Text(
+          'Runs the package update on the connected Pi, then restarts every '
+          'Pi on this VM. In-flight turns finish first.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('fleet-update-cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('fleet-update-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Update + restart'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted || confirmed != true) return;
+    await vm.start();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // SettingsPage is also used by focused widget tests and lightweight
+    // embedding paths that do not mount the route's optional fleet binding.
+    // Keep the section absent until its route-scoped ViewModel is provided.
+    final vm = context.watch<FleetUpdateViewModel?>();
+    if (vm == null) return const SizedBox.shrink();
+    final colors = context.colors;
+    final blockedReason = vm.canStart ? vm.startBlockedReason : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeader('Fleet'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Update every Pi on this VM from your phone: run the package '
+                'update on the connected Pi, then rolling-restart the fleet.',
+                style: context.typo.sansBody.copyWith(
+                  color: colors.muted,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _FleetStatus(state: vm.state),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                key: const Key('fleet-update-button'),
+                onPressed: blockedReason == null
+                    ? () => _confirmAndStart(context)
+                    : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: colors.accent,
+                  foregroundColor: colors.onAccent,
+                  disabledBackgroundColor: colors.border,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(6)),
+                  ),
+                ),
+                icon: const Icon(LucideIcons.refreshCw, size: 18),
+                label: Text(
+                  'Update fleet',
+                  style: const TextStyle(fontFamily: kMonoFamily, fontSize: 13),
+                ),
+              ),
+              if (blockedReason != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  blockedReason,
+                  key: const Key('fleet-update-blocked-reason'),
+                  style: context.typo.mono.copyWith(
+                    fontSize: 11,
+                    color: colors.muted,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Renders the current fleet-update phase, including the per-Pi ack table.
+class _FleetStatus extends StatelessWidget {
+  final FleetUpdateState state;
+
+  const _FleetStatus({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final (label, color) = switch (state) {
+      FleetIdle() => ('No update running.', colors.muted),
+      FleetUpdating() => ('Updating packages on the Pi…', colors.accent),
+      FleetArming(:final peers) => (
+        'Arming fleet restart — ${peers.where((p) => p.state == 'armed').length}/${peers.length} Pis armed.',
+        colors.accent,
+      ),
+      FleetUpdateFailed(:final detail) => (
+        'Update failed: $detail',
+        colors.error,
+      ),
+      FleetRestarting() => (
+        'Fleet restarting — the Pis reconnect as they come back.',
+        colors.accent,
+      ),
+      FleetVerified() => (
+        'Fleet update verified — all Pis are back.',
+        colors.accent,
+      ),
+      FleetUpdateLost() => (
+        'Fleet restart did not recover in time. Reconnect errors are back on.',
+        colors.error,
+      ),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          key: const Key('fleet-update-status'),
+          style: context.typo.mono.copyWith(fontSize: 12, color: color),
+        ),
+        if (state is FleetArming)
+          _FleetAckList(peers: (state as FleetArming).peers),
+      ],
+    );
+  }
+}
+
+/// Per-Pi arm acknowledgement table for the arming phase.
+class _FleetAckList extends StatelessWidget {
+  final List<FleetPeerAck> peers;
+
+  const _FleetAckList({required this.peers});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final ack in peers)
+            Text(
+              ack.reason == null
+                  ? '${ack.peer} — ${ack.state}'
+                  : '${ack.peer} — ${ack.state} (${ack.reason})',
+              key: Key('fleet-update-ack-${ack.peer}'),
+              style: context.typo.mono.copyWith(
+                fontSize: 11,
+                color: ack.state == 'no-ack' || ack.state == 'declined'
+                    ? colors.muted
+                    : colors.text,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

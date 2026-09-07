@@ -1018,6 +1018,9 @@ final class _StaticActionsRepository extends IActionsRepository {
   Future<void> compact() => throw const ActionFailure('not exercised');
 
   @override
+  Future<String> fleetUpdate() => throw const ActionFailure('not exercised');
+
+  @override
   Future<void> newSession() => throw const ActionFailure('not exercised');
 
   @override

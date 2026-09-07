@@ -259,6 +259,9 @@ final class FoldActionsRepository implements IActionsRepository {
   Future<void> compact() async {}
 
   @override
+  Future<String> fleetUpdate() async => 'act_fleet_fixture';
+
+  @override
   Future<void> newSession() async {}
 
   @override
