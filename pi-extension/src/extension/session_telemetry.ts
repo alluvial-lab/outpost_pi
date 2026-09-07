@@ -136,19 +136,28 @@ export class SessionTelemetryPublisher {
   }
 
   private sampleWithBranch(): void {
-    const usage = this.readUsage();
     const cwd = this.readCwd();
     const generation = this.generation;
     if (!cwd) {
-      this.publishUsage(usage);
+      this.publishUsage(this.readUsage());
       return;
     }
-    if (this.branchInFlight) return;
+    // A settled event can arrive while the previous branch lookup is still
+    // pending. Do not discard that newer usage sample; publish it now, while
+    // the eventual branch result will re-read usage before it publishes.
+    if (this.branchInFlight) {
+      this.publishUsage(this.readUsage());
+      return;
+    }
     const lookup = Promise.resolve()
       .then(() => this.opts.runGitBranch(cwd, this.gitTimeoutMs))
       .catch(() => null)
       .then((branch) => {
         if (generation !== this.generation) return;
+        // Git is deliberately asynchronous. The usage captured when the
+        // lookup started may be stale (for example, compaction can clear it),
+        // so only publish the latest usage projection alongside the branch.
+        const usage = this.readUsage();
         this.publishChanged({
           ...(usage ? { ctx_percent: usage.ctxPercent, ctx_max: usage.ctxMax } : {}),
           branch,

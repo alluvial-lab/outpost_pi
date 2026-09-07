@@ -987,6 +987,52 @@ mod tests {
         v
     }
 
+    /// A telemetry patch broadcasts both values and explicit null-clears to
+    /// subscribers, rather than turning a stored clear into omission.
+    #[tokio::test]
+    async fn telemetry_patch_broadcasts_values_and_null_clears() {
+        let (reg, pi, mut rx_app) = meta_fixture().await;
+
+        assert!(
+            reg.update_room_meta(
+                &pi,
+                "main",
+                RoomMetaPatch {
+                    branch: Some(Some("main".to_string())),
+                    ctx_percent: Some(Some(92)),
+                    ctx_max: Some(Some(1_000_000)),
+                    ..Default::default()
+                },
+            )
+            .await
+        );
+        let set = recv_meta(&mut rx_app);
+        assert_eq!(set["meta"]["branch"], "main");
+        assert_eq!(set["meta"]["ctx_percent"], 92);
+        assert_eq!(set["meta"]["ctx_max"], 1_000_000);
+
+        assert!(
+            reg.update_room_meta(
+                &pi,
+                "main",
+                RoomMetaPatch {
+                    branch: Some(None),
+                    ctx_percent: Some(None),
+                    ctx_max: Some(None),
+                    ..Default::default()
+                },
+            )
+            .await
+        );
+        let clear = recv_meta(&mut rx_app);
+        assert!(clear["meta"].get("branch").is_some());
+        assert!(clear["meta"].get("ctx_percent").is_some());
+        assert!(clear["meta"].get("ctx_max").is_some());
+        assert!(clear["meta"]["branch"].is_null());
+        assert!(clear["meta"]["ctx_percent"].is_null());
+        assert!(clear["meta"]["ctx_max"].is_null());
+    }
+
     /// `working: true` patch broadcasts the post-patch state to subscribers.
     #[tokio::test]
     async fn working_true_patch_broadcasts_true() {

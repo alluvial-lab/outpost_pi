@@ -343,3 +343,42 @@ Implementation commits: `2d9cbd29f`, `8d807cc5c`, `87ce1b6b7`.
 - Extension-sampler live spot-check DEFERRED to operator at deploy (requires
   one pi restart; the orchestrating session runs on this fleet) — recorded
   in the story body.
+
+## Review fixes
+
+Four confirmed telemetry blockers were repaired in the integration boundary:
+
+- **App announcement/snapshot hydration** — `ConnectionManager` rebuilt rooms
+  without carrying the additive telemetry fields, so room announcements and
+  older snapshots erased live branch/context values. It now preserves cached
+  values when those optional fields are omitted, including PairOk session
+  reconstruction; regression coverage exercises announcement → live patch →
+  PairOk and an omitted-field snapshot.
+- **Relay null-clear broadcast** — the relay merged explicit telemetry clears
+  but its subscriber projection omitted nullable fields whose value was null.
+  Broadcasts now include branch, context percentage, and context maximum as
+  explicit JSON nulls when cleared; the relay test covers set and null-clear.
+- **Delayed branch sampling** — an asynchronous git lookup published the
+  usage captured before compaction and dropped newer settled samples while a
+  lookup was in flight. The sampler now re-reads usage on branch completion
+  and publishes usage-only deltas during lookup coalescing.
+- **Connect-time telemetry loss** — samples cached while relay authentication
+  was pending were value-gated away after the socket became live. The
+  connection callback now replays the sampler's current projection; a
+  deferred-connect wiring test proves the first post-connect update is sent.
+
+Review regression tests passed:
+
+- `app`: focused `connection_manager_test.dart` (all 60 tests).
+- `relay`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test`
+  (172 unit, 8 integration, 14 mesh, 9 forwarding, 10 presence, 3 protocol,
+  and 20 rooms tests).
+- `pi-extension`: sampler unit tests (8) and deferred-connect wiring test;
+  protocol check, typecheck, and build passed.
+
+Known unrelated verification findings: the full pi-extension suite currently
+has two stale fixture-count assertions expecting 41 files while the checked-in
+catalog contains 43; the full app suite had three pre-existing/flaky failures
+(auth-read hedge timeout and two chat ViewModel timing cases). No deployed
+live spot-check was possible in this session; operator verification remains
+required after a Pi restart.

@@ -2250,6 +2250,12 @@ async function _startRelayViaTransportInner(ctx: RelayStartContext): Promise<voi
         // live projection after every initial connect and reconnect rather than
         // relying only on a transition that may have happened while offline.
         _publishBackground(_backgroundActivityTracker.activeCount > 0);
+        // Samples taken while relay authentication was in flight only update
+        // RelayTransport's cached room metadata. Replay the sampler's current
+        // projection now that sendControl has a live socket; otherwise its
+        // value-gated state would suppress the first post-connect publish.
+        const telemetry = _sessionTelemetry.patchForHello();
+        if (Object.keys(telemetry).length > 0) _publishRoomMetaPatch(telemetry);
       },
     });
   } catch (err) {

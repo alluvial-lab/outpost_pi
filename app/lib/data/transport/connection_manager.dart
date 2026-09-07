@@ -1128,6 +1128,9 @@ class ConnectionManager extends Service {
         :final thinking,
         :final working,
         :final background,
+        :final branch,
+        :final ctxPercent,
+        :final ctxMax,
       ):
         final key = toStandardB64(peer);
         final list = _roomsByPeer[key] ?? <RoomInfo>[];
@@ -1147,6 +1150,9 @@ class ConnectionManager extends Service {
         var preservedWorking = false;
         var preservedBackground = false;
         String? preservedSessionId;
+        String? preservedBranch;
+        int? preservedCtxPercent;
+        int? preservedCtxMax;
         final existingIdx = list.indexWhere((r) => r.roomId == roomId);
         if (existingIdx >= 0) {
           preservedName = list[existingIdx].name;
@@ -1154,6 +1160,9 @@ class ConnectionManager extends Service {
           preservedThinking = list[existingIdx].thinking;
           preservedWorking = list[existingIdx].working;
           preservedBackground = list[existingIdx].background;
+          preservedBranch = list[existingIdx].branch;
+          preservedCtxPercent = list[existingIdx].ctxPercent;
+          preservedCtxMax = list[existingIdx].ctxMax;
         }
         final next = RoomInfo(
           roomId: roomId,
@@ -1165,6 +1174,11 @@ class ConnectionManager extends Service {
           thinking: thinking ?? preservedThinking,
           working: working ?? preservedWorking,
           background: background ?? preservedBackground,
+          // Legacy relays omit the additive telemetry fields. Preserve the
+          // cached projection in that mixed-version case.
+          branch: branch ?? preservedBranch,
+          ctxPercent: ctxPercent ?? preservedCtxPercent,
+          ctxMax: ctxMax ?? preservedCtxMax,
         );
         final liveAlready = _liveRoomIds[key]?.contains(roomId) ?? false;
         if (!next.working) {
@@ -1212,8 +1226,8 @@ class ConnectionManager extends Service {
           _liveRoomIds.remove(key);
         }
         if (removed || clearedWorking) roomsDirty = true;
-      case RoomMetaUpdated(:final peer, :final roomId, :final working)
-          && var event:
+      case RoomMetaUpdated(:final peer, :final roomId, :final working) &&
+          var event:
         final key = toStandardB64(peer);
         final list = _roomsByPeer[key];
         if (list == null) break;
@@ -1257,7 +1271,8 @@ class ConnectionManager extends Service {
           final preservedModel = r.model ?? byId[r.roomId]?.model;
           // Plan/28 Wave D — same convention as model: keep the
           // previously-known thinking when the snapshot omits it.
-          final preservedThinking = r.thinking ?? byId[r.roomId]?.thinking;
+          final previous = byId[r.roomId];
+          final preservedThinking = r.thinking ?? previous?.thinking;
           byId[r.roomId] = RoomInfo(
             roomId: r.roomId,
             sessionId: preservedSessionId,
@@ -1266,6 +1281,11 @@ class ConnectionManager extends Service {
             startedAt: r.startedAt,
             model: preservedModel,
             thinking: preservedThinking,
+            // Additive telemetry is absent from older snapshots. Keep the
+            // live-patch values instead of erasing them on rehydration.
+            branch: r.branch ?? previous?.branch,
+            ctxPercent: r.ctxPercent ?? previous?.ctxPercent,
+            ctxMax: r.ctxMax ?? previous?.ctxMax,
             // Plan/32 — the snapshot is authoritative for live state:
             // `rooms_of` reads the current registry meta, so its
             // `working` reflects the latest turn_start/turn_end.
@@ -1699,6 +1719,9 @@ class ConnectionManager extends Service {
       thinking: current?.thinking,
       working: current?.working ?? false,
       background: current?.background ?? false,
+      branch: current?.branch,
+      ctxPercent: current?.ctxPercent,
+      ctxMax: current?.ctxMax,
     );
     final liveAlready = _liveRoomIds[key]?.contains(msg.roomId) ?? false;
     if (current == next && liveAlready) return;
