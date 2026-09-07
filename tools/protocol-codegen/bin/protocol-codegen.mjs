@@ -968,6 +968,9 @@ final class RelayRoomMetaDto {
     this.model,
     this.thinking,
     this.background,
+    this.branch,
+    this.ctxPercent,
+    this.ctxMax,
   });
   final String roomId;
   final String? name;
@@ -977,6 +980,9 @@ final class RelayRoomMetaDto {
   final String? thinking;
   final bool? working;
   final bool? background;
+  final String? branch;
+  final int? ctxPercent;
+  final int? ctxMax;
   final int startedAt;
   factory RelayRoomMetaDto.fromJson(Map<String, dynamic> json) {
     final legacyMeta = json['meta'] is Map
@@ -991,6 +997,9 @@ final class RelayRoomMetaDto {
       thinking: (json['thinking'] as String?) ?? (legacyMeta['thinking'] as String?),
       working: (json['working'] as bool?) ?? (legacyMeta['working'] as bool?),
       background: (json['background'] as bool?) ?? (legacyMeta['background'] as bool?),
+      branch: (json['branch'] as String?) ?? (legacyMeta['branch'] as String?),
+      ctxPercent: (json['ctx_percent'] as num?)?.toInt() ?? (legacyMeta['ctx_percent'] as num?)?.toInt(),
+      ctxMax: (json['ctx_max'] as num?)?.toInt() ?? (legacyMeta['ctx_max'] as num?)?.toInt(),
       startedAt: (json['started_at'] as num).toInt(),
     );
   }
@@ -1041,27 +1050,45 @@ final class RelayRoomMetaPatchDto {
     this.sessionId,
     this.working,
     this.background,
+    this.branch,
+    this.ctxPercent,
+    this.ctxMax,
     required this.hasModel,
     required this.hasThinking,
     required this.hasSessionId,
+    required this.hasBranch,
+    required this.hasCtxPercent,
+    required this.hasCtxMax,
   });
   final String? model;
   final String? thinking;
   final String? sessionId;
   final bool? working;
   final bool? background;
+  final String? branch;
+  final int? ctxPercent;
+  final int? ctxMax;
   final bool hasModel;
   final bool hasThinking;
   final bool hasSessionId;
+  final bool hasBranch;
+  final bool hasCtxPercent;
+  final bool hasCtxMax;
   factory RelayRoomMetaPatchDto.fromJson(Map<String, dynamic> json) => RelayRoomMetaPatchDto(
         model: json['model'] as String?,
         thinking: json['thinking'] as String?,
         sessionId: json['session_id'] as String?,
         working: json['working'] as bool?,
         background: json['background'] as bool?,
+        branch: json['branch'] as String?,
+        ctxPercent: (json['ctx_percent'] as num?)?.toInt(),
+        ctxMax: (json['ctx_max'] as num?)?.toInt(),
         hasModel: json.containsKey('model'),
         hasThinking: json.containsKey('thinking'),
         hasSessionId: json.containsKey('session_id'),
+        hasBranch: json.containsKey('branch'),
+        hasCtxPercent: json.containsKey('ctx_percent'),
+        hasCtxMax: json.containsKey('ctx_max'),
       );
 }
 
@@ -1212,6 +1239,7 @@ function emitRustControl(entries, schemaPath) {
 
   if (hasType('hello') || hasType('auth')) {
     lines.push('#[derive(Debug, Clone, Deserialize)]');
+    lines.push('#[allow(clippy::large_enum_variant)]');
     lines.push('#[serde(tag = "type", rename_all = "snake_case")]');
     lines.push('pub enum ClientAuthMsg {');
     if (hasType('hello')) {
@@ -1250,6 +1278,9 @@ function emitRustControl(entries, schemaPath) {
     lines.push('    pub working: bool,');
     lines.push('    #[serde(default)]');
     lines.push('    pub background: bool,');
+    lines.push('    pub branch: Option<String>,');
+    lines.push('    pub ctx_percent: Option<u64>,');
+    lines.push('    pub ctx_max: Option<u64>,');
     lines.push('}');
     lines.push('');
     lines.push('fn default_room() -> String {');
@@ -1619,9 +1650,10 @@ function relayRoomDef(rootSchema, defName) {
 
 function rustTypeForRoomMetaField(fieldName, fieldSchema) {
   const field = requireObject(fieldSchema, `RoomMeta.${fieldName}`);
-  if (field.type === 'string') return 'String';
-  if (field.type === 'boolean') return 'bool';
-  if (field.type === 'integer') return 'i64';
+  const types = Array.isArray(field.type) ? field.type : [field.type];
+  if (types.includes('string')) return 'String';
+  if (types.includes('boolean')) return 'bool';
+  if (types.includes('integer')) return 'u64';
   if (typeof field.$ref === 'string') {
     if (field.$ref.endsWith('/epochMillis')) return 'i64';
     if (field.$ref.endsWith('/roomId') || field.$ref.endsWith('/sessionId')) return 'String';
@@ -1641,6 +1673,12 @@ function nonNullableBoolPatchFields(patchSchema) {
   return new Set(requireArray(semantics.nonNullableBooleans ?? [], 'roomMetaPatch.nonNullableBooleans').map(String));
 }
 
+function nullableIntegerPatchFields(patchSchema) {
+  const metadata = requireObject(patchSchema['x-outpost-pi'] ?? {}, 'roomMetaPatch.x-outpost-pi');
+  const semantics = requireObject(metadata.mergePatchSemantics ?? {}, 'roomMetaPatch.mergePatchSemantics');
+  return new Set(requireArray(semantics.nullableIntegers ?? [], 'roomMetaPatch.nullableIntegers').map(String));
+}
+
 function emitRustRoom(entries, schemaPath) {
   const rootSchema = relayControlRootSchemaFromCatalog(entries, schemaPath);
   const roomMeta = relayRoomDef(rootSchema, 'roomMeta');
@@ -1649,6 +1687,7 @@ function emitRustRoom(entries, schemaPath) {
   const roomProperties = requireObject(roomMeta.properties, 'roomMeta.properties');
   const patchProperties = requireObject(roomMetaPatch.properties, 'roomMetaPatch.properties');
   const nullableStrings = nullableStringPatchFields(roomMetaPatch);
+  const nullableIntegers = nullableIntegerPatchFields(roomMetaPatch);
   const nonNullableBooleans = nonNullableBoolPatchFields(roomMetaPatch);
 
   const lines = rustHeader('room');
@@ -1678,6 +1717,16 @@ function emitRustRoom(entries, schemaPath) {
     if (nullableStrings.has(fieldName)) {
       lines.push('    #[serde(skip_serializing_if = "Option::is_none")]');
       lines.push(`    pub ${fieldName}: Option<Option<String>>,`);
+      continue;
+    }
+    if (nullableIntegers.has(fieldName)) {
+      const field = requireObject(fieldSchema, `RoomMetaPatch.${fieldName}`);
+      const types = Array.isArray(field.type) ? field.type : [field.type];
+      if (!types.includes('integer')) {
+        throw new Error(`RoomMetaPatch.${fieldName} must include an integer schema for nullable integer patches`);
+      }
+      lines.push('    #[serde(skip_serializing_if = "Option::is_none")]');
+      lines.push(`    pub ${fieldName}: Option<Option<u64>>,`);
       continue;
     }
     if (nonNullableBooleans.has(fieldName)) {
@@ -1727,6 +1776,13 @@ function emitRustRoom(entries, schemaPath) {
       lines.push(`                        return Err(de::Error::duplicate_field("${fieldName}"));`);
       lines.push('                    }');
       lines.push(`                    patch.${fieldName} = Some(map.next_value::<Option<String>>()?);`);
+      lines.push('                }');
+    } else if (nullableIntegers.has(fieldName)) {
+      lines.push(`                "${fieldName}" => {`);
+      lines.push(`                    if patch.${fieldName}.is_some() {`);
+      lines.push(`                        return Err(de::Error::duplicate_field("${fieldName}"));`);
+      lines.push('                    }');
+      lines.push(`                    patch.${fieldName} = Some(map.next_value::<Option<u64>>()?);`);
       lines.push('                }');
     } else if (nonNullableBooleans.has(fieldName)) {
       lines.push(`                "${fieldName}" => {`);

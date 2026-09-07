@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-session-context-telemetry-schema-codegen
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, app, relay, protocol]
 parent: feature-mobile-session-context-telemetry
 depends_on: []
@@ -34,3 +34,32 @@ hand-edits mirroring d13b85fec's exact touched lines, SPEC.md doc line).
 
 None — this is the foundation story; the extension-sampler and app-render
 stories depend on it.
+
+## Implementation notes
+
+- Added nullable `branch`, `ctx_percent`, and `ctx_max` to every room-meta
+  projection, with `branch` in `nullableStrings` and the new `ctx_percent` /
+  `ctx_max` `nullableIntegers` merge category. Generated TypeScript, Dart, and
+  Rust outputs are refreshed from the schema; Rust integer projections use
+  `u64` and preserve tri-state patch decoding with `Option<Option<u64>>`.
+- Extended relay snapshot merge/is-empty and subscriber projection paths. The
+  relay remains opaque to telemetry values; null clears are applied in the
+  canonical room snapshot and absent patch fields preserve prior values.
+- The generated `RoomMeta` expansion also requires the auth bootstrap literal
+  to carry the new optional fields, so `relay/src/auth/challenge.rs` was
+  updated as a necessary compile-time consumer of the generated contract.
+- Fixture coverage includes telemetry set, explicit null-clear, and omitted
+  (preserve) patch rows. `docs/SPEC.md` now states the room-meta contract.
+
+## Verification evidence
+
+- `cd protocol && node --import tsx scripts/check-fixtures.ts` — passed (all 5
+  fixture families validated).
+- `cd tools/protocol-codegen && ../../pi-extension/node_modules/.bin/vitest run
+  src/index.vitest.test.ts` — passed (7 tests).
+- `cd pi-extension && corepack pnpm generate:protocol && corepack pnpm
+  check:protocol && corepack pnpm typecheck` — passed.
+- Rust generation from `protocol/scripts/list-types.ts` — passed; generated
+  outputs are current.
+- `cd relay && cargo fmt --check && cargo clippy -- -D warnings && cargo test`
+  — passed (171 unit tests plus all integration suites).

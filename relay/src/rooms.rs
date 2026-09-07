@@ -36,6 +36,9 @@ impl RoomMetaPatch {
             && self.session_id.is_none()
             && self.working.is_none()
             && self.background.is_none()
+            && self.branch.is_none()
+            && self.ctx_percent.is_none()
+            && self.ctx_max.is_none()
     }
 }
 
@@ -98,6 +101,9 @@ mod tests {
             "session_id": null,
             "working": false,
             "background": true,
+            "branch": "main",
+            "ctx_percent": 92,
+            "ctx_max": 1000000,
         }))
         .unwrap();
         assert_eq!(patch.model, Some(None));
@@ -105,6 +111,9 @@ mod tests {
         assert_eq!(patch.session_id, Some(None));
         assert_eq!(patch.working, Some(false));
         assert_eq!(patch.background, Some(true));
+        assert_eq!(patch.branch, Some(Some("main".to_string())));
+        assert_eq!(patch.ctx_percent, Some(Some(92)));
+        assert_eq!(patch.ctx_max, Some(Some(1000000)));
         assert!(!patch.is_empty());
     }
 

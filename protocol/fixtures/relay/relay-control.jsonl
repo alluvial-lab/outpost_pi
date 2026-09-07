@@ -1,4 +1,4 @@
-{"type":"hello","pubkey":"pi-pubkey-base64","device_id":"device-uuid-1","room_id":"main","room_meta":{"name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":false,"background":true}}
+{"type":"hello","pubkey":"pi-pubkey-base64","device_id":"device-uuid-1","room_id":"main","room_meta":{"name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":false,"background":true,"branch":"main","ctx_percent":92,"ctx_max":1000000}}
 {"type":"challenge","nonce":"nonce-base64"}
 {"type":"auth","sig":"signature-base64"}
 {"peer":"dest-peer","room":"main","ct":"eyJ0eXBlIjoicGluZyJ9"}
@@ -9,7 +9,9 @@
 {"type":"peer_offline","peer":"peer-b","since_ts":1760000000000}
 {"type":"subscribe_rooms","peers":["peer-a"]}
 {"type":"rooms_check","peers":["peer-a"]}
-{"type":"rooms","peer":"peer-a","rooms":[{"room_id":"main","name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":false,"background":true,"started_at":1760000000000}]}
-{"type":"room_announced","peer":"peer-a","room_id":"main","name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":true,"background":false,"started_at":1760000000000}
-{"type":"room_meta_update","room_id":"main","meta":{"model":"gpt-5.5","thinking":null,"session_id":"sess-2","working":false,"background":true}}
+{"type":"rooms","peer":"peer-a","rooms":[{"room_id":"main","name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":false,"background":true,"branch":"main","ctx_percent":92,"ctx_max":1000000,"started_at":1760000000000}]}
+{"type":"room_announced","peer":"peer-a","room_id":"main","name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":true,"background":false,"branch":"main","ctx_percent":92,"ctx_max":1000000,"started_at":1760000000000}
+{"type":"room_meta_update","room_id":"main","meta":{"model":"gpt-5.5","thinking":null,"session_id":"sess-2","working":false,"background":true,"branch":"main","ctx_percent":92,"ctx_max":1000000}}
+{"type":"room_meta_update","room_id":"main","meta":{"branch":null,"ctx_percent":null,"ctx_max":null}}
+{"type":"room_meta_update","room_id":"main","meta":{"model":"gpt-5.5"}}
 {"type":"room_ended","peer":"peer-a","room_id":"main","since_ts":1760000000001}

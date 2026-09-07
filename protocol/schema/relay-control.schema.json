@@ -44,6 +44,9 @@
         "thinking": { "type": "string", "maxLength": 32 },
         "working": { "type": "boolean" },
         "background": { "type": "boolean" },
+        "branch": { "type": ["string", "null"], "maxLength": 256 },
+        "ctx_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "ctx_max": { "type": ["integer", "null"], "minimum": 0 },
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
       "additionalProperties": false,
@@ -64,13 +67,17 @@
           ]
         },
         "working": { "type": "boolean" },
-        "background": { "type": "boolean" }
+        "background": { "type": "boolean" },
+        "branch": { "type": ["string", "null"], "maxLength": 256 },
+        "ctx_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "ctx_max": { "type": ["integer", "null"], "minimum": 0 }
       },
       "additionalProperties": false,
       "x-outpost-pi": {
         "mergePatchSemantics": {
           "absent": "preserve current value",
-          "nullableStrings": ["model", "thinking", "session_id"],
+          "nullableStrings": ["model", "thinking", "session_id", "branch"],
+          "nullableIntegers": ["ctx_percent", "ctx_max"],
           "nonNullableBooleans": ["working", "background"]
         }
       }
@@ -84,7 +91,10 @@
         "thinking": { "type": "string", "maxLength": 32 },
         "session_id": { "$ref": "./defs/common.schema.json#/$defs/sessionId" },
         "working": { "type": "boolean" },
-        "background": { "type": "boolean" }
+        "background": { "type": "boolean" },
+        "branch": { "type": ["string", "null"], "maxLength": 256 },
+        "ctx_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "ctx_max": { "type": ["integer", "null"], "minimum": 0 }
       },
       "additionalProperties": false,
       "x-outpost-pi": { "initialRoomMeta": true }
@@ -227,6 +237,9 @@
         "thinking": { "type": "string", "maxLength": 32 },
         "working": { "type": "boolean" },
         "background": { "type": "boolean" },
+        "branch": { "type": ["string", "null"], "maxLength": 256 },
+        "ctx_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "ctx_max": { "type": ["integer", "null"], "minimum": 0 },
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
       "additionalProperties": false,

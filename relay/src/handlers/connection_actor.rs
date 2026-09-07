@@ -397,6 +397,9 @@ mod tests {
             thinking: None,
             working: false,
             background: None,
+            branch: None,
+            ctx_percent: None,
+            ctx_max: None,
             started_at: 0,
         }
     }
@@ -552,6 +555,9 @@ mod tests {
                     thinking: None,
                     working: true,
                     background: Some(true),
+                    branch: Some("main".to_string()),
+                    ctx_percent: Some(92),
+                    ctx_max: Some(1_000_000),
                     started_at: 123,
                 },
                 "dev-a".to_string(),
@@ -583,6 +589,9 @@ mod tests {
                     "model": "model-1",
                     "working": true,
                     "background": true,
+                    "branch": "main",
+                    "ctx_percent": 92,
+                    "ctx_max": 1000000,
                     "started_at": 123,
                 }],
             })
