@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-session-context-telemetry
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, ux, protocol]
 parent: null
 depends_on: []
@@ -291,3 +291,39 @@ String formatCtxTelemetryLine({String? branch, required int? percent, int? maxTo
 - **git subprocess pathology** (network-fs cwd, huge repo): 2s timeout →
   null; no retry loop.
 - **Snapshot size growth**: 3 small fields per room — negligible.
+
+## Implementation summary
+
+All three implementation stories are now `stage: done`:
+
+- `feature-mobile-session-context-telemetry-schema-codegen` landed the
+  additive schema/codegen projections, nullable-integer patch category, relay
+  tri-state merge, and generated TypeScript/Rust/Dart consumers.
+- `feature-mobile-session-context-telemetry-extension-sampler` landed the
+  edge-gated extension sampler, fresh-session context usage accessor, git
+  branch lookup, lifecycle sampling, null-clears, and hello metadata
+  projection.
+- `feature-mobile-session-context-telemetry-app-render` landed the Dart room
+  telemetry model, sentinel-backed patch semantics, compact formatter, chat
+  header line, Home idle-tile suffix, pressure tint, and focused tests.
+
+The app story intentionally stayed within its explicit write scope. Its
+`RoomMetaUpdated.applyTo` helper and protocol tests make absent-preserve,
+null-clear, and value-set behavior executable. The existing
+`ConnectionManager` hand-applies the older metadata fields and was out of
+scope for this story; if incremental telemetry patches are not followed by a
+snapshot in production, that consumer needs a separately scoped follow-up.
+This is a consumer-boundary discovery, not a change to the wire contract.
+
+## Integrated verification
+
+- `cd app && ../.tools/flutter/bin/flutter analyze` — passed with no issues.
+- `cd app && ../.tools/flutter/bin/flutter test --exclude-tags e2e` — passed,
+  1,024 tests, with only the repository's existing google_fonts network-load
+  warnings printed by theme tests.
+- Story-specific formatter, protocol patch, chat-header, and session-tile
+  tests passed in the focused run.
+- Story 1 and Story 2 verification remained green at their recorded commits;
+  no pi-extension or relay lanes were rerun here per the feature boundary.
+
+Implementation commits: `2d9cbd29f`, `8d807cc5c`, `87ce1b6b7`.
