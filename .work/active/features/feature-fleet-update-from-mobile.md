@@ -1,14 +1,14 @@
 ---
 id: feature-fleet-update-from-mobile
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, workflow, deps]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Fleet pi update + rolling restart, drivable from mobile
@@ -318,3 +318,43 @@ class FleetUpdateLost extends FleetUpdateState {}      // derived: no recovery w
 Skipped (risk-driven policy): assembly of shipped mechanisms with no new
 trust surface; the two novel logics (phase ordering, app derivation) are
 unit-pinned. The live lane is the integration backstop.
+
+## Implementation summary
+
+All three child stories are now `stage: done` in their frontmatter:
+
+- `feature-fleet-update-from-mobile-wire-protocol` — typed client/server wire
+  messages, generated projections, fixtures, and compatibility behavior
+  (commit `9768e4b67`).
+- `feature-fleet-update-from-mobile-extension-coordinator` — update subprocess,
+  status ordering, local mesh arm acknowledgements, and settle-gated sibling
+  restart orchestration (commit `932d9e1e3`). Its live bounce lane remains
+  operator-deferred because this task is forbidden from restarting the live
+  fleet.
+- `feature-fleet-update-from-mobile-app-ui` — settings Fleet section,
+  confirmation gate, typed send path, reconnect suppression, room/session
+  recovery derivation, and deterministic lifecycle-safe widget coverage (commit
+  `aa43449fd`).
+
+The app side keeps the route and embedded settings sheet ViewModel provisioning
+parallel with `SettingsViewModel`. The coordinator's own report-before-arm
+ordering and the app's room/session-pinned recovery rules are covered by their
+respective unit suites. The chat error-banner consumption of the app's
+suppression flag remains an explicit review discovery, not an unrequested chat
+surface change.
+
+## Integrated verification
+
+- `pi-extension`: the completed coordinator story recorded passing
+  `corepack pnpm check:protocol`, `typecheck`, `test` (1,145 passed, 3 skipped),
+  and `build`.
+- `app`: `flutter analyze` passed with no issues; the fleet ViewModel and widget
+  suites passed (22 + 5 tests).
+- The required full app command, `flutter test --exclude-tags e2e
+  --concurrency=2`, ran 1,052 tests and has one pre-existing failure in
+  `test/protocol_test.dart` (`decode fixtures server fixture lines parse through
+  decodeServer`). The committed generated server registry includes
+  `fleet_update_status`, but the local `.orchestration/contracts/fixtures`
+  catalog has no matching fixture row. Protocol files are already complete and
+  outside this roll-up's write scope, so the feature is intentionally left at
+  `stage: review` for that blocker and the live-lane decision.
