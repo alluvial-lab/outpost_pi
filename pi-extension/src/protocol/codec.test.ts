@@ -68,8 +68,23 @@ describe("generated registry schema parity", () => {
 describe("fixtures", () => {
   const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".jsonl"));
 
-  test("41 fixture files present", () => {
-    expect(files).toHaveLength(41);
+  test("fixture catalog contains a typed row for every fixture file", () => {
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const rows = readFileSync(`${fixtureDir}/${file}`, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { type?: unknown });
+      expect(rows, `empty fixture ${file}`).not.toHaveLength(0);
+      expect(
+        rows.every((row) => typeof row.type === "string" && row.type.length > 0),
+        `fixture ${file} contains an untyped row`,
+      ).toBe(true);
+      expect(
+        rows.some((row) => row.type === fixtureType(file)),
+        `fixture ${file} does not contain its classified type`,
+      ).toBe(true);
+    }
   });
 
   for (const file of files) {

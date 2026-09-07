@@ -351,13 +351,8 @@ surface change.
 - `app`: `flutter analyze` passed with no issues; the fleet ViewModel and widget
   suites passed (22 + 5 tests).
 - The required full app command, `flutter test --exclude-tags e2e
-  --concurrency=2`, ran 1,052 tests and has one pre-existing failure in
-  `test/protocol_test.dart` (`decode fixtures server fixture lines parse through
-  decodeServer`). The committed generated server registry includes
-  `fleet_update_status`, but the local `.orchestration/contracts/fixtures`
-  catalog has no matching fixture row. Protocol files are already complete and
-  outside this roll-up's write scope, so the feature is intentionally left at
-  `stage: review` for that blocker and the live-lane decision.
+  --concurrency=2`, passed all 1,060 tests. The run emits the repository's
+  existing offline `google_fonts` diagnostics, but the suite exits green.
 
 ## Implementation notes addendum (2026-09-07, orchestrator)
 
@@ -375,3 +370,54 @@ surface change.
   regression; parked for the flake backlog if it recurs.
 - chat_page's reconnect-banner CONSUMPTION of the suppression flag remains
   viewmodel-complete-but-unwired (story-3 discovery) — carried into review.
+
+## Review fixes
+
+Applied 2026-09-08 for the nine confirmed review findings. The feature remains
+at `stage: review`; the live fleet lane remains operator-deferred and no live
+process or marker was touched.
+
+1. **Restart identity was too weak.** Recovery now pins the selected peer,
+   room, and baseline `RoomInfo.startedAt`; verification requires the pinned
+   room to return with a changed start marker, even when the SDK session id is
+   reused. Covered by the same-session and changed-`startedAt` ViewModel tests.
+2. **Idle arms could miss the restart gate and deferred arms could expire.**
+   Fleet sibling staging evaluates the existing idle gate immediately after
+   the acknowledgement boundary, while deferred fleet arm files refresh their
+   timestamp only at the existing gate and only after nonce/update fencing.
+3. **Inbound mesh arms lacked local/replay boundaries.** The coordinator caches
+   the broker's structured local roster, rejects non-local senders, and
+   atomically consumes update ids in owner-only marker files. Replayed commits
+   are declined after process restart; cross-PC peers remain out of scope.
+4. **One-phase arm broadcast could restart before the `arming` report.**
+   Siblings now answer a prepare request without arming; after the coordinator
+   emits `arming`, it sends commit requests and arms itself last. The phase
+   ordering and single-consumption behavior are unit-tested.
+5. **An active run could wedge without a terminal signal.** Recovery timers
+   are armed from both `updating` and `arming`, remain active through transport
+   recovery, and converge to `FleetUpdateLost` when no pinned room returns.
+   Terminal paths cancel timers and clear suppression.
+6. **Fixture tests hard-coded a stale file count.** Extension fixture checks
+   now validate required catalog entries and typed content rather than a
+   literal count; the same catalog/content rule is used by the codec suite.
+7. **The coordinator could target itself as a sibling.** Local roster
+   selection now removes the coordinator's own mesh address before prepare
+   requests, with duplicate addresses collapsed by the coordinator.
+8. **Recovery could follow a newly selected peer or room.** The app keeps the
+   original peer/room/update id pinned throughout disconnects and ignores
+   mismatched status or room snapshots. A switched-peer regression test covers
+   the boundary.
+9. **Completion copy overstated fleet certainty.** Verified UI text now reports
+   `coordinator verified · N/M Pis acked`, using only coordinator-reported
+   acknowledgements; a coordinator self-arm failure is surfaced as an explicit
+   no-restart terminal state instead of a false success.
+
+Validation after these fixes:
+
+- `cd pi-extension && corepack pnpm check:protocol && corepack pnpm typecheck
+  && corepack pnpm test && corepack pnpm build` — passed (65 files, 1,154
+  tests passed, 3 skipped).
+- `cd app && flutter analyze` — passed with no issues.
+- `cd app && flutter test --exclude-tags e2e --concurrency=2` — passed (1,060
+  tests).
+- No relay, telemetry, protocol schema, live process, or live marker changes.

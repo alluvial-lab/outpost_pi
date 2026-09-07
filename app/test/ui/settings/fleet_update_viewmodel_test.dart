@@ -58,12 +58,25 @@ const _peer = PeerRecord(
   pairedAt: '2026-01-01T00:00:00Z',
 );
 
-void _seedSession(_FakeChannel ch, String sessionId) {
+const _otherPeer = PeerRecord(
+  remoteEpk: 'epk_other',
+  sessionName: 'other',
+  relayUrl: 'ws://localhost',
+  pairedAt: '2026-01-01T00:00:00Z',
+);
+
+const _initialStartedAt = 1767225600000;
+
+void _seedSession(
+  _FakeChannel ch,
+  String sessionId, {
+  int startedAt = _initialStartedAt,
+}) {
   ch.push(
     PairOk(
       inReplyTo: 'pair-fleet',
       sessionName: 'pi',
-      sessionStartedAt: DateTime.utc(2026).millisecondsSinceEpoch,
+      sessionStartedAt: startedAt,
       roomId: 'main',
       sessionId: sessionId,
     ),
@@ -83,7 +96,7 @@ class _Harness {
     final online = _waitFor(cm.statusStream, (s) => s is StatusOnline);
     cm.adopt(ch, _peer);
     await online;
-    _seedSession(ch, 'session-fleet-next');
+    _seedSession(ch, 'session-fleet-next', startedAt: _initialStartedAt + 1);
   }
 }
 
@@ -226,23 +239,28 @@ void main() {
       h.vm.dispose();
     });
 
-    test('already_running → FleetUpdateFailed', () async {
-      final h = await _setup();
-      h.channel.push(
-        const FleetUpdateStatus(
-          updateId: 'u2',
-          phase: 'already_running',
-          detail: 'another fleet update is already running',
-        ),
-      );
-      await waitForState(h.vm, () => h.vm.state is FleetUpdateFailed);
-      expect(
-        (h.vm.state as FleetUpdateFailed).detail,
-        'another fleet update is already running',
-      );
-      h.cm.dispose();
-      h.vm.dispose();
-    });
+    test(
+      'already_running for the matching request → FleetUpdateFailed',
+      () async {
+        final h = await _setup();
+        await h.vm.start();
+        final frame = h.channel.sent.whereType<FleetUpdate>().single;
+        h.channel.push(
+          FleetUpdateStatus(
+            updateId: frame.id,
+            phase: 'already_running',
+            detail: 'another fleet update is already running',
+          ),
+        );
+        await waitForState(h.vm, () => h.vm.state is FleetUpdateFailed);
+        expect(
+          (h.vm.state as FleetUpdateFailed).detail,
+          'another fleet update is already running',
+        );
+        h.cm.dispose();
+        h.vm.dispose();
+      },
+    );
   });
 
   group('trigger', () {
@@ -373,6 +391,42 @@ void main() {
         h.vm.dispose();
       },
     );
+
+    test('different update id is ignored while a run is active', () async {
+      final h = await _setup();
+      h.channel.push(
+        const FleetUpdateStatus(updateId: 'u1', phase: 'updating'),
+      );
+      await waitForState(h.vm, () => h.vm.state is FleetUpdating);
+      h.channel.push(
+        const FleetUpdateStatus(
+          updateId: 'other-owner',
+          phase: 'already_running',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(h.vm.state, isA<FleetUpdating>());
+      expect(h.vm.suppressConnectionErrors, isTrue);
+      h.cm.dispose();
+      h.vm.dispose();
+    });
+
+    test('a switched peer cannot verify the pinned fleet run', () async {
+      final h = await _setup();
+      h.channel.push(
+        const FleetUpdateStatus(updateId: 'u1', phase: 'updating'),
+      );
+      await waitForState(h.vm, () => h.vm.state is FleetUpdating);
+
+      final other = _FakeChannel();
+      h.cm.adopt(other, _otherPeer);
+      await waitForState(h.vm, () => h.vm.state is FleetRestarting);
+      _seedSession(other, 'other-session', startedAt: _initialStartedAt + 1);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(h.vm.state, isA<FleetRestarting>());
+      h.cm.dispose();
+      h.vm.dispose();
+    });
 
     test('drop during arming also derives restarting', () async {
       final h = await _setup();
@@ -516,7 +570,7 @@ void main() {
     });
 
     test(
-      'same-session room return does not verify (flap, not restart)',
+      'same-session room return does not verify when startedAt is unchanged',
       () async {
         final h = await _setup();
         h.channel.push(
@@ -539,9 +593,69 @@ void main() {
         h.vm.dispose();
       },
     );
+
+    test(
+      'new startedAt verifies even when the SDK session id is unchanged',
+      () async {
+        final h = await _setup();
+        h.channel.push(
+          const FleetUpdateStatus(updateId: 'u1', phase: 'updating'),
+        );
+        await waitForState(h.vm, () => h.vm.state is FleetUpdating);
+        await h.cm.disconnect();
+        await waitForState(h.vm, () => h.vm.state is FleetRestarting);
+
+        final ch2 = _FakeChannel();
+        final online = _waitFor(h.cm.statusStream, (s) => s is StatusOnline);
+        h.cm.adopt(ch2, _peer);
+        await online;
+        _seedSession(ch2, 'session-fleet', startedAt: _initialStartedAt + 1);
+        await waitForState(h.vm, () => h.vm.state is FleetVerified);
+        expect(h.vm.suppressConnectionErrors, isFalse);
+        h.cm.dispose();
+        h.vm.dispose();
+      },
+    );
   });
 
   group('terminal paths clear the suppression flag (scan-lifecycle)', () {
+    test('coordinator no-restart outcome is terminal and honest', () async {
+      final h = await _setup();
+      h.channel.push(
+        const FleetUpdateStatus(updateId: 'u1', phase: 'updating'),
+      );
+      await waitForState(h.vm, () => h.vm.state is FleetUpdating);
+      h.channel.push(
+        const FleetUpdateStatus(
+          updateId: 'u1',
+          phase: 'update_failed',
+          detail: 'fleet restart not armed: hot-reload disabled',
+        ),
+      );
+      await waitForState(h.vm, () => h.vm.state is FleetNoRestart);
+      expect((h.vm.state as FleetNoRestart).reason, 'hot-reload disabled');
+      expect(h.vm.suppressConnectionErrors, isFalse);
+      h.cm.dispose();
+      h.vm.dispose();
+    });
+
+    test(
+      'updating state is bounded even when the room never disappears',
+      () async {
+        final h = await _setup(
+          recoveryTimeout: const Duration(milliseconds: 40),
+        );
+        h.channel.push(
+          const FleetUpdateStatus(updateId: 'u1', phase: 'updating'),
+        );
+        await waitForState(h.vm, () => h.vm.state is FleetUpdating);
+        await waitForState(h.vm, () => h.vm.state is FleetUpdateLost);
+        expect(h.vm.suppressConnectionErrors, isFalse);
+        h.cm.dispose();
+        h.vm.dispose();
+      },
+    );
+
     test('wire failure terminal', () async {
       final h = await _setup();
       h.channel.push(

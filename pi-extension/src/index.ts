@@ -29,7 +29,7 @@
  *   for integration tests.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -88,6 +88,8 @@ import {
   FleetUpdateCoordinator,
   localPeerAddresses,
   type FleetArmRestartAck,
+  type FleetArmRestartPhase,
+  type FleetSelfArmResult,
 } from "./extension/fleet_update.js";
 import { DaemonCommands } from "./extension/command_surface/daemon_commands.js";
 import { CronCommands } from "./extension/command_surface/cron_commands.js";
@@ -466,6 +468,10 @@ let _currentThinking: ThinkingLevel | undefined = undefined;  // last-known thin
 // RelayTransport owns when the app relay is handed to MeshNode for cross-PC
 // bridge attach/detach during relay start, reconnect, close, and stop.
 let _meshNode: MeshNode | null = null;
+// Authoritative local broker roster used by the inbound fleet-arm boundary.
+// An empty set is fail-closed: a sender is not allowed to arm this process
+// until a broker list_peers snapshot has identified it as local.
+const _localMeshPeerAddresses = new Set<string>();
 // Set true by the `session_shutdown` handler. The daemon auto-init defers the
 // connect (`setTimeout(_cmdRoot, 0)`) and connecting is async, so a shutdown can
 // land WHILE this instance's `_cmdRoot` is still mid-connect (`_meshNode` not
@@ -491,6 +497,11 @@ function _refreshSessionPeerCount(
       const peers = (reply.body as { peers?: string[] } | null)?.peers;
       if (Array.isArray(peers)) {
         _owners.setSessionPeerCount(peers.length);
+        const local = localPeerAddresses(reply.body);
+        if (local !== null) {
+          _localMeshPeerAddresses.clear();
+          for (const address of local) _localMeshPeerAddresses.add(address);
+        }
         _refreshFooter(ctx);
       }
     })
@@ -1383,7 +1394,7 @@ let _lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd" | "mode"> | null = n
 // (an app Quick Action OR a `/new` typed in the Pi TUI). It carries only
 // base-ctx methods (no newSession — that's command-ctx only), so command ops
 // keep using `_lastCtx`.
-let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "mode" | "cwd" | "getContextUsage"> | null = null;
+let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "mode" | "cwd" | "getContextUsage" | "isIdle"> | null = null;
 let _lastSettledCtx: Pick<ExtensionContext, "isIdle"> | null = null;
 const _noopCtx = { ui: { notify: () => undefined }, abort: () => undefined };
 const _execFile = promisify(execFile);
@@ -2039,7 +2050,8 @@ const _localMeshCommands = new LocalMeshCommands({
   refreshFooter: _refreshFooter,
   refreshSessionPeerCount: _refreshSessionPeerCount,
   deliverMeshMessage: _deliverMeshMessageToAgent,
-  handleFleetArmRestart: (updateId) => _handleFleetArmRestart(updateId),
+  handleFleetArmRestart: (updateId, phase) => _handleFleetArmRestart(updateId, phase),
+  isLocalMeshSender: (address) => _localMeshPeerAddresses.has(address),
   attachBridgeIfReady: _attachBridgeIfReady,
   notify: _notify,
   emitStatusEvent: _emitStatusEvent,
@@ -2048,7 +2060,7 @@ const _localMeshCommands = new LocalMeshCommands({
 const _fleetUpdateCoordinator = new FleetUpdateCoordinator({
   emitStatus: (event) => _owners.broadcast(event),
   runUpdate: () => _runFleetUpdate(),
-  armSelf: () => { _tryArmHotReload(); },
+  armSelf: (updateId) => _armFleetSelf(updateId),
   // v1 fleet scope is this VM only: filter the aggregated roster down to
   // broker-local peers (cross-PC siblings are out of scope by design).
   localPeers: () => _localFleetPeers(),
@@ -2065,7 +2077,11 @@ async function _localFleetPeers(): Promise<string[]> {
   const mesh = _meshNode;
   if (!mesh) return [];
   const reply = await mesh.request("broker", { type: "list_peers" }, 2_000);
-  return localPeerAddresses(reply.body) ?? [];
+  const local = localPeerAddresses(reply.body) ?? [];
+  _localMeshPeerAddresses.clear();
+  for (const address of local) _localMeshPeerAddresses.add(address);
+  const self = mesh.address();
+  return local.filter((address) => address !== self);
 }
 
 // ── Command implementations ───────────────────────────────────────────────────
@@ -3149,7 +3165,7 @@ function _hotReloadEnabledForFleet(): boolean {
 }
 
 /** Stage this process's existing hot-reload request without signaling it. */
-function _tryArmHotReload(): "armed" | "already_armed" | null {
+function _tryArmHotReload(updateId?: string): "armed" | "already_armed" | null {
   if (!_hotReloadEnabledForFleet()) return null;
   const dir = _secureHotReloadRemoteDir();
   if (!dir) return null;
@@ -3157,7 +3173,7 @@ function _tryArmHotReload(): "armed" | "already_armed" | null {
   try {
     writeFileSync(
       armedPath,
-      JSON.stringify({ nonce: _hotReloadNonce, ts: Date.now() }),
+      JSON.stringify({ nonce: _hotReloadNonce, ts: Date.now(), ...(updateId ? { update_id: updateId } : {}) }),
       { mode: 0o600, flag: "wx" },
     );
     return "armed";
@@ -3166,15 +3182,73 @@ function _tryArmHotReload(): "armed" | "already_armed" | null {
   }
 }
 
+/** Return the durable owner-only marker path for one fleet update intent. */
+function _fleetUpdateConsumedPath(dir: string, updateId: string): string {
+  const digest = createHash("sha256").update(updateId, "utf8").digest("hex");
+  return join(dir, `.fleet-update-consumed-${digest}`);
+}
+
+/** Atomically consume one fleet update id, rejecting process-restart replays. */
+function _consumeFleetUpdateIntent(updateId: string): boolean {
+  if (updateId.length === 0) return false;
+  const dir = _secureHotReloadRemoteDir();
+  if (!dir) return false;
+  const path = _fleetUpdateConsumedPath(dir, updateId);
+  if (existsSync(path)) return false;
+  try {
+    writeFileSync(path, JSON.stringify({ update_id: updateId, ts: Date.now() }), {
+      mode: 0o600,
+      flag: "wx",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Stage a sibling's fleet arm and immediately evaluate the normal idle gate. */
+function _stageFleetArm(updateId: string): boolean {
+  const result = _tryArmHotReload(updateId);
+  if (result !== "armed") return false;
+  if (_turnProjection().working || _backgroundActivityTracker.activeCount > 0) return true;
+  const idleCtx = _lastSettledCtx ?? _lastEventCtx;
+  if (idleCtx) {
+    // Let the mesh adapter send the commitment acknowledgement before the
+    // normal idle-gate evaluation can signal this process.
+    queueMicrotask(() => {
+      if (!_disposed) _maybeRestartForExtensionReload(idleCtx);
+    });
+  }
+  return true;
+}
+
+/** Arm the coordinator's own process, reporting a no-restart reason on failure. */
+function _armFleetSelf(updateId: string): FleetSelfArmResult {
+  if (!_hotReloadEnabledForFleet()) return { ok: false, reason: "hot-reload disabled" };
+  if (!_consumeFleetUpdateIntent(updateId)) {
+    return { ok: false, reason: "update already consumed" };
+  }
+  const result = _tryArmHotReload(updateId);
+  if (result !== "armed") {
+    return { ok: false, reason: result === "already_armed" ? "restart already armed" : "arm failed" };
+  }
+  const idleCtx = _lastSettledCtx ?? _lastEventCtx;
+  if (!_turnProjection().working && _backgroundActivityTracker.activeCount === 0 && idleCtx) {
+    _maybeRestartForExtensionReload(idleCtx);
+  }
+  return { ok: true };
+}
+
 const _fleetArmRestart = createFleetArmRestartHandler({
   isDisposed: () => _disposed,
   hotReloadEnabled: _hotReloadEnabledForFleet,
   hasActiveWork: () => _turnProjection().working || _backgroundActivityTracker.activeCount > 0,
-  arm: () => _tryArmHotReload() !== null,
+  consumeUpdate: _consumeFleetUpdateIntent,
+  arm: _stageFleetArm,
 });
 
-function _handleFleetArmRestart(_updateId: string): FleetArmRestartAck {
-  return _fleetArmRestart();
+function _handleFleetArmRestart(updateId: string, phase: FleetArmRestartPhase): FleetArmRestartAck {
+  return _fleetArmRestart(updateId, phase);
 }
 
 /**
@@ -3277,6 +3351,26 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
   _notify("[outpost-pi] Usage: /outpost-pi hot-reload <on|off|arm|status>", "warning", ctx);
 }
 
+/** Refresh a deferred fleet arm without changing ordinary hot-reload expiry. */
+function _refreshDeferredFleetArm(dir: string, armedPath: string): void {
+  if (!_isOwnerOnlyRegularFile(armedPath)) return;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(armedPath, "utf8"));
+    if (!parsed || typeof parsed !== "object") return;
+    const request = parsed as { nonce?: unknown; ts?: unknown; update_id?: unknown };
+    if (request.nonce !== _hotReloadNonce || typeof request.update_id !== "string" ||
+        request.update_id.length === 0 ||
+        !_isOwnerOnlyRegularFile(_fleetUpdateConsumedPath(dir, request.update_id))) return;
+    writeFileSync(armedPath, JSON.stringify({ ...request, ts: Date.now() }), {
+      mode: 0o600,
+      flag: "w",
+    });
+  } catch {
+    // The normal settle attempt will fail closed if the file disappears or
+    // becomes malformed while it is being refreshed.
+  }
+}
+
 /**
  * Restart only after Pi reports that all agent work has settled.
  *
@@ -3290,9 +3384,6 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
 function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1" || _disposed) return;
   if (_freshSessionShutdown.fenceReason !== null) return;
-  // Background tasks outlive the agent turn. Defer before inspecting or
-  // consuming the armed request; the tracker retries on its drain edge.
-  if (_backgroundActivityTracker.activeCount > 0) return;
 
   const dir = _secureHotReloadRemoteDir();
   if (!dir) return;
@@ -3300,15 +3391,23 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
   if (!_isOwnerOnlyRegularFile(togglePath)) return;
 
   const armedPath = join(dir, `.hot-reload-armed-${process.pid}`);
+  // Background work can outlive the agent turn by more than the ordinary
+  // five-minute arm window. Refresh only an already-consumed fleet intent at
+  // this deferral boundary; ordinary interactive arms retain their existing
+  // expiry discipline.
+  if (_backgroundActivityTracker.activeCount > 0) {
+    _refreshDeferredFleetArm(dir, armedPath);
+    return;
+  }
   // lstat-based admission rejects symlinks and directories without touching
   // their targets. This is the security boundary for OUTPOST_PI_HOME state.
   if (!_isOwnerOnlyRegularFile(armedPath)) return;
 
-  let request: { nonce?: unknown; ts?: unknown };
+  let request: { nonce?: unknown; ts?: unknown; update_id?: unknown };
   try {
     const parsed: unknown = JSON.parse(readFileSync(armedPath, "utf8"));
     if (!parsed || typeof parsed !== "object") return;
-    request = parsed as { nonce?: unknown; ts?: unknown };
+    request = parsed as { nonce?: unknown; ts?: unknown; update_id?: unknown };
   } catch {
     return;
   }
@@ -3316,12 +3415,23 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
     _removeIfOwnerOnlyRegularFile(armedPath);
     return;
   }
+  if (request.update_id !== undefined) {
+    if (typeof request.update_id !== "string" || request.update_id.length === 0 ||
+        !_isOwnerOnlyRegularFile(_fleetUpdateConsumedPath(dir, request.update_id))) {
+      _removeIfOwnerOnlyRegularFile(armedPath);
+      return;
+    }
+  }
   if (typeof request.ts === "number" && Date.now() - request.ts > 5 * 60_000) {
     _removeIfOwnerOnlyRegularFile(armedPath);
     return;
   }
 
-  if (_disposed || !ctx.isIdle()) return;
+  if (_disposed) return;
+  if (!ctx.isIdle()) {
+    _refreshDeferredFleetArm(dir, armedPath);
+    return;
+  }
 
   const claimedPath = join(dir, `.claimed-${process.pid}`);
   try {
