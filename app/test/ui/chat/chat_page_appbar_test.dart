@@ -23,6 +23,7 @@ import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
 import 'package:app/ui/chat/chat_page.dart';
 import 'package:app/ui/chat/states/chat_state.dart';
+import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
 import 'package:flutter/material.dart';
@@ -61,6 +62,10 @@ class _CountingChatViewModel extends ChatViewModel {
   );
 
   int resumeRefreshes = 0;
+  RoomInfo? roomOverride;
+
+  @override
+  RoomInfo? get activeRoom => roomOverride;
 
   @override
   Future<void> refreshOnResume() async {
@@ -68,6 +73,11 @@ class _CountingChatViewModel extends ChatViewModel {
   }
 
   void show(ChatReady ready) => emit(ready);
+
+  void showRoom(RoomInfo? room) {
+    roomOverride = room;
+    notifyListeners();
+  }
 }
 
 class _FakeSecureStorage implements FlutterSecureStorage {
@@ -483,6 +493,86 @@ void main() {
       find.text("Can't reach the relay — check Tailscale/VPN"),
       findsNothing,
     );
+
+    await tester.pumpWidget(const SizedBox());
+    vm.dispose();
+    attach.dispose();
+    voice.dispose();
+    actions.dispose();
+    sync.dispose();
+    selection.dispose();
+    conn.dispose();
+  });
+
+  testWidgets('chat header renders context telemetry and pressure tint', (
+    tester,
+  ) async {
+    final conn = ConnectionManager(
+      factory: (_, _) async => _FakeChannel(),
+      storage: _FakeStorage(),
+    );
+    final boxes = LocalBoxes();
+    final sync = SyncService(conn, boxes);
+    final prefs = Preferences(_FakeSecureStorage());
+    final actions = ActionsRepository(conn);
+    final vm =
+        _CountingChatViewModel(
+            SessionReadRepository(boxes),
+            sync,
+            conn,
+            prefs,
+            _FakeStorage(),
+          )
+          ..roomOverride = const RoomInfo(
+            roomId: 'main',
+            startedAt: 1,
+            branch: 'main',
+            ctxPercent: 92,
+            ctxMax: 1000000,
+          );
+    final voice = VoiceInputViewModel(_FakeSpeech());
+    final attach = AttachmentViewModel(_FakePicker(), actions);
+    final selection = SessionSelection();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ChatViewModel>.value(value: vm),
+            ChangeNotifierProvider<VoiceInputViewModel>.value(value: voice),
+            ChangeNotifierProvider<AttachmentViewModel>.value(value: attach),
+            ChangeNotifierProvider<Preferences>.value(value: prefs),
+            ChangeNotifierProvider<SessionSelection>.value(value: selection),
+          ],
+          child: const ChatPage(initialTitle: 'main', initialOnline: true),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final telemetry = tester.widget<RichText>(
+      find.byKey(const Key('chat-context-telemetry')),
+    );
+    expect(telemetry.text.toPlainText(), 'main · 92% of 1m');
+    final spans = (telemetry.text as TextSpan).children!.cast<TextSpan>();
+    expect(spans[0].text, 'main');
+    expect(spans[0].style!.color, AppColors.dark.muted);
+    expect(spans[2].text, '92%');
+    expect(spans[2].style!.color, AppColors.dark.warning);
+
+    vm.showRoom(vm.roomOverride!.copyWith(ctxPercent: 84));
+    await tester.pump();
+    final normal = tester.widget<RichText>(
+      find.byKey(const Key('chat-context-telemetry')),
+    );
+    final normalPercent = (normal.text as TextSpan).children!
+        .cast<TextSpan>()[2];
+    expect(normalPercent.text, '84%');
+    expect(normalPercent.style!.color, AppColors.dark.muted);
+
+    vm.showRoom(vm.roomOverride!.copyWith(ctxPercent: null));
+    await tester.pump();
+    expect(find.byKey(const Key('chat-context-telemetry')), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     vm.dispose();

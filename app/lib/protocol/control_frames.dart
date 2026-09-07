@@ -59,6 +59,9 @@ sealed class ControlInbound {
             : ThinkingLevel.fromWire(room.thinking!),
         working: room.working,
         background: room.background,
+        branch: room.branch,
+        ctxPercent: room.ctxPercent,
+        ctxMax: room.ctxMax,
       ),
       RelayRoomEndedFrameDto(:final peer, :final roomId, :final sinceTs) =>
         RoomEnded(peer: peer, roomId: roomId, sinceTs: sinceTs),
@@ -78,6 +81,9 @@ sealed class ControlInbound {
                     : ThinkingLevel.fromWire(room.thinking!),
                 working: room.working ?? false,
                 background: room.background ?? false,
+                branch: room.branch,
+                ctxPercent: room.ctxPercent,
+                ctxMax: room.ctxMax,
               ),
             )
             .toList(),
@@ -93,9 +99,15 @@ sealed class ControlInbound {
               : ThinkingLevel.fromWire(meta.thinking!),
           working: meta.working,
           background: meta.background,
+          branch: meta.branch,
+          ctxPercent: meta.ctxPercent,
+          ctxMax: meta.ctxMax,
           hasModel: meta.hasModel,
           hasThinking: meta.hasThinking,
           hasSessionId: meta.hasSessionId,
+          hasBranch: meta.hasBranch,
+          hasCtxPercent: meta.hasCtxPercent,
+          hasCtxMax: meta.hasCtxMax,
         ),
     };
   }
@@ -214,6 +226,15 @@ class RoomInfo {
   /// This room-level axis is independent from [working].
   final bool background;
 
+  /// Current git branch, or null when the Pi is detached/not in a repository.
+  final String? branch;
+
+  /// Rounded context usage percentage, or null when the SDK has no fresh usage.
+  final int? ctxPercent;
+
+  /// Context window ceiling in tokens, or null when unavailable.
+  final int? ctxMax;
+
   const RoomInfo({
     required this.roomId,
     required this.startedAt,
@@ -224,6 +245,9 @@ class RoomInfo {
     this.thinking,
     this.working = false,
     this.background = false,
+    this.branch,
+    this.ctxPercent,
+    this.ctxMax,
   });
 
   factory RoomInfo.fromJson(Map<String, dynamic> j) {
@@ -240,6 +264,9 @@ class RoomInfo {
           : null,
       working: (j['working'] as bool?) ?? false,
       background: (j['background'] as bool?) ?? false,
+      branch: j['branch'] as String?,
+      ctxPercent: (j['ctx_percent'] as num?)?.toInt(),
+      ctxMax: (j['ctx_max'] as num?)?.toInt(),
     );
   }
 
@@ -253,6 +280,9 @@ class RoomInfo {
     if (thinking != null) 'thinking': thinking!.wire,
     'working': working,
     'background': background,
+    'branch': branch,
+    'ctx_percent': ctxPercent,
+    'ctx_max': ctxMax,
   };
 
   RoomInfo copyWith({
@@ -264,6 +294,9 @@ class RoomInfo {
     Object? thinking = _kRoomInfoUnset,
     bool? working,
     bool? background,
+    Object? branch = _kRoomInfoUnset,
+    Object? ctxPercent = _kRoomInfoUnset,
+    Object? ctxMax = _kRoomInfoUnset,
   }) => RoomInfo(
     roomId: roomId,
     sessionId: identical(sessionId, _kRoomInfoUnset)
@@ -278,6 +311,13 @@ class RoomInfo {
         : thinking as ThinkingLevel?,
     working: working ?? this.working,
     background: background ?? this.background,
+    branch: identical(branch, _kRoomInfoUnset)
+        ? this.branch
+        : branch as String?,
+    ctxPercent: identical(ctxPercent, _kRoomInfoUnset)
+        ? this.ctxPercent
+        : ctxPercent as int?,
+    ctxMax: identical(ctxMax, _kRoomInfoUnset) ? this.ctxMax : ctxMax as int?,
   );
 
   @override
@@ -291,7 +331,10 @@ class RoomInfo {
       other.model == model &&
       other.thinking == thinking &&
       other.working == working &&
-      other.background == background;
+      other.background == background &&
+      other.branch == branch &&
+      other.ctxPercent == ctxPercent &&
+      other.ctxMax == ctxMax;
 
   @override
   int get hashCode => Object.hash(
@@ -304,6 +347,9 @@ class RoomInfo {
     thinking,
     working,
     background,
+    branch,
+    ctxPercent,
+    ctxMax,
   );
 }
 
@@ -331,6 +377,16 @@ class RoomAnnounced extends ControlInbound {
   /// Background subagent activity at announcement time. Null means the
   /// announcing relay/extension omitted the optional field.
   final bool? background;
+
+  /// Current git branch, or null when the Pi is detached/not in a repository.
+  final String? branch;
+
+  /// Rounded context usage percentage, or null when unavailable.
+  final int? ctxPercent;
+
+  /// Context window ceiling in tokens, or null when unavailable.
+  final int? ctxMax;
+
   const RoomAnnounced({
     required this.peer,
     required this.roomId,
@@ -342,6 +398,9 @@ class RoomAnnounced extends ControlInbound {
     this.thinking,
     this.working,
     this.background,
+    this.branch,
+    this.ctxPercent,
+    this.ctxMax,
   });
 }
 
@@ -406,6 +465,27 @@ class RoomMetaUpdated extends ControlInbound {
   /// so the ConnectionManager preserves the cached room value.
   final bool? background;
 
+  /// Current git branch. [hasBranch] distinguishes an omitted branch from a
+  /// deliberate null-clear.
+  final String? branch;
+
+  /// Rounded context usage percentage. [hasCtxPercent] distinguishes an
+  /// omitted percentage from a deliberate null-clear.
+  final int? ctxPercent;
+
+  /// Context window ceiling in tokens. [hasCtxMax] distinguishes an omitted
+  /// ceiling from a deliberate null-clear.
+  final int? ctxMax;
+
+  /// Whether [branch] was present in the wire patch.
+  final bool hasBranch;
+
+  /// Whether [ctxPercent] was present in the wire patch.
+  final bool hasCtxPercent;
+
+  /// Whether [ctxMax] was present in the wire patch.
+  final bool hasCtxMax;
+
   const RoomMetaUpdated({
     required this.peer,
     required this.roomId,
@@ -414,10 +494,31 @@ class RoomMetaUpdated extends ControlInbound {
     this.thinking,
     this.working,
     this.background,
+    this.branch,
+    this.ctxPercent,
+    this.ctxMax,
     this.hasModel = true,
     this.hasThinking = true,
     this.hasSessionId = true,
+    this.hasBranch = true,
+    this.hasCtxPercent = true,
+    this.hasCtxMax = true,
   });
+
+  /// Apply this partial metadata update to a cached room snapshot.
+  ///
+  /// Presence flags make omitted fields preserve the cached value, while a
+  /// present nullable field can explicitly clear it with `null`.
+  RoomInfo applyTo(RoomInfo current) => current.copyWith(
+    sessionId: hasSessionId ? sessionId : _kRoomInfoUnset,
+    model: hasModel ? model : _kRoomInfoUnset,
+    thinking: hasThinking ? thinking : _kRoomInfoUnset,
+    working: working ?? current.working,
+    background: background ?? current.background,
+    branch: hasBranch ? branch : _kRoomInfoUnset,
+    ctxPercent: hasCtxPercent ? ctxPercent : _kRoomInfoUnset,
+    ctxMax: hasCtxMax ? ctxMax : _kRoomInfoUnset,
+  );
 }
 
 // ---------------------------------------------------------------------------

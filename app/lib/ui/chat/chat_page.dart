@@ -9,6 +9,7 @@ import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/chat/quick_actions/widgets/quick_actions_sheet.dart';
 import 'package:app/ui/chat/attachment/states/attachment_state.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
+import 'package:app/ui/chat/ctx_format.dart';
 import 'package:app/ui/chat/states/chat_state.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
@@ -198,7 +199,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final compact = MediaQuery.sizeOf(context).width < kCompactHeaderBreakpoint;
 
     return Container(
-      height: 56,
+      height: 74,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: colors.bg,
@@ -254,6 +255,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       _ChatStatusIndicator(status: status),
                     ],
                   ),
+                _ChatContextTelemetry(room: room),
               ],
             ),
           ),
@@ -702,6 +704,70 @@ class _ConnectionStatusBannerState extends State<_ConnectionStatusBanner> {
     final local = attempt.toLocal();
     String twoDigits(int value) => value.toString().padLeft(2, '0');
     return '${twoDigits(local.hour)}:${twoDigits(local.minute)}:${twoDigits(local.second)}';
+  }
+}
+
+/// Render the branch and context pressure line for the active room.
+class _ChatContextTelemetry extends StatelessWidget {
+  const _ChatContextTelemetry({required this.room});
+
+  final RoomInfo? room;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = room?.ctxPercent;
+    if (percent == null) return const SizedBox.shrink();
+
+    final colors = context.colors;
+    final branch = room?.branch?.trim();
+    final maxTokens = room?.ctxMax;
+    final line = formatCtxTelemetryLine(
+      branch: branch,
+      percent: percent,
+      maxTokens: maxTokens,
+    );
+    final spans = <InlineSpan>[];
+    if (branch != null && branch.isNotEmpty) {
+      spans.add(
+        TextSpan(
+          text: branch,
+          style: TextStyle(color: colors.muted),
+        ),
+      );
+      spans.add(
+        TextSpan(
+          text: ' · ',
+          style: TextStyle(color: colors.muted),
+        ),
+      );
+    }
+    spans.add(
+      TextSpan(
+        text: '$percent%',
+        style: TextStyle(color: percent >= 85 ? colors.warning : colors.muted),
+      ),
+    );
+    if (maxTokens != null) {
+      spans.add(
+        TextSpan(
+          text: ' of ${formatCtxMax(maxTokens)}',
+          style: TextStyle(color: colors.muted),
+        ),
+      );
+    }
+    return Semantics(
+      label: line,
+      child: RichText(
+        key: const Key('chat-context-telemetry'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(
+          style: TextStyle(fontFamily: kMonoFamily, fontSize: 12),
+          children: spans,
+        ),
+        textScaler: MediaQuery.textScalerOf(context),
+      ),
+    );
   }
 }
 

@@ -18,6 +18,7 @@ Widget _tile({
   bool isWorking = false,
   bool isOrchestrating = false,
   String? model = 'gpt-5',
+  int? ctxPercent,
 }) => MaterialApp(
   theme: buildDarkTheme(),
   home: SessionTile(
@@ -27,6 +28,7 @@ Widget _tile({
       startedAt: 1,
       model: model,
       background: true,
+      ctxPercent: ctxPercent,
     ),
     isLive: isLive,
     isReconnecting: isReconnecting,
@@ -92,6 +94,42 @@ void main() {
 
     expect(_dotColor(tester), AppColors.dark.muted);
     expect(find.text('background work'), findsNothing);
+  });
+
+  testWidgets('idle subtitle appends context percentage with pressure tint', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_tile(ctxPercent: 92));
+    expect(find.text('gpt-5 · 92%'), findsOneWidget);
+    final high = tester.widget<Text>(
+      find.byKey(const Key('home-session-ctx-subtitle')),
+    );
+    final highPercent = (high.textSpan! as TextSpan).children!.last as TextSpan;
+    expect(highPercent.text, ' · 92%');
+    expect(highPercent.style!.color, AppColors.dark.warning);
+
+    await tester.pumpWidget(_tile(ctxPercent: 85));
+    final boundary = tester.widget<Text>(
+      find.byKey(const Key('home-session-ctx-subtitle')),
+    );
+    final boundaryPercent =
+        (boundary.textSpan! as TextSpan).children!.last as TextSpan;
+    expect(boundaryPercent.style!.color, AppColors.dark.warning);
+
+    await tester.pumpWidget(_tile(ctxPercent: 84));
+    final normal = tester.widget<Text>(
+      find.byKey(const Key('home-session-ctx-subtitle')),
+    );
+    final normalPercent =
+        (normal.textSpan! as TextSpan).children!.last as TextSpan;
+    expect(normalPercent.style!.color, AppColors.dark.muted);
+  });
+
+  testWidgets('working tile omits the idle context suffix', (tester) async {
+    await tester.pumpWidget(_tile(isWorking: true, ctxPercent: 92));
+    expect(find.byKey(const Key('home-session-ctx-subtitle')), findsNothing);
+    expect(find.text('gpt-5'), findsOneWidget);
+    expect(find.text('gpt-5 · 92%'), findsNothing);
   });
 
   testWidgets('background surface is safe to unmount', (tester) async {
