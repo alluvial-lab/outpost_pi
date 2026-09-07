@@ -55,7 +55,9 @@ fixture meta before any pi publishes the fields.
   model exposes `applyTo` so the tri-state telemetry semantics are explicit
   and testable without crossing that boundary; incremental telemetry patch
   hydration in `ConnectionManager` remains a follow-up if snapshot refreshes
-  are not sufficient in production.
+  are not sufficient in production. *(Superseded by the feature review round:
+  the live ConnectionManager path now routes through `applyTo` — fix commit
+  df248ac6c + review fixes 40b1f70b3.)*
 
 ## Verification evidence
 

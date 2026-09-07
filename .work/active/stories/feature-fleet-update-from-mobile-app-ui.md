@@ -73,7 +73,9 @@ explicit.
   stays online as well as from transport drop. Verification requires that
   original room to be live again with a fresh, non-null session id. A wire
   event can resume a run that was derived as `restarting`, proving the event
-  was a flap rather than a restart.
+  was a flap rather than a restart. *(Superseded by review fix 1 in c11b6652b:
+  wrapper `--continue` preserves the SDK session id, so verification uses the
+  room's new `startedAt` as the process-incarnation marker instead.)*
 
 ## Verification evidence
 
