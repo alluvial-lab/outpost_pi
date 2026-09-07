@@ -30,6 +30,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   type ContextUsage,
   type ExtensionAPI,
@@ -80,6 +82,13 @@ import {
 import { createCommandSurface } from "./extension/command_surface.js";
 import { registerOutpostPiCommands, type OutpostPiCommandSpec } from "./extension/command_surface/commands.js";
 import { LocalMeshCommands } from "./extension/command_surface/local_mesh_commands.js";
+import {
+  createFleetArmRestartHandler,
+  DEFAULT_FLEET_UPDATE_TIMEOUT_MS,
+  FleetUpdateCoordinator,
+  localPeerAddresses,
+  type FleetArmRestartAck,
+} from "./extension/fleet_update.js";
 import { DaemonCommands } from "./extension/command_surface/daemon_commands.js";
 import { CronCommands } from "./extension/command_surface/cron_commands.js";
 import { PairingCommands } from "./extension/command_surface/pairing_commands.js";
@@ -1377,6 +1386,7 @@ let _lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd" | "mode"> | null = n
 let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "mode" | "cwd" | "getContextUsage"> | null = null;
 let _lastSettledCtx: Pick<ExtensionContext, "isIdle"> | null = null;
 const _noopCtx = { ui: { notify: () => undefined }, abort: () => undefined };
+const _execFile = promisify(execFile);
 
 const _backgroundActivityTracker = new BackgroundActivityTracker(({ activeCount }) => {
   const active = activeCount > 0;
@@ -2029,10 +2039,34 @@ const _localMeshCommands = new LocalMeshCommands({
   refreshFooter: _refreshFooter,
   refreshSessionPeerCount: _refreshSessionPeerCount,
   deliverMeshMessage: _deliverMeshMessageToAgent,
+  handleFleetArmRestart: (updateId) => _handleFleetArmRestart(updateId),
   attachBridgeIfReady: _attachBridgeIfReady,
   notify: _notify,
   emitStatusEvent: _emitStatusEvent,
 });
+
+const _fleetUpdateCoordinator = new FleetUpdateCoordinator({
+  emitStatus: (event) => _owners.broadcast(event),
+  runUpdate: () => _runFleetUpdate(),
+  armSelf: () => { _tryArmHotReload(); },
+  // v1 fleet scope is this VM only: filter the aggregated roster down to
+  // broker-local peers (cross-PC siblings are out of scope by design).
+  localPeers: () => _localFleetPeers(),
+  meshRequest: async (peer, body, timeoutMs) => {
+    const mesh = _meshNode;
+    if (!mesh) return null;
+    const reply = await mesh.request(peer, body, timeoutMs);
+    return { ack: reply.body };
+  },
+});
+
+/** Resolve the broker-local fleet roster, excluding cross-PC peers. */
+async function _localFleetPeers(): Promise<string[]> {
+  const mesh = _meshNode;
+  if (!mesh) return [];
+  const reply = await mesh.request("broker", { type: "list_peers" }, 2_000);
+  return localPeerAddresses(reply.body) ?? [];
+}
 
 // ── Command implementations ───────────────────────────────────────────────────
 
@@ -3101,29 +3135,89 @@ function _writeRuntimeIdentity(): void {
   }
 }
 
+/** Return whether this process may stage a nonce-bound hot-reload request. */
+function _hotReloadEnabledForFleet(): boolean {
+  if (process.env["OUTPOST_PI_DAEMON"] === "1") return false;
+  const dir = _secureHotReloadRemoteDir();
+  return dir !== null && _isOwnerOnlyRegularFile(join(dir, ".hot-reload-enabled"));
+}
+
+/** Stage this process's existing hot-reload request without signaling it. */
+function _tryArmHotReload(): "armed" | "already_armed" | null {
+  if (!_hotReloadEnabledForFleet()) return null;
+  const dir = _secureHotReloadRemoteDir();
+  if (!dir) return null;
+  const armedPath = join(dir, `.hot-reload-armed-${process.pid}`);
+  try {
+    writeFileSync(
+      armedPath,
+      JSON.stringify({ nonce: _hotReloadNonce, ts: Date.now() }),
+      { mode: 0o600, flag: "wx" },
+    );
+    return "armed";
+  } catch {
+    return _isOwnerOnlyRegularFile(armedPath) ? "already_armed" : null;
+  }
+}
+
+const _fleetArmRestart = createFleetArmRestartHandler({
+  isDisposed: () => _disposed,
+  hotReloadEnabled: _hotReloadEnabledForFleet,
+  hasActiveWork: () => _turnProjection().working || _backgroundActivityTracker.activeCount > 0,
+  arm: () => _tryArmHotReload() !== null,
+});
+
+function _handleFleetArmRestart(_updateId: string): FleetArmRestartAck {
+  return _fleetArmRestart();
+}
+
+/**
+ * Run `pi update --all` (pi binary + installed packages) in the current Pi
+ * working directory. The child is killed at the same deadline the
+ * coordinator races with, so a hung update cannot outlive its run.
+ */
+async function _runFleetUpdate(): Promise<{ ok: boolean; outputTail: string }> {
+  const cwd = _lastCtx?.cwd ?? process.cwd();
+  try {
+    const result = await _execFile("pi", ["update", "--all"], {
+      cwd,
+      maxBuffer: 1024 * 1024,
+      timeout: DEFAULT_FLEET_UPDATE_TIMEOUT_MS,
+      killSignal: "SIGKILL",
+    });
+    return {
+      ok: true,
+      outputTail: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+    };
+  } catch (error) {
+    const detail = error as { stdout?: unknown; stderr?: unknown; message?: unknown };
+    return {
+      ok: false,
+      outputTail: [detail.stdout, detail.stderr, detail.message]
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .join("\n"),
+    };
+  }
+}
+
 /** Arm one process-scoped hot-reload request from the interactive command surface. */
 function _armHotReload(ctx?: OutpostPiUiContext): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
+  const result = _tryArmHotReload();
+  if (result === "armed") {
+    _notify(`[outpost-pi] hot-reload armed — restart fires at next agent_settled (pid=${process.pid})`, "info", ctx);
+    return;
+  }
+  if (result === "already_armed") {
+    _notify(`[outpost-pi] hot-reload is already armed for pid=${process.pid}`, "warning", ctx);
+    return;
+  }
   const dir = _secureHotReloadRemoteDir();
   if (!dir) {
     _notify("[outpost-pi] hot-reload state directory is missing or insecure", "warning", ctx);
     return;
   }
-  const togglePath = join(dir, ".hot-reload-enabled");
-  if (!_isOwnerOnlyRegularFile(togglePath)) {
-    _notify("[outpost-pi] hot-reload toggle is off — run /outpost-pi hot-reload on first", "warning", ctx);
-    return;
-  }
-  try {
-    writeFileSync(
-      join(dir, `.hot-reload-armed-${process.pid}`),
-      JSON.stringify({ nonce: _hotReloadNonce, ts: Date.now() }),
-      { mode: 0o600, flag: "wx" },
-    );
-    _notify(`[outpost-pi] hot-reload armed — restart fires at next agent_settled (pid=${process.pid})`, "info", ctx);
-  } catch {
-    _notify(`[outpost-pi] hot-reload is already armed for pid=${process.pid}`, "warning", ctx);
-  }
+  _notify("[outpost-pi] hot-reload toggle is off — run /outpost-pi hot-reload on first", "warning", ctx);
 }
 
 function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
@@ -3322,6 +3416,17 @@ export function _routeClientMessageFrom(
     return;
   }
   switch (msg.type) {
+    case "fleet_update":
+      void _fleetUpdateCoordinator.handleRequest(msg.id).catch((error: unknown) => {
+        sender.send({
+          type: "error",
+          code: "internal_error",
+          in_reply_to: msg.id,
+          message: error instanceof Error ? error.message : String(error),
+          session_id: msg.session_id,
+        });
+      });
+      break;
     case "user_message":
       // Source-of-truth rebroadcast (plan/24 W2D fix). Echo the message
       // back to every attached owner (sender included) after the SDK accepts
