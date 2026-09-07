@@ -183,19 +183,19 @@ message (operator timestamps it), confirm it committed to the pi
 transcript, then trace which sync/replay windows carried it and whether
 the app's cursor skipped past it.
 
-## Linked symptom 2 (operator report 2026-09-05, later same day)
+## Linked symptom 2 (operator report 2026-09-05, later same day; sync limit resolved 2026-09-07)
 
 "Earlier history is not synced on this device" notice, first time seen.
-Mechanics: full session rehydrations replay only the last 30 transcript
-events (SYNC_LIMIT_DEFAULT=30, overridable via OUTPOST_PI_SYNC_LIMIT);
-active multi-day sessions carry thousands of events, so every full
-rehydrate reports truncated. On a stable connection the app hydrates
-once and rides incremental deltas — the notice surfacing now is the flap
-forcing repeated FULL rehydrations (same root as symptom 1). The notice
-is honest/by-design; its novelty is diagnostic. Follow-ups once the
-metronome is dead: (a) consider raising the default sync limit (30 is
-smaller than one busy turn) — operator call; (b) confirm the notice
-returns to its quiet once-per-attach behavior.
+Mechanics: full session rehydrations replayed only the last 30 transcript
+events (overridable via OUTPOST_PI_SYNC_LIMIT); active multi-day sessions
+carry thousands of events, so every full rehydrate reported truncated.
+On a stable connection the app hydrates once and rides incremental deltas —
+the notice surfacing then was diagnostic of the flap forcing repeated FULL
+rehydrations (same root as symptom 1). Follow-up (a) landed 2026-09-07:
+SYNC_LIMIT_DEFAULT raised 30 → 200 (sized from measured event-size
+distribution vs the 4MiB decoded relay frame ceiling; ~7 busy turns).
+Remaining follow-up: (b) confirm the notice returns to its quiet
+once-per-attach behavior.
 
 ## Network context (operator, 2026-09-05)
 

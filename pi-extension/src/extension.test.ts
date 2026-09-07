@@ -4707,13 +4707,13 @@ describe("session sync", () => {
     });
   });
 
-  test("no limit in request → server uses env default (30)", async () => {
+  test("no limit in request → server uses env default (200)", async () => {
     delete process.env["OUTPOST_PI_SYNC_LIMIT"];
     await _pairForTest("peer-ss-mirror-1");
 
     const sessionTs = 1_700_000_000_000;
     _setSessionStartedAtForTest(sessionTs);
-    // 5 events: under default 30 → truncated:false
+    // 5 events: under default 200 → truncated:false
     _setMessageBufferForTest([
       { role: "user", content: "a", timestamp: sessionTs + 1 },
       { role: "assistant", content: [{ type: "text", text: "A" }], timestamp: sessionTs + 2 },
@@ -4738,7 +4738,7 @@ describe("session sync", () => {
   });
 
   test("client limit < env → server respects client limit + truncated true if overflow", async () => {
-    delete process.env["OUTPOST_PI_SYNC_LIMIT"];  // default 30
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];  // default 200
     await _pairForTest("peer-ss-mirror-2");
 
     const ts = 1_700_000_000_000;
@@ -4828,14 +4828,14 @@ describe("session sync", () => {
     expect(h.inner["truncated"]).toBe(false);
   });
 
-  test("transcript log with 50 events + env=30 → returns 30, truncated:true", async () => {
-    delete process.env["OUTPOST_PI_SYNC_LIMIT"];  // default 30
+  test("transcript log with 250 events + default 200 → returns 200, truncated:true", async () => {
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];  // default 200
     await _pairForTest("peer-ss-mirror-5");
 
     const ts = 1_700_000_000_000;
     _setSessionStartedAtForTest(ts);
     _setMessageBufferForTest(
-      Array.from({ length: 50 }, (_, i) => ({
+      Array.from({ length: 250 }, (_, i) => ({
         role: "user",
         content: `m${i}`,
         timestamp: ts + i,
@@ -4853,9 +4853,9 @@ describe("session sync", () => {
       .map(decodeSentCt)
       .find((d) => d.inner.type === "session_history")!;
     const events = h.inner["events"] as Array<{ ts: number }>;
-    expect(events.length).toBe(30);
-    expect(events[0]!.ts).toBe(ts + 20);   // last 30 of 50 (indices 20..49)
-    expect(events[29]!.ts).toBe(ts + 49);
+    expect(events.length).toBe(200);
+    expect(events[0]!.ts).toBe(ts + 50);   // last 200 of 250 (indices 50..249)
+    expect(events[199]!.ts).toBe(ts + 249);
     expect(h.inner["truncated"]).toBe(true);
   });
 
