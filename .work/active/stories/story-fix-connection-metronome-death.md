@@ -230,3 +230,17 @@ home, wss (TLS) hop to convert corruption into clean network errors,
 upstream tailscale issue with the full evidence package. Remaining
 luxury proof if ever needed: tcpdump on host:3300 during a strike shows
 the corrupted frame bytes directly.
+
+## Verdict REVERSAL (2026-09-07 evening capture)
+
+Post-cutover strikes RESUMED (12 × 1002, 16:46–17:14). The 16h silent
+window was NOT the docker-proxy cutover — it was the phone AWAY from
+home reaching the relay over tailnet subnet routing. Differential:
+tailscale path = 16h clean; home Wi-Fi → router → host virtio NIC
+(ens18, VM) = strikes within minutes of arriving home. Exonerated:
+docker-proxy (not in path), tailscale (the CLEAN leg — WireGuard
+integrity-checking), relay, app. Remaining suspects, ordered: host
+virtio NIC offload (tso/gso/gro), phone Wi-Fi stack offload, router.
+Test in flight: disable host offloads (operator, needs sudo) → strikes
+stop = host convicted; continue = phone/router side (next differential:
+force phone traffic over tailnet even at home).
