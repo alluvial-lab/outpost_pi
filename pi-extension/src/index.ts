@@ -31,6 +31,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  type ContextUsage,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
@@ -51,7 +52,10 @@ import type {
   ServerMessage,
   ThinkingLevel,
 } from "./protocol/types.js";
-import type { RelayControlFrame } from "./protocol/generated/protocol.generated.js";
+import type {
+  RelayControlFrame,
+  RelayControlFrameRoomMetaUpdate,
+} from "./protocol/generated/protocol.generated.js";
 import {
   emitSystemStatusEvent as emitRpcSystemStatusEvent,
   type SystemStatusEvent,
@@ -65,7 +69,7 @@ import {
   stringifyToolResult,
   type SdkTranscriptMessage,
 } from "./session/transcript_projection.js";
-import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
+import { RelayClient, RoomAlreadyOpenError, type RoomMeta } from "./transport/relay_client.js";
 import { appendOwnerChannelAudit, type PeerChannel, type PlainPeerChannel } from "./transport/peer_channel.js";
 import { OwnerMultiplexer } from "./extension/owner_multiplexer.js";
 import {
@@ -90,6 +94,10 @@ export { restartSupervisorCommand as _restartSupervisorCommand } from "./extensi
 export type { RestartStep } from "./extension/command_surface/supervisor_restart.js";
 import { createOutpostPiExtensionRuntime } from "./extension/composition_root.js";
 import { BackgroundActivityTracker } from "./extension/background_activity.js";
+import {
+  runGitBranch,
+  SessionTelemetryPublisher,
+} from "./extension/session_telemetry.js";
 import { FreshSessionShutdownCoordinator } from "./extension/fresh_session_shutdown.js";
 import { getOutpostPiRuntimeCoordinator } from "./extension/runtime_coordinator.js";
 import type {
@@ -440,7 +448,7 @@ const _serviceCommands = new ServiceCommands();
 // open instead of starting null. The SDK fires `thinking_level_select`
 // on every change (initial load + user toggle), mirrored to room_meta
 // the same way model is — apps subscribe to one channel for both.
-let _myRoomMeta: { name: string; cwd: string; session_id?: string; model?: string; thinking?: ThinkingLevel; working?: boolean; background?: boolean } | null = null;
+let _myRoomMeta: RoomMeta | null = null;
 let _currentModel: string | undefined = undefined;  // last-known model name
 let _currentThinking: ThinkingLevel | undefined = undefined;  // last-known thinking level
 
@@ -515,12 +523,48 @@ function _publishBackground(active: boolean): void {
   _publishRoomMetaPatch({ background: active });
 }
 
-function _publishRoomMetaPatch(
-  patch: { session_id?: string; model?: string; thinking?: ThinkingLevel; working?: boolean; background?: boolean },
-): void {
-  if (_myRoomMeta) _myRoomMeta = { ..._myRoomMeta, ...patch };
-  _relayTransport.sendRoomMeta(patch);
+type RoomMetaPatch = RelayControlFrameRoomMetaUpdate["meta"];
+
+function _publishRoomMetaPatch(patch: RoomMetaPatch): void {
+  if (_myRoomMeta) {
+    const next = { ..._myRoomMeta };
+    if (patch.session_id !== undefined) {
+      if (patch.session_id === null) delete next.session_id;
+      else next.session_id = patch.session_id;
+    }
+    if (patch.model !== undefined) {
+      if (patch.model === null) delete next.model;
+      else next.model = patch.model;
+    }
+    if (patch.thinking !== undefined) {
+      if (patch.thinking === null) delete next.thinking;
+      else next.thinking = patch.thinking;
+    }
+    if (patch.working !== undefined) next.working = patch.working;
+    if (patch.background !== undefined) next.background = patch.background;
+    if (patch.branch !== undefined) next.branch = patch.branch;
+    if (patch.ctx_percent !== undefined) next.ctx_percent = patch.ctx_percent;
+    if (patch.ctx_max !== undefined) next.ctx_max = patch.ctx_max;
+    _myRoomMeta = next;
+  }
+  _relayTransport.sendRoomMeta({
+    ...(patch.session_id !== undefined && patch.session_id !== null ? { session_id: patch.session_id } : {}),
+    ...(patch.model !== undefined && patch.model !== null ? { model: patch.model } : {}),
+    ...(patch.thinking !== undefined && patch.thinking !== null ? { thinking: patch.thinking } : {}),
+    ...(patch.working !== undefined ? { working: patch.working } : {}),
+    ...(patch.background !== undefined ? { background: patch.background } : {}),
+    ...(patch.branch !== undefined ? { branch: patch.branch } : {}),
+    ...(patch.ctx_percent !== undefined ? { ctx_percent: patch.ctx_percent } : {}),
+    ...(patch.ctx_max !== undefined ? { ctx_max: patch.ctx_max } : {}),
+  });
 }
+
+const _sessionTelemetry = new SessionTelemetryPublisher({
+  publish: (patch) => _publishRoomMetaPatch(patch),
+  usage: () => _currentSessionContextUsage(),
+  cwd: () => _currentSessionContextCwd(),
+  runGitBranch,
+});
 
 // ── Cross-PC mesh wiring (plan/25 Wave B/C) ───────────────────────────────────
 
@@ -555,6 +599,28 @@ type OutpostPiUiContext = {
 function _isStaleContextError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return message.includes("stale after session replacement or reload");
+}
+
+function _currentSessionContextUsage(): ContextUsage | undefined {
+  const ctx = _lastEventCtx;
+  if (!ctx) return undefined;
+  try {
+    return ctx.getContextUsage();
+  } catch (err) {
+    if (_isStaleContextError(err) && ctx === _lastEventCtx) _lastEventCtx = null;
+    return undefined;
+  }
+}
+
+function _currentSessionContextCwd(): string | undefined {
+  const ctx = _lastEventCtx;
+  if (!ctx) return undefined;
+  try {
+    return ctx.cwd;
+  } catch (err) {
+    if (_isStaleContextError(err) && ctx === _lastEventCtx) _lastEventCtx = null;
+    return undefined;
+  }
 }
 
 function _safeUi(ctx?: OutpostPiUiContext): OutpostPiUi | undefined {
@@ -1308,7 +1374,7 @@ let _lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd" | "mode"> | null = n
 // (an app Quick Action OR a `/new` typed in the Pi TUI). It carries only
 // base-ctx methods (no newSession — that's command-ctx only), so command ops
 // keep using `_lastCtx`.
-let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "mode"> | null = null;
+let _lastEventCtx: Pick<ExtensionContext, "compact" | "abort" | "ui" | "mode" | "cwd" | "getContextUsage"> | null = null;
 let _lastSettledCtx: Pick<ExtensionContext, "isIdle"> | null = null;
 const _noopCtx = { ui: { notify: () => undefined }, abort: () => undefined };
 
@@ -1596,6 +1662,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
 
   ownerPi.on("agent_start", () => {
     runtime.ports.session.markAgentRunStarted();
+    _sessionTelemetry.onAgentStart();
   });
 
   ownerPi.on("agent_end", () => {
@@ -1646,6 +1713,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // between settlement and the graceful process shutdown.
   ownerPi.on("agent_settled", (_event, ctx) => {
     runtime.ports.session.markAgentSettled();
+    _sessionTelemetry.onAgentSettled();
     _lastSettledCtx = ctx;
     _maybeRestartForExtensionReload(ctx);
   });
@@ -1663,6 +1731,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _maybeSendLateAttachSessionSync();
   };
   ownerPi.on("session_compact", (event) => {
+    _sessionTelemetry.onSessionCompact();
     const entry = event?.compactionEntry as {
       summary?: unknown;
       tokensBefore?: unknown;
@@ -1727,6 +1796,9 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
           thinking: patch.thinking as ThinkingLevel | undefined,
           working: patch.working,
           background: patch.background,
+          branch: patch.branch,
+          ctx_percent: patch.ctx_percent,
+          ctx_max: patch.ctx_max,
         });
       },
       onOuterMessage: (handler) => _relayTransport.onOuterMessage(handler),
@@ -1765,7 +1837,10 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         _sdkSessionProjection.bindApi(boundPi);
         _drainPendingDeliveryQueue();
       },
-      onSessionStart: _writeRuntimeIdentity,
+      onSessionStart: () => {
+        _writeRuntimeIdentity();
+        _sessionTelemetry.onSessionStart();
+      },
       bindCommandContext: _rememberCommandCtx,
       bindSessionContext: (ctx) => {
         // The runtime coordinator is the single ownership authority. A real
@@ -2108,6 +2183,7 @@ async function _startRelayViaTransportInner(ctx: RelayStartContext): Promise<voi
     cwd,
     session_id: sessionId,
     background: _backgroundActivityTracker.activeCount > 0,
+    ..._sessionTelemetry.patchForHello(),
   } as NonNullable<typeof _myRoomMeta>;
   const modelName = _currentModelName();
   if (modelName) roomMeta.model = modelName;

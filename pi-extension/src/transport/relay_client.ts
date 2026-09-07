@@ -55,6 +55,12 @@ export interface RoomMeta {
   working?: boolean;
   /** True while background subagents (pi-subagents tasks) are queued/running beyond the agent turn. Optional — older apps ignore it. */
   background?: boolean;
+  /** Current git branch, or null when detached/not a repository. */
+  branch?: string | null;
+  /** Rounded current context usage percentage, or null when unknown. */
+  ctx_percent?: number | null;
+  /** Active model context ceiling in tokens, or null when unknown. */
+  ctx_max?: number | null;
 }
 
 export interface ConnectOptions {
