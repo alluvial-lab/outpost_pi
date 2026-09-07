@@ -131,7 +131,10 @@ const DEFAULT_MESH_INGRESS_LIMITS: MeshIngressLimits = {
   maxBytesPerPeer: 256 * 1024,
 };
 
-const SYNC_LIMIT_DEFAULT = 30;
+/** Default session_history event cap. Sized to ~7 busy turns of catch-up; 200 events ≈ 0.4MiB
+ * typical against the 4MiB decoded relay frame ceiling (RELAY_DEFAULT_MAX_DECODED_BYTES).
+ * Override per host via OUTPOST_PI_SYNC_LIMIT. */
+const SYNC_LIMIT_DEFAULT = 200;
 
 function syncLimit(): number {
   const raw = process.env["OUTPOST_PI_SYNC_LIMIT"];
