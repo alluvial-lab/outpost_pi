@@ -17,13 +17,18 @@ export PATH="$HOME/.local/bin:$PATH"
 WRAPPER="/home/agent/projects/outpost_pi/scripts/pi-restart-loop.sh"
 
 python3 - "$WRAPPER" <<'PY'
-import json, subprocess, sys, time
+import json, os, subprocess, sys, time
 WRAPPER = sys.argv[1]
 
-# Self-exclusion: never wrap (i.e. never SIGTERM) the pi that is RUNNING this
-# script — its pane's pi is an ancestor of this process. Without this, a run
-# from inside a fleet pi kills its own executor first (observed 2026-09-07:
-# zero-output runs + orchestrator session loss).
+# Self-exclusion: never wrap (i.e. never SIGTERM) the pane of the pi that is
+# RUNNING this script. Ancestry detection breaks under setsid/nohup detachment,
+# so the RELIABLE channel is explicit: set WRAP_EXCLUDE_PANE=<pane_id> (and/or
+# WRAP_EXCLUDE_CWD=<cwd>) when launching. Ancestor-pid detection remains as a
+# fallback for attached runs. Without exclusion, a run from inside a fleet pi
+# kills its own executor first (observed 2026-09-07: zero-output runs + session loss).
+EXCLUDE_PANE = os.environ.get("WRAP_EXCLUDE_PANE", "")
+EXCLUDE_CWD = os.environ.get("WRAP_EXCLUDE_CWD", "")
+
 def ancestor_pids():
     pids = set()
     p = os.getppid()
@@ -36,7 +41,6 @@ def ancestor_pids():
             break
     return pids
 
-import os
 SELF_PIDS = ancestor_pids()
 
 def run(*a):
@@ -76,6 +80,9 @@ for p in panes:
     if status == 'working':
         print(f'[skip] {label:<6} WORKING (mid-turn) — defer; re-run later')
         skipped_busy += 1
+        continue
+    if pane == EXCLUDE_PANE or (EXCLUDE_CWD and cwd == EXCLUDE_CWD):
+        print(f'[skip] {label:<6} SELF (explicit exclusion) — excluded')
         continue
     pid = pi_pid_of(procs)
     if pid and pid in SELF_PIDS:
