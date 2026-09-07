@@ -9,6 +9,7 @@
 {"type":"session_sync","id":"sync-1","limit":30}
 {"type":"session_new","id":"new-1"}
 {"type":"session_compact","id":"compact-1"}
+{"type":"fleet_update","id":"fleet-update-1","session_id":"session-1"}
 {"type":"model_set","id":"model-1","provider":"anthropic","model_id":"claude-opus-4-7"}
 {"type":"thinking_set","id":"thinking-1","level":"xhigh"}
 {"type":"list_models","id":"models-1"}

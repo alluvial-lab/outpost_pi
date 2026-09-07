@@ -13,6 +13,7 @@
     { "$ref": "#/$defs/sessionSync" },
     { "$ref": "#/$defs/sessionNew" },
     { "$ref": "#/$defs/sessionCompact" },
+    { "$ref": "#/$defs/fleetUpdate" },
     { "$ref": "#/$defs/modelSet" },
     { "$ref": "#/$defs/thinkingSet" },
     { "$ref": "#/$defs/listModels" },
@@ -141,6 +142,17 @@
       "additionalProperties": false,
       "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
+    "fleetUpdate": {
+      "type": "object",
+      "required": ["type", "id", "session_id"],
+      "properties": {
+        "type": { "const": "fleet_update" },
+        "id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" }
+      },
+      "additionalProperties": false,
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+    },
     "modelSet": {
       "type": "object",
       "required": ["type", "id", "provider", "model_id"],
@@ -243,6 +255,7 @@
       "session_sync",
       "session_new",
       "session_compact",
+      "fleet_update",
       "model_set",
       "thinking_set",
       "list_models",

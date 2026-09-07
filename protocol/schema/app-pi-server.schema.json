@@ -22,6 +22,7 @@
     { "$ref": "#/$defs/actionOk" },
     { "$ref": "#/$defs/actionError" },
     { "$ref": "#/$defs/modelsList" },
+    { "$ref": "#/$defs/fleetUpdateStatus" },
     { "$ref": "#/$defs/captureUploadAck" },
     { "$ref": "#/$defs/captureUploadError" }
   ],
@@ -284,6 +285,28 @@
       "additionalProperties": false,
       "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
+    "fleetUpdateStatus": {
+      "type": "object",
+      "required": ["type", "update_id", "phase"],
+      "properties": {
+        "type": { "const": "fleet_update_status" },
+        "update_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "phase": { "enum": ["updating", "arming", "update_failed", "already_running"] },
+        "detail": { "type": "string" },
+        "peers": { "type": "array", "items": { "$ref": "#/$defs/fleetPeerAck" } }
+      },
+      "additionalProperties": false
+    },
+    "fleetPeerAck": {
+      "type": "object",
+      "required": ["peer", "state"],
+      "properties": {
+        "peer": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["armed", "deferred", "declined", "no-ack"] },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "captureUploadAck": {
       "type": "object",
       "required": ["type", "in_reply_to", "upload_id", "stage"],
@@ -422,6 +445,7 @@
       "action_ok",
       "action_error",
       "models_list",
+      "fleet_update_status",
       "capture_upload_ack",
       "capture_upload_error"
     ],

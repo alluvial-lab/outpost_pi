@@ -1,7 +1,7 @@
 ---
 id: feature-fleet-update-from-mobile-wire-protocol
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, app, protocol]
 parent: feature-fleet-update-from-mobile
 depends_on: []
@@ -19,13 +19,20 @@ app-derived (not wire) restarting/verified phases.
 
 ## Acceptance evidence
 
-- Codegen green; TS + Dart generated types committed; discriminator maps
+- [x] Codegen green; TS + Dart generated types committed; discriminator maps
   include both messages; `fleet_update` joins the session-scoped client
   list.
-- Fixture rows: request + each status variant (updating / arming with peers
+- [x] Fixture rows: request + each status variant (updating / arming with peers
   / update_failed / already_running).
-- Unknown-client-type error behavior covered by the existing codec test
+- [x] Unknown-client-type error behavior covered by the existing codec test
   pattern (old extension + new app degrades cleanly).
+
+## Completion evidence
+
+- Protocol schema fixtures and generated TypeScript/Dart outputs are updated.
+- Protocol, codegen, extension codec/session-scope, and app generated-codec
+  unit tests pass.
+- No live Pi process or relay was operated.
 
 ## Ordering constraints
 

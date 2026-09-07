@@ -177,11 +177,11 @@ Server status event (push, repeatable):
 NOT wire phases.)
 
 **Acceptance Criteria**:
-- [ ] Codegen green; TS + Dart generated types committed; discriminator
+- [x] Codegen green; TS + Dart generated types committed; discriminator
       maps (`CLIENT_MESSAGE_DISCRIMINATORS`, server types) include both
       messages; session-scoped list gains `fleet_update`
-- [ ] Fixture rows: request + each status variant
-- [ ] Unknown-type behavior verified: old-extension-style handler answers
+- [x] Fixture rows: request + each status variant
+- [x] Unknown-type behavior verified: old-extension-style handler answers
       an unrecognized client type with the standard error (existing codec
       test pattern)
 

@@ -38,6 +38,7 @@ const expectedSessionScopedClientTypes = new Set([
   "session_sync",
   "session_new",
   "session_compact",
+  "fleet_update",
   "model_set",
   "thinking_set",
   "list_models",
