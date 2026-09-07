@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-session-context-telemetry
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, ux, protocol]
 parent: null
 depends_on: []
@@ -382,3 +382,15 @@ catalog contains 43; the full app suite had three pre-existing/flaky failures
 (auth-read hedge timeout and two chat ViewModel timing cases). No deployed
 live spot-check was possible in this session; operator verification remains
 required after a Pi restart.
+
+## Review closure (2026-09-07, standard weight)
+
+One cross-model pass (GPT-6 Astra vs Luna implementers) → 4 blockers, all
+receiver-confirmed and fixed in 40b1f70b3 (snapshot/announcement/pairing
+telemetry preservation; relay explicit-null broadcasts for clears; usage
+re-read after delayed git + overlap coalescing; post-auth telemetry replay).
+Fixes verified green (focused suites per surface; full-suite caveats are the
+known sync_service load-flake and the fleet fixture-count assertion owned by
+the fleet fix round). Closed without a second pass per standard weight.
+Deferred to operator at deploy: the live ctx-percent spot-check vs TUI footer
+(requires one pi restart).
