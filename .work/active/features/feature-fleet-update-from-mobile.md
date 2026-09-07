@@ -358,3 +358,20 @@ surface change.
   catalog has no matching fixture row. Protocol files are already complete and
   outside this roll-up's write scope, so the feature is intentionally left at
   `stage: review` for that blocker and the live-lane decision.
+
+## Implementation notes addendum (2026-09-07, orchestrator)
+
+- The story-3 worker's flagged "blocker" was NOT pre-existing and is now
+  FIXED: story 1 updated the shared catalogs (`protocol/fixtures/app-pi/`)
+  but not the per-type contract catalog `.orchestration/contracts/fixtures/`
+  (+ its two classification sets in `app/test/protocol_test.dart` and
+  `app/test/protocol_codegen/server_messages_codegen_test.dart`). Added
+  `fleet_update_status.jsonl` (all four phases incl. full ack table) +
+  `fleet_update.jsonl` and classified both. Both suites green.
+- Full app suite: 1051 passing; `sync_service_test.dart` timeout-themed
+  tests flake under full-suite parallel load (rotating failures across runs,
+  3/3 green in isolation, additive-only diff to sync_service.dart — one
+  ignored-cases switch entry). Recorded as pre-existing load-flake, not a
+  regression; parked for the flake backlog if it recurs.
+- chat_page's reconnect-banner CONSUMPTION of the suppression flag remains
+  viewmodel-complete-but-unwired (story-3 discovery) — carried into review.
