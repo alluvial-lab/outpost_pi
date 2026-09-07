@@ -33,3 +33,19 @@ Fix (both halves, landed):
    defer instead of SIGTERM.
 Verification: extension 1,121 tests + build green. Loaded by pis at
 next process start.
+
+## Verification results (2026-09-07, live)
+
+- **Test A (wrapper path)**: PASS — /new from phone on skills (room
+  k0H-7lFh371e): fence/drain (background field visibly drained), exit,
+  wrapper relaunch in 2.3s, re-auth, room serving. The original wedge is
+  dead in the standard configuration.
+- **Test B (bare in-process path)**: CONTRACT-HELD, BRANCH-MISSED — bare
+  pi (pi --continue, no wrapper) + mobile /new: the pi took the
+  FAIL-CLOSED EXIT (clean, no wedge, no error surfaced) instead of the
+  in-process rebind. The invariant held; the desired UX did not: bare
+  pis still lose the session, politely. Follow-up: why did the live
+  trigger lack a command-capable context when the real-SDK harness test
+  exercises exactly that branch — inspect the live session_new entry
+  conditions (which ctx binding exists when /new arrives through the
+  delivery path on a settled bare session) vs the harness's.
