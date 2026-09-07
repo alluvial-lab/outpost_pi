@@ -1,0 +1,4 @@
+{"type":"fleet_update_status","update_id":"018f9c2e-7b1e-7000-9a3b-1c2d3e4f5a73","phase":"updating"}
+{"type":"fleet_update_status","update_id":"018f9c2e-7b1e-7000-9a3b-1c2d3e4f5a73","phase":"arming","peers":[{"peer":"epk_sibling_a","state":"armed"},{"peer":"epk_sibling_b","state":"deferred","reason":"turn active; arms at next settle"},{"peer":"epk_sibling_c","state":"declined","reason":"hot-reload disabled"},{"peer":"epk_sibling_d","state":"no-ack"}]}
+{"type":"fleet_update_status","update_id":"018f9c2e-7b1e-7000-9a3b-1c2d3e4f5a73","phase":"update_failed","detail":"pi update exited 1: EPERM /usr/local/bin/pi"}
+{"type":"fleet_update_status","update_id":"018f9c2e-7b1e-7000-9a3b-1c2d3e4f5a73","phase":"already_running"}
