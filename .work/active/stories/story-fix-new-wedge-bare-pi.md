@@ -1,3 +1,15 @@
+---
+id: story-fix-new-wedge-bare-pi
+kind: story
+stage: implementing
+tags: [pi-extension, bug, lifecycle]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-08-29
+updated: 2026-09-07
+---
 
 ## Post-release finding (2026-09-07, operator field report)
 
