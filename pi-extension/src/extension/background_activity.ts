@@ -24,16 +24,26 @@ function backgroundId(payload: unknown): string | null {
 export class BackgroundActivityTracker {
   private readonly activeIds = new Set<string>();
   private readonly subscribedBuses = new WeakSet<object>();
+  private readonly emissionBuses: EventBus[] = [];
   private disposed = false;
 
   constructor(private readonly onChange: (snapshot: BackgroundActivitySnapshot) => void) {}
 
-  /** Subscribe once per event-bus identity so repeated composition is harmless. */
+  /**
+   * Subscribe once per event-bus identity so repeated composition is harmless.
+   * Also RE-EMITS the transition on the bus as `outpost-pi:background`
+   * `{active: boolean}` — content-free, transition-gated — so sibling
+   * extensions (e.g. herdr-agent-state) can hold activity state while
+   * background work runs. Without this, fleet tooling that SIGTERMs
+   * "idle" pis kills in-process background work (2026-09-07 incident:
+   * wrap-agents.sh vs a pi waiting on subagent execution).
+   */
   subscribe(bus: EventBus): void {
     if (this.disposed) return;
     const identity = bus as object;
     if (this.subscribedBuses.has(identity)) return;
     this.subscribedBuses.add(identity);
+    this.emissionBuses.push(bus);
     // Pi 0.84 tracks `pi.events.on` subscriptions and removes them when the
     // owning runtime is invalidated; retaining manual closures would outlive
     // the session-scoped listener contract.
@@ -81,5 +91,16 @@ export class BackgroundActivityTracker {
 
   private emitChange(): void {
     this.onChange({ activeCount: this.activeIds.size });
+    // Re-broadcast on every subscribed bus (transition edges only) so sibling
+    // extensions can hold activity state during background work. Emission list
+    // is a parallel identity-deduped array — the WeakSet guard stays for
+    // subscribe idempotence, but WeakSets are not iterable.
+    for (const bus of this.emissionBuses) {
+      try {
+        bus.emit("outpost-pi:background", { active: this.activeIds.size > 0 });
+      } catch {
+        // A stale runtime-scoped bus must never break transition handling.
+      }
+    }
   }
 }
