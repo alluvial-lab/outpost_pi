@@ -375,7 +375,8 @@ surface change.
 
 Applied 2026-09-08 for the nine confirmed review findings. The feature remains
 at `stage: review`; the live fleet lane remains operator-deferred and no live
-process or marker was touched.
+process or marker was touched. *("Remains at review" was true when written;
+the closure section below supersedes it — feature is `done` as of eec8b2581.)*
 
 1. **Restart identity was too weak.** Recovery now pins the selected peer,
    room, and baseline `RoomInfo.startedAt`; verification requires the pinned
