@@ -100,6 +100,15 @@ impl RoomStateStore {
         if let Some(background) = patch.background {
             meta.background = Some(background);
         }
+        if let Some(branch) = patch.branch {
+            meta.branch = branch;
+        }
+        if let Some(ctx_percent) = patch.ctx_percent {
+            meta.ctx_percent = ctx_percent;
+        }
+        if let Some(ctx_max) = patch.ctx_max {
+            meta.ctx_max = ctx_max;
+        }
 
         Some(RoomMetaPatchResult { meta: meta.clone() })
     }
@@ -119,6 +128,9 @@ mod tests {
             thinking: None,
             working: false,
             background: None,
+            branch: None,
+            ctx_percent: None,
+            ctx_max: None,
             started_at: 0,
         }
     }
@@ -168,6 +180,9 @@ mod tests {
         let mut meta = make_meta("main");
         meta.working = true;
         meta.background = Some(true);
+        meta.branch = Some("main".to_string());
+        meta.ctx_percent = Some(92);
+        meta.ctx_max = Some(1_000_000);
         store.on_connection_inserted(peer, meta, &insert(1, true));
 
         let model_only = store
@@ -188,6 +203,9 @@ mod tests {
             Some(true),
             "absent background must preserve true"
         );
+        assert_eq!(model_only.branch.as_deref(), Some("main"));
+        assert_eq!(model_only.ctx_percent, Some(92));
+        assert_eq!(model_only.ctx_max, Some(1_000_000));
 
         let off = store
             .apply_patch(
@@ -196,6 +214,9 @@ mod tests {
                 RoomMetaPatch {
                     working: Some(false),
                     background: Some(false),
+                    branch: Some(None),
+                    ctx_percent: Some(None),
+                    ctx_max: Some(None),
                     ..Default::default()
                 },
             )
@@ -207,6 +228,9 @@ mod tests {
             Some(false),
             "background false is a real patch"
         );
+        assert_eq!(off.branch, None, "null branch clears the snapshot");
+        assert_eq!(off.ctx_percent, None, "null percent clears the snapshot");
+        assert_eq!(off.ctx_max, None, "null max clears the snapshot");
     }
 
     #[test]

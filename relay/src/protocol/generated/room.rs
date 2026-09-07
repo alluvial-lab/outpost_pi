@@ -24,6 +24,12 @@ pub struct RoomMeta {
     pub working: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ctx_percent: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ctx_max: Option<u64>,
     pub started_at: i64,
 }
 
@@ -39,10 +45,24 @@ pub struct RoomMetaPatch {
     pub working: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ctx_percent: Option<Option<u64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ctx_max: Option<Option<u64>>,
 }
 
-const ROOM_META_PATCH_FIELDS: &[&str] =
-    &["model", "thinking", "session_id", "working", "background"];
+const ROOM_META_PATCH_FIELDS: &[&str] = &[
+    "model",
+    "thinking",
+    "session_id",
+    "working",
+    "background",
+    "branch",
+    "ctx_percent",
+    "ctx_max",
+];
 
 impl<'de> Deserialize<'de> for RoomMetaPatch {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -98,6 +118,24 @@ impl<'de> Visitor<'de> for RoomMetaPatchVisitor {
                         return Err(de::Error::duplicate_field("background"));
                     }
                     patch.background = Some(map.next_value::<bool>()?);
+                }
+                "branch" => {
+                    if patch.branch.is_some() {
+                        return Err(de::Error::duplicate_field("branch"));
+                    }
+                    patch.branch = Some(map.next_value::<Option<String>>()?);
+                }
+                "ctx_percent" => {
+                    if patch.ctx_percent.is_some() {
+                        return Err(de::Error::duplicate_field("ctx_percent"));
+                    }
+                    patch.ctx_percent = Some(map.next_value::<Option<u64>>()?);
+                }
+                "ctx_max" => {
+                    if patch.ctx_max.is_some() {
+                        return Err(de::Error::duplicate_field("ctx_max"));
+                    }
+                    patch.ctx_max = Some(map.next_value::<Option<u64>>()?);
                 }
                 other => return Err(de::Error::unknown_field(other, ROOM_META_PATCH_FIELDS)),
             }

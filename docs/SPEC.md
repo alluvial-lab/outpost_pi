@@ -81,10 +81,12 @@ protocol codegen:
   outer envelope, cross-PC frames, and room metadata).
 
 Relay-control room metadata is defined by `roomMeta` with `room_id`, `name`,
-`cwd`, `session_id`, `model`, `thinking`, `working`, `background`, and
-`started_at`; `roomMetaPatch` carries the mutable `model`, `thinking`,
-`session_id`, `working`, and `background` fields with merge-patch semantics.
-The same optional `background` projection is accepted in `helloRoomMeta`.
+`cwd`, `session_id`, `model`, `thinking`, `working`, `background`, `branch`,
+`ctx_percent`, `ctx_max`, and `started_at`; `roomMetaPatch` carries the
+mutable `model`, `thinking`, `session_id`, `working`, `background`, `branch`,
+`ctx_percent`, and `ctx_max` fields with merge-patch semantics (nullable
+strings and integers distinguish absent/preserve from explicit null/clear).
+The same optional telemetry projection is accepted in `helloRoomMeta`.
 
 - **Cockpit↔pi control RPC** — folded into the generated schema
   (`cockpit-control-rpc`), retiring the former private NUL-prefix string RPC.

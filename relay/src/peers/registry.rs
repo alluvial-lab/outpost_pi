@@ -255,6 +255,9 @@ mod tests {
             thinking: None,
             working: false,
             background: None,
+            branch: None,
+            ctx_percent: None,
+            ctx_max: None,
             started_at: 0,
         }
     }

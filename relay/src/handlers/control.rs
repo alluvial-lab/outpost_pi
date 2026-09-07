@@ -202,6 +202,9 @@ impl<'actor> ControlHandlers<'actor> {
             frame.meta.session_id.as_ref().map(|_| "session_id"),
             frame.meta.working.map(|_| "working"),
             frame.meta.background.map(|_| "background"),
+            frame.meta.branch.as_ref().map(|_| "branch"),
+            frame.meta.ctx_percent.as_ref().map(|_| "ctx_percent"),
+            frame.meta.ctx_max.as_ref().map(|_| "ctx_max"),
         ]
         .into_iter()
         .flatten()
@@ -319,6 +322,9 @@ mod tests {
             thinking: None,
             working: false,
             background: None,
+            branch: None,
+            ctx_percent: None,
+            ctx_max: None,
             started_at: 0,
         }
     }

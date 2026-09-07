@@ -119,6 +119,9 @@ final class RelayRoomMetaDto {
     this.model,
     this.thinking,
     this.background,
+    this.branch,
+    this.ctxPercent,
+    this.ctxMax,
   });
   final String roomId;
   final String? name;
@@ -128,6 +131,9 @@ final class RelayRoomMetaDto {
   final String? thinking;
   final bool? working;
   final bool? background;
+  final String? branch;
+  final int? ctxPercent;
+  final int? ctxMax;
   final int startedAt;
   factory RelayRoomMetaDto.fromJson(Map<String, dynamic> json) {
     final legacyMeta = json['meta'] is Map
@@ -142,6 +148,9 @@ final class RelayRoomMetaDto {
       thinking: (json['thinking'] as String?) ?? (legacyMeta['thinking'] as String?),
       working: (json['working'] as bool?) ?? (legacyMeta['working'] as bool?),
       background: (json['background'] as bool?) ?? (legacyMeta['background'] as bool?),
+      branch: (json['branch'] as String?) ?? (legacyMeta['branch'] as String?),
+      ctxPercent: (json['ctx_percent'] as num?)?.toInt() ?? (legacyMeta['ctx_percent'] as num?)?.toInt(),
+      ctxMax: (json['ctx_max'] as num?)?.toInt() ?? (legacyMeta['ctx_max'] as num?)?.toInt(),
       startedAt: (json['started_at'] as num).toInt(),
     );
   }
@@ -192,27 +201,45 @@ final class RelayRoomMetaPatchDto {
     this.sessionId,
     this.working,
     this.background,
+    this.branch,
+    this.ctxPercent,
+    this.ctxMax,
     required this.hasModel,
     required this.hasThinking,
     required this.hasSessionId,
+    required this.hasBranch,
+    required this.hasCtxPercent,
+    required this.hasCtxMax,
   });
   final String? model;
   final String? thinking;
   final String? sessionId;
   final bool? working;
   final bool? background;
+  final String? branch;
+  final int? ctxPercent;
+  final int? ctxMax;
   final bool hasModel;
   final bool hasThinking;
   final bool hasSessionId;
+  final bool hasBranch;
+  final bool hasCtxPercent;
+  final bool hasCtxMax;
   factory RelayRoomMetaPatchDto.fromJson(Map<String, dynamic> json) => RelayRoomMetaPatchDto(
         model: json['model'] as String?,
         thinking: json['thinking'] as String?,
         sessionId: json['session_id'] as String?,
         working: json['working'] as bool?,
         background: json['background'] as bool?,
+        branch: json['branch'] as String?,
+        ctxPercent: (json['ctx_percent'] as num?)?.toInt(),
+        ctxMax: (json['ctx_max'] as num?)?.toInt(),
         hasModel: json.containsKey('model'),
         hasThinking: json.containsKey('thinking'),
         hasSessionId: json.containsKey('session_id'),
+        hasBranch: json.containsKey('branch'),
+        hasCtxPercent: json.containsKey('ctx_percent'),
+        hasCtxMax: json.containsKey('ctx_max'),
       );
 }
 

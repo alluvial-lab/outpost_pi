@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = b"outpost-pi-relay-auth-v1\n";
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientAuthMsg {
     Hello {
@@ -36,6 +37,9 @@ pub struct HelloRoomMeta {
     pub working: bool,
     #[serde(default)]
     pub background: bool,
+    pub branch: Option<String>,
+    pub ctx_percent: Option<u64>,
+    pub ctx_max: Option<u64>,
 }
 
 fn default_room() -> String {
