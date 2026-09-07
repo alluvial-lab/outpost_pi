@@ -19,8 +19,14 @@ the binary while running pis keep their old inode; `pi update
 --extensions` updates packages; every wrapper relaunch then picks up
 the new binary automatically. So:
 
-1. **Trigger from mobile**: app control command (e.g.
-   `/outpost-pi fleet-update`) → the extension on the receiving pi.
+1. **Trigger from mobile — an "Update" button in the Outpost app**
+   (operator direction 2026-09-07): a fleet-level action in the app's
+   settings surface (not a chat command — this is device-ops, not
+   conversation). The button sends the existing control-command plumbing
+   to the primary paired pi; per-pi progress + final fleet status render
+   in the same surface (phases: updating → arming → restarting →
+   verified). Confirmation step required — it restarts every pi the
+   phone can reach.
 2. **Update phase**: that pi runs `pi update` + `pi update --extensions`
    (subprocess, captures result). No pis stop.
 3. **Rolling restart via existing mechanisms**: the extension arms its
