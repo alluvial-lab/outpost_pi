@@ -7,7 +7,6 @@ import type {
   ByeReason,
   ClientMessage,
   ServerMessage,
-  ThinkingLevel,
 } from "../protocol/types.js";
 import type { DecodedRelayIngress } from "../protocol/relay_ingress.js";
 import type { RelayClient, RoomMeta } from "../transport/relay_client.js";
@@ -82,7 +81,7 @@ export interface RelayTransportPort {
   status(): RelayConnectivity;
   start(input: RelayStartInput): Promise<RelayStartResult>;
   stop(reason?: ByeReason): Promise<void>;
-  sendRoomMeta(patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel; background?: boolean }): void;
+  sendRoomMeta(patch: Partial<RoomMeta>): void;
   onOuterMessage(
     handler: (
       ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,

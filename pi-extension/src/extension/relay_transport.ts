@@ -1,4 +1,4 @@
-import type { ByeReason, ThinkingLevel } from "../protocol/types.js";
+import type { ByeReason } from "../protocol/types.js";
 import {
   isRelayPostAuthControlFrame,
   RELAY_CONTROL_DISCRIMINATORS,
@@ -630,9 +630,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     emitRelayState();
   }
 
-  function sendRoomMeta(
-    patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel; background?: boolean },
-  ): void {
+  function sendRoomMeta(patch: Partial<RoomMeta>): void {
     if (!roomId) return;
     if (roomMeta) roomMeta = { ...roomMeta, ...patch };
     const frame = {
