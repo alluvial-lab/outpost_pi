@@ -2339,6 +2339,93 @@ void _registerRoomsTests() {
     );
 
     test(
+      'RoomMetaUpdated patches telemetry through the live cache path (set → preserve → clear)',
+      () async {
+        final ch = _ControllableChannel();
+        final cm = ConnectionManager(
+          factory: (_, _) async => ch,
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+        );
+        await cm.connectTo(_fakePeer());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        // Seed via RoomAnnounced (no telemetry yet).
+        ch.pushControl(
+          const RoomAnnounced(peer: 'epk_test', roomId: 'r1', startedAt: 1),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final seeded = cm.roomsFor('epk_test').single;
+        expect(seeded.branch, isNull);
+        expect(seeded.ctxPercent, isNull);
+        expect(seeded.ctxMax, isNull);
+
+        // Sampler publishes the trio after a turn.
+        ch.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_test',
+            roomId: 'r1',
+            branch: 'main',
+            ctxPercent: 92,
+            ctxMax: 1000000,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final set = cm.roomsFor('epk_test').single;
+        expect(set.branch, 'main');
+        expect(set.ctxPercent, 92);
+        expect(set.ctxMax, 1000000);
+
+        // A working-only patch must preserve the telemetry fields
+        // (absent = preserve — regression for the ConnectionManager
+        // re-derivation that initially dropped these fields).
+        ch.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_test',
+            roomId: 'r1',
+            working: true,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+            hasBranch: false,
+            hasCtxPercent: false,
+            hasCtxMax: false,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final preserved = cm.roomsFor('epk_test').single;
+        expect(preserved.branch, 'main');
+        expect(preserved.ctxPercent, 92);
+        expect(preserved.ctxMax, 1000000);
+        expect(preserved.working, isTrue);
+
+        // Post-compaction null-clear reaches the cache.
+        ch.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_test',
+            roomId: 'r1',
+            branch: null,
+            ctxPercent: null,
+            ctxMax: null,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final cleared = cm.roomsFor('epk_test').single;
+        expect(cleared.branch, isNull);
+        expect(cleared.ctxPercent, isNull);
+        expect(cleared.ctxMax, isNull);
+
+        cm.dispose();
+      },
+    );
+
+    test(
       'RoomMetaUpdated for unknown room is a no-op (no crash, no insert)',
       () async {
         final ch = _ControllableChannel();

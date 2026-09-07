@@ -327,3 +327,19 @@ This is a consumer-boundary discovery, not a change to the wire contract.
   no pi-extension or relay lanes were rerun here per the feature boundary.
 
 Implementation commits: `2d9cbd29f`, `8d807cc5c`, `87ce1b6b7`.
+
+## Implementation notes (2026-09-07)
+
+- Stories landed: schema-codegen (2d9cbd29f), extension-sampler (8d807cc5c),
+  app-render (87ce1b6b7); feature roll-up 295bb7cea.
+- **Integration fix (post-roll-up, pre-review)**: the app-render worker's
+  discovery was confirmed real — `ConnectionManager`'s `RoomMetaUpdated` case
+  re-derived the patch field-by-field and dropped the telemetry trio on live
+  broadcasts (snapshots only). Fixed by routing through
+  `RoomMetaUpdated.applyTo` (the story's single-source tri-state impl),
+  deleting the duplicated merge logic; regression test added
+  (set → preserve → null-clear through the live cache path). All 1,025 app
+  tests green post-fix.
+- Extension-sampler live spot-check DEFERRED to operator at deploy (requires
+  one pi restart; the orchestrating session runs on this fleet) — recorded
+  in the story body.

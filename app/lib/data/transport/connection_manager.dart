@@ -1212,59 +1212,33 @@ class ConnectionManager extends Service {
           _liveRoomIds.remove(key);
         }
         if (removed || clearedWorking) roomsDirty = true;
-      case RoomMetaUpdated(
-        :final peer,
-        :final roomId,
-        :final sessionId,
-        :final model,
-        :final thinking,
-        :final working,
-        :final background,
-        :final hasModel,
-        :final hasThinking,
-        :final hasSessionId,
-      ):
+      case RoomMetaUpdated(:final peer, :final roomId, :final working)
+          && var event:
         final key = toStandardB64(peer);
         final list = _roomsByPeer[key];
         if (list == null) break;
         final idx = list.indexWhere((r) => r.roomId == roomId);
         if (idx < 0) break;
         final current = list[idx];
-        // Plan/28 Wave D — meta is open-ended; only update the fields
-        // the broadcast actually carried. `hasModel` / `hasThinking`
-        // distinguishes "field was absent from the meta envelope"
-        // (preserve previous value) from "field was explicitly null"
-        // (overwrite with null). Without this, a thinking-only update
-        // would clobber the previously cached model with null.
-        final nextSessionId = hasSessionId ? sessionId : current.sessionId;
-        final nextModel = hasModel ? model : current.model;
-        final nextThinking = hasThinking ? thinking : current.thinking;
-        // Like working, an omitted background key maps to null and preserves
-        // the cached room value; explicit true/false replaces it.
-        final nextBackground = background ?? current.background;
+        // Plan/28 Wave D — meta is open-ended; the tri-state patch semantics
+        // (absent = preserve, explicit null = clear, value = set) live in
+        // RoomMetaUpdated.applyTo — the single source of truth shared by every
+        // room-meta field including the session-telemetry trio. Re-deriving
+        // fields here would drift from it (that is how the telemetry fields
+        // initially failed to reach the cache).
+        final next = event.applyTo(current);
         // Plan/32 — `working` is nullable-as-absent: null preserves the
         // cached value (e.g. a model-only update must not flip the dot),
         // non-null sets it. This is what carries the relay's
         // turn_start/turn_end broadcast to the Home dot for EVERY room.
-        final nextWorking = working ?? current.working;
         if (working == false) {
-          _advanceWorkingAuthority(key, roomId, nextSessionId);
+          _advanceWorkingAuthority(key, roomId, next.sessionId);
         }
-        if (current.sessionId == nextSessionId &&
-            current.model == nextModel &&
-            current.thinking == nextThinking &&
-            current.working == nextWorking &&
-            current.background == nextBackground) {
+        if (next == current) {
           break; // dedup: nothing actually changed
         }
-        list[idx] = current.copyWith(
-          sessionId: nextSessionId,
-          model: nextModel,
-          thinking: nextThinking,
-          working: nextWorking,
-          background: nextBackground,
-        );
-        _logRoomSnapshot(room: roomId, working: nextWorking);
+        list[idx] = next;
+        _logRoomSnapshot(room: roomId, working: next.working);
         roomsDirty = true;
         _scheduleRoomPersistence(key);
       case RoomsSnapshot(:final peer, :final rooms):
