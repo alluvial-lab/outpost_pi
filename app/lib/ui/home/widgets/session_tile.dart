@@ -87,6 +87,7 @@ class SessionTile extends StatelessWidget {
                   child: _TitleBlock(
                     peer: peer,
                     room: room,
+                    isWorking: isWorking,
                     isBackgroundActive:
                         isOrchestrating && isLive && !isReconnecting,
                   ),
@@ -162,11 +163,13 @@ class _PresenceDot extends StatelessWidget {
 class _TitleBlock extends StatelessWidget {
   final PeerRecord peer;
   final RoomInfo? room;
+  final bool isWorking;
   final bool isBackgroundActive;
 
   const _TitleBlock({
     required this.peer,
     required this.room,
+    required this.isWorking,
     required this.isBackgroundActive,
   });
 
@@ -217,21 +220,46 @@ class _TitleBlock extends StatelessWidget {
           builder: (_) {
             final model = room?.model;
             final hasModel = model != null && model.isNotEmpty;
-            return Text(
-              isBackgroundActive
-                  ? 'background work'
-                  : hasModel
-                  ? _truncateModel(model)
-                  : 'Last paired: ${_relativeTime(peer.pairedAt)}',
+            final subtitle = isBackgroundActive
+                ? 'background work'
+                : hasModel
+                ? _truncateModel(model)
+                : 'Last paired: ${_relativeTime(peer.pairedAt)}';
+            final subtitleColor = isBackgroundActive || !hasModel
+                ? colors.muted
+                : colors.accent;
+            final percent = room?.ctxPercent;
+            if (isWorking || percent == null) {
+              return Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: subtitleColor,
+                  fontSize: 12,
+                  fontFamily: kMonoFamily,
+                ),
+              );
+            }
+            return Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: subtitle,
+                    style: TextStyle(color: subtitleColor),
+                  ),
+                  TextSpan(
+                    text: ' · $percent%',
+                    style: TextStyle(
+                      color: percent >= 85 ? colors.warning : colors.muted,
+                    ),
+                  ),
+                ],
+              ),
+              key: const Key('home-session-ctx-subtitle'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isBackgroundActive || !hasModel
-                    ? colors.muted
-                    : colors.accent,
-                fontSize: 12,
-                fontFamily: kMonoFamily,
-              ),
+              style: const TextStyle(fontSize: 12, fontFamily: kMonoFamily),
             );
           },
         ),
