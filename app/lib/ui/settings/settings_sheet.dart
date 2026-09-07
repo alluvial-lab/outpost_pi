@@ -1,6 +1,7 @@
 import 'package:app/config/dependencies.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/core/themes/themes.dart';
+import 'package:app/ui/settings/fleet_update_viewmodel.dart';
 import 'package:app/ui/settings/settings_page.dart';
 import 'package:app/ui/settings/viewmodels/settings_viewmodel.dart';
 import 'package:flutter/material.dart';
@@ -38,7 +39,9 @@ Future<void> showSettingsSheet(BuildContext context) {
       return FractionallySizedBox(
         heightFactor: 0.92,
         child: ViewmodelProvider<SettingsViewModel>(
-          child: const SettingsPage(embedded: true),
+          child: ViewmodelProvider<FleetUpdateViewModel>(
+            child: const SettingsPage(embedded: true),
+          ),
         ),
       );
     },

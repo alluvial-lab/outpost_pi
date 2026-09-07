@@ -45,6 +45,9 @@ class _FakeActionsRepository implements IActionsRepository {
   }
 
   @override
+  Future<String> fleetUpdate() async => 'act_fleet_vm_test';
+
+  @override
   Future<void> newSession() async {
     newSessionCalls++;
   }

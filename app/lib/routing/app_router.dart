@@ -17,6 +17,7 @@ import 'package:app/ui/chat/widgets/detail_placeholder.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/home/home_page.dart';
 import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
+import 'package:app/ui/settings/fleet_update_viewmodel.dart';
 import 'package:app/ui/onboarding/onboarding_page.dart';
 import 'package:app/ui/onboarding/viewmodels/onboarding_viewmodel.dart';
 import 'package:app/ui/pairing/pairing_page.dart';
@@ -591,8 +592,11 @@ AppRouterOwner buildRouter(
       // Settings (entered from /home menu)
       GoRoute(
         path: '/settings',
-        builder: (ctx, st) =>
-            ViewmodelProvider<SettingsViewModel>(child: const SettingsPage()),
+        builder: (ctx, st) => ViewmodelProvider<SettingsViewModel>(
+          child: ViewmodelProvider<FleetUpdateViewModel>(
+            child: const SettingsPage(),
+          ),
+        ),
       ),
     ],
   );
