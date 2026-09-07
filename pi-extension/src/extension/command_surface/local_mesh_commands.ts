@@ -2,6 +2,11 @@ import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/
 import { join } from "node:path";
 import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import type { ByeReason } from "../../protocol/types.js";
+import {
+  type FleetArmRestartAck,
+  isFleetArmRestartRequest,
+  localPeerAddresses,
+} from "../fleet_update.js";
 import { acquireCwdLock, type AcquiredLock } from "../../session/cwd_lock.js";
 import {
   ensureGlobalDirs,
@@ -57,6 +62,8 @@ export interface LocalMeshCommandsDeps {
   readonly refreshFooter: (ctx?: OutpostPiUiContext) => void;
   readonly refreshSessionPeerCount: (peer: MeshNode, ctx?: Pick<ExtensionContext, "ui"> | null) => void;
   readonly deliverMeshMessage: (env: MeshEnvelope) => void;
+  /** Handle fleet arm requests before generic mesh delivery wakes the agent. */
+  readonly handleFleetArmRestart?: (updateId: string) => FleetArmRestartAck;
   readonly attachBridgeIfReady: () => void;
   readonly notify: (
     msg: string,
@@ -309,29 +316,25 @@ export class LocalMeshCommands {
         // remotePeers cache stays current without polling.
         void peer.request("broker", { type: "list_peers" }, 2000)
           .then((reply) => {
-            const body = reply.body as {
-              peers?: string[];
-              peers_detailed?: Array<{ pc?: string; address?: string }>;
-            } | null;
             // onLocalPeersChanged wants LOCAL-only addresses (list_peers returns
-            // the aggregated local + cross-PC roster). Prefer the structured
-            // roster (plan/38): a local peer has no `pc`. This is drive-letter
-            // safe — a Windows local address `C:\\…@app` contains ':' but is NOT
-            // remote, so the old naive `!p.includes(":")` misclassified it.
-            let local: string[] | null = null;
-            const detailed = body?.peers_detailed;
-            if (Array.isArray(detailed)) {
-              local = detailed
-                .filter((p) => !p.pc && typeof p.address === "string")
-                .map((p) => p.address as string);
-            } else if (Array.isArray(body?.peers)) {
-              // Fallback for a legacy broker without `peers_detailed`.
-              local = body!.peers!.filter((p) => !p.includes(":"));
-            }
+            // the aggregated local + cross-PC roster). The local/remote
+            // discriminator lives in fleet_update.js's localPeerAddresses:
+            // a structured roster entry without a `pc` label is local
+            // (drive-letter safe — a Windows local address `C:\\…@app`
+            // contains ':' but is NOT remote).
+            const local = localPeerAddresses(reply.body);
             // No-op when the bridge isn't up (follower / relay down).
             if (local) peer.onLocalPeersChanged(local);
           })
           .catch(() => { /* bridge not bound yet, or list_peers failed */ });
+        return;
+      }
+      if (isFleetArmRestartRequest(body)) {
+        const ack: FleetArmRestartAck = this.deps.handleFleetArmRestart?.(body.update_id) ?? {
+          state: "declined",
+          reason: "fleet update handler unavailable",
+        };
+        void peer.send(env.from, ack, env.id).catch(() => { /* peer is leaving */ });
         return;
       }
       if (env.from === "broker") return;  // other broker control messages — ignore
