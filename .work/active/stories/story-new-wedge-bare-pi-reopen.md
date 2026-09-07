@@ -1,5 +1,5 @@
 ---
-id: story-fix-new-wedge-bare-pi
+id: story-new-wedge-bare-pi-reopen
 kind: story
 stage: implementing
 tags: [pi-extension, bug, lifecycle]
@@ -11,6 +11,7 @@ created: 2026-08-29
 updated: 2026-09-07
 ---
 
+# Bare-pi /new reopened: live rebind-branch gap + settle-emit isolation
 ## Post-release finding (2026-09-07, operator field report)
 
 The v0.11.1 in-process /new path (agent-workspace incident): session
