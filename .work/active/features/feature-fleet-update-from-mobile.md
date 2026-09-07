@@ -1,7 +1,7 @@
 ---
 id: feature-fleet-update-from-mobile
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, workflow, deps]
 parent: null
 depends_on: []
@@ -421,3 +421,20 @@ Validation after these fixes:
 - `cd app && flutter test --exclude-tags e2e --concurrency=2` — passed (1,060
   tests).
 - No relay, telemetry, protocol schema, live process, or live marker changes.
+
+## Review closure (2026-09-07, standard weight)
+
+One cross-model pass (GPT-6 Astra vs Luna implementers) → 6 blockers + 3
+important, ALL receiver-confirmed and fixed in c11b6652b: startedAt-based
+restart verification; immediate restart evaluation for already-idle pis +
+deferral-safe fleet arms; inbound arm sender-locality + consumed update_id
+fencing (local-only v1 enforced at the trust boundary); two-phase arm
+(ack → emit arming → commit); bounded active states + honest
+coordinator-verified completion label; catalog-completeness fixture
+assertion; coordinator self-exclusion; pinned run identity. Verified:
+extension 1,154 tests green, app 1,060 green (known pre-existing
+sync_service load-flake documented). Closed without a second pass per
+standard weight. Deferred to operator at deploy: the live fleet-update lane
+(wrapper bounce across the fleet — requires pi restarts this session must
+not perform) and the chat_page banner-consumption wiring discovery remains
+parked in the story body for a follow-up slice.
