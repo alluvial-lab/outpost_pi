@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension]
 parent: feature-fleet-update-from-mobile
 depends_on: [feature-fleet-update-from-mobile-wire-protocol]
-release_binding: null
+release_binding: v0.12.0
 gate_origin: null
 created: 2026-09-07
 updated: 2026-09-08
