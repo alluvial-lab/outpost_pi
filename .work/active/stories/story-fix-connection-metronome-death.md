@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-09-08
 ---
 
 # Connection dies ~13-35s after connect (worsening); swallows agent turns mid-flap
@@ -526,3 +526,44 @@ Capture 05:56 cross-read with relay logs — the question is closed:
   discriminates exactly this. No app-side or relay-side defect remains in
   the strike path itself; app-side work reduces to the recovery UX
   (cancel race — parked) and possibly burst pacing.
+
+## Repro harness landed + new tunnel-path evidence (2026-09-08, 15:5x)
+
+Committed `e2e/severance_harness.mjs` + `e2e/path_sampler.py` (66096f2dc).
+
+**Harness**: slow-reading WS client, own ed25519 identity per leg, mirrors
+the app's exact wire sequence (hello room_id=main → challenge → auth →
+presence_check([]) probe → subscribe_presence/rooms + one-shot checks),
+duty-cycle read throttle (socket pause/resume, default 500ms/2000ms),
+per-frame FNV-1a64 accounting on the relay's exact basis. **Instrument
+pairing validated over loopback**: harness `framesIn=5 runIn=c8942a09eaad559c`
+== relay `frames_out=5 out_hash=c8942a09eaad559c` on the same connection.
+Strike taxonomy: abrupt-reset/abrupt-eof (the severance signature),
+relay-close:<reason> (mailbox saturation etc., benign/self-identifying),
+watchdog-silent (NAT-blackhole variant). Relay-side note: an abrupt LOCAL
+kill renders as "Connection reset without closing handshake" while the
+phone strikes render as "IO error: Connection reset by peer (os error
+104)" — distinct classes, useful when reading harness-leg logs.
+
+**Legs running since 15:53Z (6h)**: A = loopback slow reader (no tailscale
+in path); path sampler = phone tunnel state every 10s + relay stream-error
+rows + VM tailscaled link-change events into one timeline.
+
+**New facts from the VM side**:
+
+1. Tailnet census: exactly THREE nodes — codebox (VM), pixel-10-pro
+   (offline 13d), pixel-11-pro-fold. NO laptop exists on the tailnet; a
+   real tunnel leg needs a second node (operator: join a laptop, or
+   approve a login for a userspace container node).
+2. Self-tailnet leg is a NO-OP: `ip route get <redacted relay tailnet addr>` → local table,
+   dev lo. Connecting to the VM's own tailnet IP never traverses tailscaled.
+3. VM tailscaled DOES rebind, but only on docker-bridge churn
+   (`rebind-reason=[ips-changed]`, br-* up/down from compose lanes);
+   rebinds cluster 06:20–08:38 and NONE coincide with the afternoon
+   strike cluster (14:51–15:48+, 7+ strikes). VM-rebind theory weakened
+   for observed strikes (default log verbosity caveat: peer-path events
+   may not log without -v — the sampler + status polling covers that).
+4. Phone's tunnel path FLIPPED mid-session: direct <redacted phone wifi addr>:45886
+   (15:44) → DERP relay=den with empty CurAddr and a ~5min-stale handshake
+   (15:52 sample). Path instability is observable from the VM; correlate
+   flips against strike timestamps via the sampler timeline.
