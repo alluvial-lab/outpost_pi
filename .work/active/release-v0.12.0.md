@@ -19,7 +19,8 @@ bump (inline operator QOL change, no work item — rides as commit f44b94237).
 
 ## Bound items
 
-Active done items (8):
+Active done items (8) + in-flight fix (1):
+- story-fix-metronome-phantom-close-teardown (operator pull-in 2026-09-08; targeted gates on completion)
 - feature-fleet-update-from-mobile (+ 3 child stories: wire-protocol,
   extension-coordinator, app-ui)
 - feature-mobile-session-context-telemetry (+ 3 child stories: schema-codegen,
