@@ -257,6 +257,7 @@ operation. The pi-extension handles it; the app parses nothing.
 | Set model | `model_set {provider, model_id}` | `ModelRegistry.find(...)` + `pi.setModel(model)` |
 | Set thinking | `thinking_set {level}` | `pi.setThinkingLevel(level)` |
 | List models | `list_models` | `ModelRegistry.getAvailable()` |
+| Fleet update | `fleet_update` | `FleetUpdateCoordinator.handleRequest()` — runs `pi update --all`, arms the rolling restart, emits repeated `fleet_update_status` events (no `action_ok` reply) |
 
 `session_new` has three execution outcomes. In an in-process command context,
 `ctx.newSession()` replaces the SDK session and the extension re-captures fresh

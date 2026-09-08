@@ -1,7 +1,7 @@
 ---
 id: gate-docs-changelog-v0120
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -29,3 +29,10 @@ The v0.12.0 bundle contains the telemetry room-meta fields and mobile rendering,
 
 ## Required edit
 Add a current `v0.12.0` section before `v0.11.1` with concise feature, fix, and internal entries covering the two features, the 200-event sync default, and the post-v0.11.1 trunk fixes. Describe active behavior, not release-process history or superseded state.
+
+## Fix evidence (2026-09-08, orchestrator inline)
+
+Required edit applied verbatim in scope: doc rolled forward to current truth
+(union lists / field inventories / action table / v0.12.0 changelog entry
+covering both features, the 200-event sync default, and the post-v0.11.1
+trunk fixes). No historical or versioned prose added.
