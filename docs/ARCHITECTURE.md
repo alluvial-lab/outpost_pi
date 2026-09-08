@@ -101,8 +101,9 @@ Rust + axum. One binary, one port: WebSocket upgrade (`GET /`), health
 - `presence.rs` — `PresenceManager` (subscribe/notify, dedup
   offline→online transitions).
 - `rooms.rs` — `RoomManager`, generated `RoomMeta`, `RoomMetaPatch` (per-room
-  metadata: schema-owned `model`, `thinking`, `session_id`, `working`, and
-  `background` are
+  metadata: schema-owned `model`, `thinking`, `session_id`, `working`,
+  `background`, and the session-telemetry trio `branch` / `ctx_percent` /
+  `ctx_max` are
   shared by the TS and Dart projections; stack adapters may wrap these values or
   add transport fields such as `room_id`, `name`, `cwd`, and `started_at`).
 - `mesh/` — `store` (SQLite `mesh_versions` cartulary, LWW + monotonic
@@ -157,9 +158,12 @@ mirrors. App-domain control events remain handwritten adapters over generated
 relay DTOs; they are not a second wire contract.
 
 Relay room metadata is the generated `roomMeta` projection: `room_id`, `name`,
-`cwd`, `session_id`, `model`, `thinking`, `working`, `background`, and
-`started_at`. `roomMetaPatch` updates the mutable fields, including the
-independent `background` boolean, with absent fields preserved.
+`cwd`, `session_id`, `model`, `thinking`, `working`, `background`, `branch`,
+`ctx_percent`, `ctx_max`, and `started_at`. `roomMetaPatch` updates the mutable
+fields, including the independent `background` boolean, with absent fields
+preserved; nullable-string and nullable-integer fields (`model`, `thinking`,
+`session_id`, `branch`, `ctx_percent`, `ctx_max`) additionally clear on an
+explicit null.
 
 ### The app↔pi chat wire
 
@@ -167,15 +171,17 @@ independent `background` boolean, with absent fields preserved.
 optional `images` and `streaming_behavior`), `queued_message_set` /
 `queued_message_clear`, `approve_tool`, `cancel`, `ping`, `session_sync`, and
 typed actions `session_new` / `session_compact` / `model_set` /
-`thinking_set` / `list_models`, plus the capture-upload sequence
-`capture_upload_begin` / `capture_upload_chunk` / `capture_upload_end`.
+`thinking_set` / `list_models` / `fleet_update`, plus the capture-upload
+sequence `capture_upload_begin` / `capture_upload_chunk` /
+`capture_upload_end`.
 
 `ServerMessage` (pi → app) union: `pair_ok` / `pair_error`, `user_input`
 (echo) / `user_message`, `queued_message_state`, `agent_chunk` / `agent_done` /
 `agent_message`, `tool_request` / `tool_result`, `error`, `cancelled`,
 `pong`, `bye`, `session_history` (replay of `SessionHistoryEvent`), plus
 `action_ok` / `action_error` / `models_list` /
-`compaction` and capture-upload replies `capture_upload_ack` /
+`compaction`, the repeated fleet-update progress events `fleet_update_status`,
+and capture-upload replies `capture_upload_ack` /
 `capture_upload_error`. The generated type registries and decoders derive from
 the same schema as every listed variant.
 

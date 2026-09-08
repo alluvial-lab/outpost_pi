@@ -1,7 +1,7 @@
 ---
 id: gate-docs-architecture-room-meta-telemetry
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -37,3 +37,10 @@ The architecture's two current room-metadata inventories omit the schema-owned `
 
 ## Required edit
 Update both architecture inventories in place to include `branch`, `ctx_percent`, and `ctx_max` among the shared room metadata and mutable patch fields, and state that their nullable merge semantics preserve absent fields and clear explicit nulls. Keep the schema as the source of truth; do not add historical or versioned prose.
+
+## Fix evidence (2026-09-08, orchestrator inline)
+
+Required edit applied verbatim in scope: doc rolled forward to current truth
+(union lists / field inventories / action table / v0.12.0 changelog entry
+covering both features, the 200-event sync default, and the post-v0.11.1
+trunk fixes). No historical or versioned prose added.

@@ -1,7 +1,7 @@
 ---
 id: gate-docs-architecture-fleet-message-enumeration
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -35,3 +35,10 @@ The architecture describes these as the current complete `ClientMessage` and `Se
 
 ## Required edit
 Roll both union descriptions forward to include `fleet_update` and `fleet_update_status`, respectively. Keep the generated-schema provenance statement true for every listed variant and do not add historical or versioned prose.
+
+## Fix evidence (2026-09-08, orchestrator inline)
+
+Required edit applied verbatim in scope: doc rolled forward to current truth
+(union lists / field inventories / action table / v0.12.0 changelog entry
+covering both features, the 200-event sync default, and the post-v0.11.1
+trunk fixes). No historical or versioned prose added.

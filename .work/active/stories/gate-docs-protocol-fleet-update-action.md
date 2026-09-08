@@ -1,7 +1,7 @@
 ---
 id: gate-docs-protocol-fleet-update-action
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,10 @@ The table presents the current mobile action vocabulary but omits the shipped `f
 
 ## Required edit
 Add `fleet_update` to the App actions table with its coordinator operation and status-event behavior. Keep the table's current action semantics accurate; do not describe the command as a generic slash action or add historical prose.
+
+## Fix evidence (2026-09-08, orchestrator inline)
+
+Required edit applied verbatim in scope: doc rolled forward to current truth
+(union lists / field inventories / action table / v0.12.0 changelog entry
+covering both features, the 200-event sync default, and the post-v0.11.1
+trunk fixes). No historical or versioned prose added.

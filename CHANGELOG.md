@@ -1,3 +1,42 @@
+## v0.12.0 — 2026-09-08
+
+### Features
+
+- **Fleet updates from the phone** — Settings gains a Fleet section with a
+  confirmation-gated Update action. The connected pi runs `pi update --all`,
+  then arms a self-quiescing rolling restart across the local fleet: a
+  two-phase arm over the agent mesh (siblings ack readiness, arm only after
+  the arming report, each at its own next settle), with per-pi ack states
+  (armed / deferred / declined / no-ack) rendered in the app. Restarting and
+  verified states derive from room recovery. A pi with hot-reload disabled
+  or an old dist declines safely and stays on its current binary.
+- **Session telemetry on mobile** — the chat header shows the pi TUI footer's
+  context line — `branch · NN% of max` — tinting amber at 85% or above, and
+  idle session tiles carry a `· NN%` suffix. Rides additive room-meta fields
+  (`branch`, `ctx_percent`, `ctx_max`) through protocol codegen in all three
+  languages with null-clear semantics: a stale percentage after compaction
+  clears instead of lingering.
+
+### Fixes
+
+- Rehydrated history no longer truncates mid-busy-turn: the session sync
+  limit default rises from 30 to 200 events (~7 busy turns of catch-up,
+  sized against the relay's 4 MiB decoded frame ceiling).
+- Background subagent activity re-broadcasts on the pi event bus, and herdr
+  holds a room's "working" state while background work runs, so fleet
+  tooling never kills a pi whose turn ended but whose background work
+  continues.
+- `wrap-agents.sh` self-exclusion is explicit (`WRAP_EXCLUDE_PANE` /
+  `WRAP_EXCLUDE_CWD`); process-ancestry detection broke under detached
+  launches and killed the running orchestrator.
+
+### Internal
+
+- WebSocket close-site attribution and frame-intent instrumentation for the
+  connection-metronome investigation; relay logs WS stream errors.
+- Protocol codegen gains a `nullableIntegers` merge-semantics category; the
+  per-type fixture catalog covers the new message types.
+
 ## v0.11.1 — 2026-08-29
 
 ### Fixes
