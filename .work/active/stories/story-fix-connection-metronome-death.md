@@ -567,3 +567,45 @@ rows + VM tailscaled link-change events into one timeline.
    (15:44) → DERP relay=den with empty CurAddr and a ~5min-stale handshake
    (15:52 sample). Path instability is observable from the VM; correlate
    flips against strike timestamps via the sampler timeline.
+
+## VERDICT #7 (2026-09-08, 16:0x): burst-then-QUIET kills it — reset arrives FROM the phone through the tunnel; VM + relay fully exonerated in-run
+
+Same-session correlation of sampler + relay logs (3 phone strikes, each
+with 10s-resolution tunnel telemetry):
+
+- Every strike rode a DIRECT UDP path 26–80s old, seconds-to-tens after a
+  ~1.2–2.7MB firehose burst (reconnect snapshot), and — the sharp edge —
+  6–26s into the COMPLETE QUIET that follows the burst. Post-strike the
+  direct path itself drops to DERP-only (phone tunnel rebuilds), then the
+  cycle repeats: reconnect → direct → burst → quiet → strike → DERP.
+- ZERO WG keepalive traffic during the quiet (peer txBytes frozen at 0.0KB
+  for 60s+ while the TCP still stood): no keepalives refresh the UDP
+  mapping after the burst ends.
+- VM tailscaled logged NOTHING at any strike (no rebind, no link change;
+  the docker-churn rebinds were hours away). Leg A (loopback slow reader
+  riding the SAME firehose bursts, throttled) — ZERO strikes across all
+  three phone strikes. The relay/VM-internal path is exonerated live,
+  concurrent, same-load.
+- RST arithmetic: the relay is host-networked and the VM runs kernel-TUN
+  tailscale, so the relay's TCP terminates in the VM kernel and its IO-104
+  RST can only arrive as a WG-decrypted packet FROM the phone — VM
+  tailscaled cannot self-inject RSTs. The severance signal originates on
+  the phone's side of the tunnel, every time.
+- Remaining fork (one variable, narrower than verdict #6's): during the
+  post-burst quiet, WHO invalidates the flow — (i) the router expiring
+  the un-refreshed UDP mapping (phone then resets conns on path loss) or
+  (ii) the phone's tailscale app / Android VPN layer itself. Leg B from a
+  second tailnet node through the same router (laptop, direct UDP, same
+  harness) discriminates: laptop strikes ⇒ router; laptop clean ⇒ phone.
+  Phone-side tailscale app logs (operator) would likely settle it directly.
+- Mitigation worth testing regardless (phone-side, operator): enable
+  Tailscale's persistent keepalive... note tailscale-android normally keeps
+  mobile-clients alive via magicsock disco every ~30s — the observed ZERO
+  wire bytes suggest even disco idle traffic is suspended (Android battery
+  optimization throttling the tailscale app between bursts?). Check the
+  phone's battery-optimization exemption for Tailscale FIRST — a throttled
+  tailscale app matches every observation: burst (app awake, network
+  flowing) → quiet (Doze throttles the app → keepalives stop → mapping/
+  socket dies) → strike on next activity... though strikes fire DURING the
+  quiet, not on next activity — so Doze-throttle alone is insufficient;
+  the router fork stays live.
