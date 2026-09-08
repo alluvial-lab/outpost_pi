@@ -66,3 +66,17 @@ gate-cruft-unused-legacy-fleet-arm-builder, gate-docs-pi-extension-skill-fleet-m
   (docs/release-uat.md), performs the two deferred spot-checks (ctx% parity
   + amber tint; fleet Update live lane), and records an ack here. Remaining
   after ack: full e2e battery (minor-cut policy), tag v0.12.0, publish.
+
+### RC round 2 (2026-09-08, v0.12.0-rc.2)
+- Operator pulled the metronome instrument into the release (fix story
+  un-bound after probes falsified the briefed mechanism twice — escape
+  hatch honored; probe platform-map landed as 3a06ebb1a).
+- Instrument: 49180245a (relay outbound + app inbound paired FNV-1a64
+  running hashes). versionCode → 28 (9d470f4d lineage).
+- Targeted gates (tests+security) over the rc.2 delta: C0/H0 each;
+  2 medium parked unbound (shared hash known-answers; pre-admission hash
+  allocation). Clean to ship.
+- rc.1 draft superseded/deleted (rc.1 tag retained); rc.2 draft live with
+  +28 artifacts (slim 77f81c70…, fat a18f7a83…).
+- Relay 0.5.5 (instrument) deploying with this round; deploy order per
+  runbook (relay swap → pis auto-reconnect; app via rc.2 APK).
