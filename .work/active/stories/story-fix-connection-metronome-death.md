@@ -311,3 +311,31 @@ relay 0.5.4 logs, cross-aligned:
   trigger; mitigation is phone-side (tailscale/keepalive/Wi-Fi power-save
   exemption), NOT app protocol. 5G-at-home striking too would widen
   suspicion to the tailscale app itself regardless of underlay.
+
+## Cancel-race addendum (2026-09-08, static analysis bounded)
+
+The 3× `retryConnect _CancelledError` loop (01:13:40→01:16:11) dissected:
+- NOT navigation: zero `route` events in the window; app sat on one room.
+- NOT the watchdog: `_runWatchdog` is guarded (reachability in-flight +
+  retry-timer checks) and only schedules.
+- NOT timeouts: every deadline path (`_connectAttemptDeadline`,
+  per-candidate 10s, foreground-resume expiry) throws `TimeoutException`;
+  `_CancelledError` is thrown ONLY by the factory when the parent CancelToken
+  was genuinely cancelled.
+- The canceller is therefore a re-entrant `_connect()` (generation bump →
+  `_connectCancel.cancel()`) or supervisor invalidation whose target
+  diverged from the in-flight attempt — leading candidate: the post-strike
+  room-offline retarget path (`_markActiveRoomOffline` → `_activeRoomId`
+  churn) making retried targets flap between the dead room and the
+  fallback, each flap cancelling the previous connect. The repeated
+  `attempt: 2` (twice) supports overlapping retry chains.
+- Durations 23s/103s/10s are inconsistent with any code timeout —
+  consistent with externally-timed cancellations (screen/suspend cycles or
+  reachability events from the same underlay churn that causes strikes).
+
+Needed to close: cancellation-site attribution logging (one line at each
+`_connectCancel.cancel()` site + factory checkpoint with generation ids),
+plus the capture-buffer retention fix. NOTE for the 5G differential: this
+race is app-side and independent of the strike cause — it should persist
+on 5G if a strike occurs there; if 5G shows zero strikes the race stays
+latent but unfixed.
