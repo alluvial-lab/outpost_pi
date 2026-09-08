@@ -380,3 +380,32 @@ parked bug. No relay change required beyond the existing saturation close
 
 The ethtool/systemd item is fully closed (no-op). Tailnet-first
 mitigation is moot (strikes ride the tunnel already).
+
+## VERDICT #4 CORRECTION (same day, pre-fix): not a reader misparse — dart-synthesized 1002 + missed-pong teardown under backpressure
+
+Deeper code read corrects the mechanism (core finding stands: no network
+corruption; phone-side teardown; relay exonerated):
+
+1. The app does NOT hand-roll inbound framing — `IOWebSocketChannel` +
+   `ws.stream.listen` delivers complete dart-parsed messages. The outbound
+   framing fields in wsOut intents are logging-only.
+2. `_recordStreamDone` classifies `closeCode != 1005 && != 1006` as
+   "serverCloseFrame" — but dart:io SYNTHESIZES closeCode 1002 (its
+   protocolError constant) when the stream dies abnormally mid-message. No
+   close frame was parsed; the attribution heuristic is wrong. (The one
+   REAL relay close in the capture was correctly reported streamDone/1006.)
+3. Full coherent chain: fleet firehose burst (the 189,877-byte envelope) →
+   phone's listen-callback parses/demuxes on the main isolate → socket
+   reads stall → TCP backpressure → relay's outbound mailbox/send-buffer
+   fills (proven: relay_outbound_mailbox_saturated) → relay's pong to
+   dart's 45s pingInterval ping cannot be processed in time → dart's
+   missed-pong watchdog kills the connection (synthesized 1002) → relay
+   sees IO-104. Explains everything incl. the away-16h-clean leg (fewer
+   fleet bursts away).
+
+Fix surfaces (app-side): (a) attribution correction (dart-synthesized 1002
+must not classify as serverCloseFrame); (b) inbound firehose parse off the
+socket-read critical path (or chunked decode) so reads never stall;
+(c) liveness tolerance under burst load (raise/disable dart pingInterval in
+favor of the app-level any-inbound-frame liveness the code already
+documents). Relay unchanged.
