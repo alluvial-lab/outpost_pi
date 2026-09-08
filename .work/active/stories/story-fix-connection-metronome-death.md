@@ -496,3 +496,33 @@ repro for tailscale/kernel upstream; clean ⇒ phone-side, and the
 dart-misparse hypothesis gets tested via raw-socket capture on a dev
 machine. Relay per-frame records could also gain a peer tag for cleaner
 per-connection trails (instrument tweak, non-blocking).
+
+## VERDICT #6 — SEVERANCE, NOT CORRUPTION (2026-09-08, 05:5x): hash-proven
+
+Capture 05:56 cross-read with relay logs — the question is closed:
+
+- **5/6 strikes pair with EXACT count alignment** (app last-delivered idx ==
+  relay frames_out: 10/10, 19/19, 460/460, 44/44, 282/282). Every frame the
+  relay wrote was delivered. No written-but-lost tail at all.
+- **Final-frame hash match**: relay `frame_idx=10 frame_bytes=487113
+  frame_hash=720b02e19e97fc11` == app `idx 10 bytes 365271 (decoded;
+  wire 487113) h 720b02e19e97fc11`. Delivered bytes were INTACT, always.
+- Therefore the 1002s are **truncated-stream parse errors** (dart reads a
+  frame header then the stream ENDS — a severed stream mid-frame is itself
+  the protocol violation; my earlier "garbage bytes" reading was
+  over-literal — no corrupt byte ever existed).
+- The relay's IO-104 "Connection reset by peer" is **tailscaled resetting
+  the VM-local loopback TCP** when the tunnel connection to the phone
+  severs — tailscaled IS the relay's TCP peer under host networking.
+- Full mechanism: reconnect → full rooms/presence firehose (337–487KB wire
+  envelopes, hash-verified delivered) → the tailscale tunnel connection
+  severs right after/mid-burst → dart 1002 (truncation) + relay IO-104
+  (tailscaled reset) → cancel race drags recovery → repeat. The metronome
+  period ≈ firehose bursts on fleet activity.
+- **Remaining question (narrow, one variable)**: WHO severs the tunnel —
+  VM tailscaled, router NAT/state expiry under burst-then-quiet (both home
+  underlays traverse the router; the away-clean leg plausibly rode DERP),
+  or the phone's tailscale app. The non-phone slow-client repro harness
+  discriminates exactly this. No app-side or relay-side defect remains in
+  the strike path itself; app-side work reduces to the recovery UX
+  (cancel race — parked) and possibly burst pacing.
