@@ -37,4 +37,6 @@ logging) that were never itemized.
 ## Gate runs
 (populated as gates execute)
 
+- **gate-refactor** (2026-09-08) — 0 findings (0 high, 0 medium, 0 low) from 4 libraries: boundaries (0 findings), lifecycle (0 findings), protocol-contract (0 findings), documentation (0 findings)
+
 - 2026-09-07 — `patterns`: inline source-read-only scanner (reduced isolation; no nested scanner available in this host); audited the v0.11.1..HEAD bundle and existing 40-pattern catalog; 2 new patterns codified, 1 existing pattern extended, 0 inconsistencies.
