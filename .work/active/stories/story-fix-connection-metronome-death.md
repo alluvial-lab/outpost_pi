@@ -443,3 +443,21 @@ path; matching hashes with a dart parse error would implicate dart itself
 (unlikely but now falsifiable). Fix story stays stopped (escape hatch) —
 attribution relabel of 1002 is still worthwhile once the true origin
 settles.
+
+## Instrument first light + relay posture incident (2026-09-08, 03:5x)
+
+- First strikes on instrumented relay 0.5.5 (03:39:02 frames_out=418
+  out_hash=0f991278f3a937f2; 03:40:03 frames_out=32 out_hash=7d60d08909343ef5;
+  03:48 strike on connection to Vwjew room). Per-frame DEBUG records live:
+  `frame_idx/bytes/hash + running out_hash` — firehose class confirmed at
+  the writer up to **392,465 bytes/frame**. App side was still the old
+  build (no idx/h fields) — paired comparison starts with the rc.2 APK.
+- **Posture incident (introduced and fixed by orchestrator)**: the 0.5.5
+  container swap followed AGENTS.local.md's stale `docker run -p 3300:3000`
+  line and unknowingly moved the relay from HOST-NETWORKED (incident-era
+  posture, real source IPs) to docker-NAT (strikes showed addr=172.17.0.1).
+  Restored `--network host` + OUTPOSTPI_RELAY_PORT=3300 within ~15 min;
+  phone re-authed from 100.121.111.25; runbook line corrected. Diagnostic
+  value: 1002 strikes occurred in BOTH network modes within the hour —
+  docker-proxy adds no new exoneration, and the mechanism remains
+  VM-internal-or-dart (the paired hashes decide).
