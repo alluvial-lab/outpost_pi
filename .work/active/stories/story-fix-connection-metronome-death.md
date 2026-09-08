@@ -339,3 +339,44 @@ plus the capture-buffer retention fix. NOTE for the 5G differential: this
 race is app-side and independent of the strike cause — it should persist
 on 5G if a strike occurs there; if 5G shows zero strikes the race stays
 latent but unfixed.
+
+## VERDICT #4 (2026-09-08): THE METRONOME IS AN APP-SIDE READER BUG + RELAY BACKPRESSURE — no network corruption anywhere
+
+5G differential capture (02:22, 27-min window, phone on 5G at home):
+9 strikes — **underlay-independent, killing all path theories (Wi-Fi,
+router, offloads, transit)**. Cross-referenced with relay logs at the 9
+timestamps:
+
+- 8/9 strikes: app reports `closeOrigin: serverCloseFrame, closeCode: 1002`
+  — but the relay logged NO protocol error and sent NO close for any of
+  them (tungstenite logs its closes; the relay saw only the phone's TCP
+  reset → IO-104). Both cannot be true, and WG transit integrity makes
+  in-flight byte corruption impossible: **the app's hand-rolled WS frame
+  reader synthesizes a PHANTOM server-close(1002)** — the misparse happens
+  above the tunnel, on the phone.
+- 1/9 strikes (02:04:49): the relay legitimately force-closed with
+  `relay_outbound_mailbox_saturated` (logged, with a burst of dropped
+  dest-not-found frames) — and the app correctly reported THAT one as
+  `streamDone/1006`. The instruments agree whenever the close is real.
+- Correlate: two strikes directly preceded by a 189,877-byte inbound
+  envelope (identical size — fleet rooms/presence firehose burst). Context:
+  the phone drains the relay slowly; the relay's outbound mailbox
+  saturates under the firehose; large extended64-length frames arrive as
+  many fragmented socket reads — and the reader's fragmentation state
+  machine misparses (deterministically producing close-code 1002 =
+  0x03EA byte pattern read as a frame header).
+- This also reinterprets ALL prior evidence: the original "truncated
+  frames" (reader bug symptom), "relay last frames legal + no close sent"
+  (true — relay never closed), phone-only resets (true — phone tears down),
+  away-leg 16h clean (lower inbound volume/fewer firehose bursts —
+  weakest link in the new model, noted).
+
+**Fix surface**: app inbound frame parser (ws_transport hand-rolled reader:
+fragmented extended64 handling) + reader-side drain (why the phone lets
+the relay mailbox saturate — 190KB JSON envelope parse on the main
+isolate?). The recovery-time amplification (cancel race) stays a separate
+parked bug. No relay change required beyond the existing saturation close
+(which worked as designed and was honestly reported).
+
+The ethtool/systemd item is fully closed (no-op). Tailnet-first
+mitigation is moot (strikes ride the tunnel already).
