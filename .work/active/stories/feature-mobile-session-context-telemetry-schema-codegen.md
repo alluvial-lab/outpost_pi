@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, app, relay, protocol]
 parent: feature-mobile-session-context-telemetry
 depends_on: []
-release_binding: null
+release_binding: v0.12.0
 gate_origin: null
 created: 2026-09-07
 updated: 2026-09-07
