@@ -376,7 +376,9 @@ const {
   _handleControl,
   _parseControlFrame,
   _setHotReloadingForTest,
+  _setFleetTargetIdentityForTest,
   _createFleetUpdateConsumptionAdapterForTest,
+  _handleFleetArmRestartForTest,
   _sendCaptureDeliveredNote,
   _deliverMeshMessageToAgentForTest,
   CTRL_PREFIX,
@@ -7381,6 +7383,64 @@ describe("model meta", () => {
       killSpy.mockRestore();
       _setDisposedForTest(false);
       _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      if (previousDaemon === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemon;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("fleet arm survives a quiet background deferral beyond five minutes and drains once", () => {
+    vi.useFakeTimers();
+    const baseTime = Date.parse("2026-08-26T12:00:00.000Z");
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-fleet-long-deferral-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    const previousDaemon = process.env["OUTPOST_PI_DAEMON"];
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    process.env["OUTPOST_PI_DAEMON"] = "";
+    _setDisposedForTest(false);
+    _setHotReloadingForTest(false);
+    _setFleetTargetIdentityForTest("/vm@long-deferral");
+    vi.setSystemTime(baseTime);
+
+    try {
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      const { handler: onSettled, events } = captureEventHandlerWithBus("agent_settled");
+      events.emit("subagents:created", { id: "long-background-run" });
+
+      expect(_handleFleetArmRestartForTest("fleet-long-deferral", "commit")).toEqual({
+        state: "deferred",
+        reason: "turn active",
+      });
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(true);
+
+      // No lifecycle event refreshes the arm during this quiet interval.
+      vi.advanceTimersByTime(6 * 60_000);
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(true);
+
+      events.emit("subagents:completed", { id: "long-background-run" });
+      expect(killSpy).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(false);
+      expect(existsSync(join(fakeHome, `.claimed-${process.pid}`))).toBe(true);
+      expect(existsSync(join(fakeHome, `.restart-marker-${process.pid}`))).toBe(true);
+
+      // The drain edge and repeated settlement notifications share the normal
+      // claim fence; neither can signal a second restart.
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+      events.emit("subagents:completed", { id: "long-background-run" });
+      expect(killSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      killSpy.mockRestore();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      _setFleetTargetIdentityForTest(undefined);
       if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
       else process.env["OUTPOST_PI_HOME"] = previousHome;
       if (previousDaemon === undefined) delete process.env["OUTPOST_PI_DAEMON"];

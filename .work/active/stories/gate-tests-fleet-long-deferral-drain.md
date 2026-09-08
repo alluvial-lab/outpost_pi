@@ -1,7 +1,7 @@
 ---
 id: gate-tests-fleet-long-deferral-drain
 kind: story
-stage: implementing
+stage: done
 tags: [testing, pi-extension, bug, lifecycle]
 parent: null
 depends_on: []
@@ -52,3 +52,24 @@ Do not make the test pass by injecting periodic settle events or refreshing the 
 
 ## Scanner verification
 Source-read-only executable witness: extracted unchanged `_maybeRestartForExtensionReload`, `_refreshDeferredFleetArm`, and consumption helpers from `index.ts`, and evaluated them with virtual filesystem, clock, lifecycle state, and process signaling. After a consumed arm, one busy settle, a six-minute advance, and final drain, observed `{armed: false, claimed: false, mockSignalCount: 0}`. This is a focused source-level witness, not a production integration-suite run. No real filesystem marker or process signal was emitted. The permanent regression should fail on the pre-fix implementation.
+
+## Resolution (2026-09-08)
+
+- Root cause confirmed: after a quiet background deferral exceeded five
+  minutes, the final drain edge checked the armed file timestamp and deleted
+  the still-valid fleet intent before claiming it.
+- Fix: fleet arms (identified by a validated, target-scoped `update_id`) are
+  exempt from the five-minute stale sweep. Their durable single-use marker and
+  stable per-Pi target fence provide the replay boundary; ordinary interactive
+  arms still use the unchanged five-minute expiry. This avoids requiring
+  periodic lifecycle events during quiet background work.
+- Regression: `pi-extension/src/extension.test.ts` uses a virtual clock and
+  temporary state, stages a production fleet arm while background work is
+  active, emits one settle, advances six minutes without lifecycle events,
+  then completes the background work. The arm survives and signals exactly
+  once at drain; repeated completion/settle events cannot re-claim it.
+- Verification: `cd pi-extension && corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
+  passed (65 files, 1,156 tests passed, 3 skipped). Existing ordinary-arm
+  expiry coverage remains green and unchanged.
+- Safety: only temporary state, a virtual clock, and an intercepted `process.kill`
+  were used; no live process was restarted or signaled.

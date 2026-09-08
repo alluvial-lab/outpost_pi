@@ -3127,6 +3127,14 @@ export function _createFleetUpdateConsumptionAdapterForTest(targetIdentity: stri
   return { consume: (updateId) => _consumeFleetUpdateIntent(updateId, targetIdentity) };
 }
 
+/** Test-only seam for driving the production fleet arm handler. */
+export function _handleFleetArmRestartForTest(
+  updateId: string,
+  phase: FleetArmRestartPhase,
+): FleetArmRestartAck {
+  return _handleFleetArmRestart(updateId, phase);
+}
+
 /** Test-only override for resetting the shared synchronous ingress fence. */
 export function _setHotReloadingForTest(value: boolean): void {
   if (value) _freshSessionShutdown.beginHotReloadFence();
@@ -3445,7 +3453,8 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
     _removeIfOwnerOnlyRegularFile(armedPath);
     return;
   }
-  if (request.update_id !== undefined) {
+  const isFleetArm = request.update_id !== undefined;
+  if (isFleetArm) {
     const consumedPath = typeof request.update_id === "string"
       ? _fleetUpdateConsumedPath(dir, request.update_id)
       : null;
@@ -3455,7 +3464,10 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
       return;
     }
   }
-  if (typeof request.ts === "number" && Date.now() - request.ts > 5 * 60_000) {
+  // Fleet intents are already single-use and target-scoped by update_id, so
+  // they remain valid through a quiet deferral. Manual arms retain the strict
+  // five-minute expiry because they have no durable fleet replay fence.
+  if (!isFleetArm && typeof request.ts === "number" && Date.now() - request.ts > 5 * 60_000) {
     _removeIfOwnerOnlyRegularFile(armedPath);
     return;
   }
