@@ -276,3 +276,38 @@ at-home traffic rides tailscale; clean ⇒ mitigation = tailnet-first relay
 URL and the corrupting element is router/phone Wi-Fi (report upstream
 accordingly). No systemd ethtool unit is warranted — offloads are not the
 cause; leave them default-on.
+
+## VERDICT #3 (2026-09-08): strikes ride INSIDE the tailnet tunnel — wire-corruption theory mechanically dead; phone-side tunnel/socket lifecycle is the new prime suspect
+
+Capture `app-capture-2026-09-08T01-16-29-989Z` (13-min window, 1MiB buffer
+exhausted by active multi-room streaming — retention item parked) +
+relay 0.5.4 logs, cross-aligned:
+
+- **Both-side strike alignment**: relay IO-104 @ 01:13:39.879Z ↔ app
+  `retrying` @ 01:13:40.2Z — same event, both instruments agree.
+- **Recovery loop is a SECOND, distinct bug (client-side)**: after the
+  strike, the app logged 4 `connecting` states + 3 `retryConnect`
+  `_CancelledError`s (durations 23s / 103s / 10s — not a fixed timeout;
+  cancellations) across 01:13:40→01:16:11, while the relay saw ZERO auth
+  attempts in that gap. Connects were cancelled before reaching the wire —
+  an app-internal race (something cancels in-flight connects; note the
+  attempt counter repeated "attempt 2" twice → overlapping retry
+  schedulers suspected). This extends the outage ~2.5 min after every
+  strike it follows.
+- **Phone is ALWAYS tailnet-sourced**: 23/23 post-reboot phone auths from
+  100.121.111.25 (CGNAT). The at-home differential has therefore been
+  running de facto — and strikes persist INSIDE the WireGuard tunnel.
+- **Mechanism consequence**: WG's poly1305 auth makes underlay byte
+  corruption (router or radio) unable to surface as corrupt/truncated TCP
+  payload — corrupt packets drop + retransmit, they never deliver bad
+  bytes. The "LAN corrupts frames" theory (verdicts #1–2 framing) cannot
+  explain the observations. Replacement hypothesis: **Android Wi-Fi
+  underlay events (power-save, roam, band steering) make the tailscale
+  Android VPN recycle its tunnel, resetting the TCP riding it** — phone
+  resets TCP, relay frames legal, only the phone strikes, 16h clean on 5G,
+  bursty at home. All prior evidence fits unchanged.
+- **Next differential (operator, in progress)**: 5G-at-home (Wi-Fi off an
+  hour at home). Clean ⇒ Wi-Fi-underlay↔tunnel interaction confirmed as
+  trigger; mitigation is phone-side (tailscale/keepalive/Wi-Fi power-save
+  exemption), NOT app protocol. 5G-at-home striking too would widen
+  suspicion to the tailscale app itself regardless of underlay.
