@@ -110,6 +110,10 @@ const HELP = `Usage: severance_harness.mjs [options]
   --reconnect-ms <n>       reconnect delay (default 2000)
   --watchdog-ms <n>        silent-blackhole threshold while reading (default 60000)
   --provoke-every-ms <n>   periodic rooms_check+presence_check burst (default 0 = off)
+  --cycle-every-ms <n>     force a clean reconnect every n ms — mimics the
+                           phone's metronome cycle (reconnect → snapshot
+                           replay burst → quiet) without waiting for strikes
+                           (default 0 = off)
   --duration-min <n>       stop after n minutes (default 0 = until Ctrl-C)
   --out <path>             JSONL output path (default auto)
   --fast                   shorthand for --read-ms 0 --pause-ms 0`;
@@ -128,6 +132,7 @@ const cfg = {
   reconnectMs: Number(args['reconnect-ms'] ?? 2000),
   watchdogMs: Number(args['watchdog-ms'] ?? 60_000),
   provokeEveryMs: Number(args['provoke-every-ms'] ?? 0),
+  cycleEveryMs: Number(args['cycle-every-ms'] ?? 0),
   durationMin: Number(args['duration-min'] ?? 0),
   deviceId: (args['device-id'] ?? `severance-harness-${args.label ?? 'leg'}`).slice(0, 128),
   room: args.room ?? 'main',
@@ -262,6 +267,7 @@ const header = {
   pauseMs: cfg.pauseMs,
   watchdogMs: cfg.watchdogMs,
   provokeEveryMs: cfg.provokeEveryMs,
+  cycleEveryMs: cfg.cycleEveryMs,
   node: process.version,
   host: os.hostname(),
   out: outPath,
@@ -308,6 +314,7 @@ function connectOnce() {
   let lastInboundAt = Date.now();
   let dutyTimer = null;
   let classifyDone = false;
+  let cycleRequested = false;
 
   const send = (obj, stage) => {
     const text = JSON.stringify(obj);
@@ -425,9 +432,21 @@ function connectOnce() {
 
   // Watchdog: reading is enabled (not paused) and STILL nothing inbound for
   // watchdogMs — the relay pings every 25s, so this is a dead path (the
-  // silent-blackhole severance variant — no RST ever arrives).
+  // silent-blackhole severance variant — no RST ever arrives). Doubles as
+  // the --cycle-every-ms driver: a clean local close starts the next cycle.
   const watchdog = setInterval(() => {
     if (ws.readyState !== WebSocket.OPEN || !authed) return;
+    if (
+      cfg.cycleEveryMs > 0 &&
+      openedAt &&
+      Date.now() - openedAt > cfg.cycleEveryMs &&
+      !cycleRequested
+    ) {
+      cycleRequested = true;
+      recordStrike('local-cycle', null, `forced reconnect after ${Date.now() - openedAt}ms`);
+      ws.close(1000, 'harness cycle');
+      return;
+    }
     const quietFor = Date.now() - lastInboundAt;
     if (!paused && quietFor > cfg.watchdogMs) {
       recordStrike('watchdog-silent', null, `no inbound for ${quietFor}ms while reading`);
@@ -471,6 +490,7 @@ function connectOnce() {
     const closeEvt = { code, reason: reasonText, wasClean: code !== 1006 };
     if (!classifyDone) {
       if (stopping) recordStrike('local-shutdown', closeEvt);
+      else if (cycleRequested) recordStrike('local-cycle-done', closeEvt);
       else if (code === 1006) recordStrike('abrupt-eof', closeEvt, 'abnormal closure, no close frame');
       else if (reasonText.startsWith('relay_')) recordStrike(`relay-close:${reasonText}`, closeEvt);
       else recordStrike(`server-close:${code}`, closeEvt, reasonText || null);
