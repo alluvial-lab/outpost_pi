@@ -52,3 +52,16 @@ logging) that were never itemized.
 Backlog items parked (unbound, non-blocking per gate_finding_routing):
 gate-security-relay-branch-metadata-bound, gate-tests-fleet-report-commit-order-oracle,
 gate-cruft-unused-legacy-fleet-arm-builder, gate-docs-pi-extension-skill-fleet-messages.
+
+### RC artifacts (2026-09-08, v0.12.0-rc.1 draft)
+- slim-arm64 release-signed: `outpost-0.12.0-27-arm64.apk` (32MiB)
+  sha256 270b6c1c…e987 — install target for operator UAT
+- debug-fat fallback: `outpost-0.12.0-27.apk` (197MiB)
+  sha256 6f36da2f…09e6
+- Version bumped 0.11.1+26 → 0.12.0+27 (9d470f4d9); gradle temp redirected
+  off tmpfs (VM memory guard).
+- PAUSED at the manual UAT checkpoint: operator installs the slim artifact
+  (scp → workstation → adb install -r), runs the smoke runbook
+  (docs/release-uat.md), performs the two deferred spot-checks (ctx% parity
+  + amber tint; fleet Update live lane), and records an ack here. Remaining
+  after ack: full e2e battery (minor-cut policy), tag v0.12.0, publish.
