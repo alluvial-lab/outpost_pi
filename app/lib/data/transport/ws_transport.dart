@@ -83,6 +83,41 @@ const int maxPendingWsInboundFrames = 256;
 /// Maximum data-plane bytes buffered while a peer channel is busy.
 const int maxPendingWsInboundBytes = 8 * 1024 * 1024;
 
+// Hash only the exact application data-message payload bytes delivered by the
+// socket: Text is UTF-8 encoded and binary data is used as-is. FNV-1a64 uses
+// offset 0xcbf29ce484222325 and prime 0x00000100000001b3. Each connection's
+// running value starts at the offset and folds the 1-based index and per-frame
+// hash as little-endian u64 bytes: `running_i = FNV1a64_continue(
+// running_(i-1), idxLE64 || frameHashLE64)`. Ping, pong, and close control
+// frames are not delivered by Dart's message stream and are not counted.
+const int _fnv1a64OffsetBasis = 0xcbf29ce484222325;
+const int _fnv1a64Prime = 0x00000100000001b3;
+const int _fnv1a64Mask = 0xffffffffffffffff;
+
+int _fnv1a64Step(int hash, int byte) =>
+    ((hash ^ byte) * _fnv1a64Prime) & _fnv1a64Mask;
+
+int _fnv1a64(List<int> bytes) {
+  var hash = _fnv1a64OffsetBasis;
+  for (final byte in bytes) {
+    hash = _fnv1a64Step(hash, byte);
+  }
+  return hash;
+}
+
+int _foldRunningHash(int running, int frameIdx, int frameHash) {
+  for (var shift = 0; shift < 64; shift += 8) {
+    running = _fnv1a64Step(running, (frameIdx >> shift) & 0xff);
+  }
+  for (var shift = 0; shift < 64; shift += 8) {
+    running = _fnv1a64Step(running, (frameHash >> shift) & 0xff);
+  }
+  return running;
+}
+
+String _formatHash(int hash) =>
+    BigInt.from(hash).toUnsigned(64).toRadixString(16).padLeft(16, '0');
+
 const int _wsOverflowAuditSummaryEvents = 100;
 const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
 const int _finalTextFrameFirstByte = 0x81;
@@ -112,7 +147,8 @@ class WsTransport
         PeerTransportCloseSignal,
         IControlLink,
         IActiveRoomTarget,
-        IChannelCloseDiagnostics {
+        IChannelCloseDiagnostics,
+        IInboundFrameHashDiagnostics {
   static int _lastDiagnosticConnectionId = 0;
 
   final WebSocketChannel _ws;
@@ -130,6 +166,8 @@ class WsTransport
   ConnectionCancellation? _connectCancellation;
   ConnectionCancellationListener? _connectCancellationListener;
   int _outboundSequence = 0;
+  int _inboundFrameCount = 0;
+  int _inboundRunningHash = _fnv1a64OffsetBasis;
 
   WsTransport._(
     this._ws, {
@@ -220,6 +258,12 @@ class WsTransport
         // churn, repeated room snapshots) by counting prefix
         // occurrences — body kept compact so the log stays grep-able
         // even when the relay is chatty.
+        final rawPayloadBytes = raw is String
+            ? utf8.encode(raw)
+            : raw is List<int>
+            ? raw
+            : utf8.encode(raw.toString());
+        final inbound = transport._recordInbound(rawPayloadBytes);
         final rawStr = raw is String ? raw : raw.toString();
         if (!authDone) {
           final rawBytes = relayUtf8ByteLength(
@@ -231,6 +275,8 @@ class WsTransport
             WsInEvent(
               ts: DateTime.now(),
               bytes: rawBytes,
+              idx: inbound.idx,
+              h: inbound.h,
               kind: 'preauth',
               stage: 'preauth',
             ),
@@ -275,6 +321,8 @@ class WsTransport
                 WsInEvent(
                   ts: DateTime.now(),
                   bytes: envelopeBytes.length,
+                  idx: inbound.idx,
+                  h: inbound.h,
                   kind: 'envelope',
                   stage: 'enqueue',
                 ),
@@ -288,6 +336,8 @@ class WsTransport
               WsInEvent(
                 ts: DateTime.now(),
                 bytes: rawStr.length,
+                idx: inbound.idx,
+                h: inbound.h,
                 kind: 'envelope',
                 stage: 'missing-room',
               ),
@@ -303,6 +353,8 @@ class WsTransport
               WsInEvent(
                 ts: DateTime.now(),
                 bytes: rawStr.length,
+                idx: inbound.idx,
+                h: inbound.h,
                 kind: 'envelope',
                 stage: 'room-mismatch',
                 senderRoom: decision.senderRoom,
@@ -328,6 +380,8 @@ class WsTransport
                 WsInEvent(
                   ts: DateTime.now(),
                   bytes: rawStr.length,
+                  idx: inbound.idx,
+                  h: inbound.h,
                   kind: 'control',
                   stage: 'accepted',
                   controlType: decision.controlType,
@@ -346,6 +400,8 @@ class WsTransport
               WsInEvent(
                 ts: DateTime.now(),
                 bytes: rawStr.length,
+                idx: inbound.idx,
+                h: inbound.h,
                 kind: 'malformed',
                 stage: 'dropped',
                 error: decision.error,
@@ -509,6 +565,19 @@ class WsTransport
 
   String _peerPubkey = '';
   StreamSubscription? _sub;
+
+  ({int idx, String h}) _recordInbound(List<int> payloadBytes) {
+    final idx = ++_inboundFrameCount;
+    final frameHash = _fnv1a64(payloadBytes);
+    _inboundRunningHash = _foldRunningHash(_inboundRunningHash, idx, frameHash);
+    return (idx: idx, h: _formatHash(frameHash));
+  }
+
+  @override
+  int get inboundFrameCount => _inboundFrameCount;
+
+  @override
+  String get inboundHash => _formatHash(_inboundRunningHash);
 
   void _logWsIn(WsInEvent event) => _debugLog?.log(event);
 

@@ -112,6 +112,10 @@ sealed class DebugEvent {
 final class WsInEvent extends DebugEvent {
   final int? bytes;
   final int? count;
+
+  /// 1-based index and per-message FNV-1a64 hash of the delivered payload.
+  final int? idx;
+  final String? h;
   final String? kind; // envelope / control / malformed / dropped
   final String? stage;
   final String? senderRoom;
@@ -122,6 +126,8 @@ final class WsInEvent extends DebugEvent {
     required super.ts,
     this.bytes,
     this.count,
+    this.idx,
+    this.h,
     this.kind,
     this.stage,
     this.senderRoom,
@@ -135,6 +141,8 @@ final class WsInEvent extends DebugEvent {
     'ts': ts.toUtc().toIso8601String(),
     if (bytes != null) 'bytes': bytes,
     if (count != null) 'count': count,
+    if (idx != null) 'idx': idx,
+    if (h != null) 'h': _cap(h!),
     if (kind != null) 'kind': _cap(kind!),
     if (stage != null) 'stage': _cap(stage!),
     if (senderRoom != null) 'senderRoom': _cap(senderRoom!),
@@ -423,6 +431,8 @@ final class ConnChannelLostEvent extends DebugEvent {
   final String? closeReason;
   final String? closePath;
   final String? errorType;
+  final int? inboundCount;
+  final String? inboundHash;
 
   const ConnChannelLostEvent({
     required super.ts,
@@ -435,6 +445,8 @@ final class ConnChannelLostEvent extends DebugEvent {
     this.closeReason,
     this.closePath,
     this.errorType,
+    this.inboundCount,
+    this.inboundHash,
   }) : super(tag: DebugTag.connChannelLost);
 
   @override
@@ -448,6 +460,8 @@ final class ConnChannelLostEvent extends DebugEvent {
     'closeReason': _cap(closeReason ?? 'none'),
     'closePath': _cap(closePath ?? 'none'),
     if (errorType != null) 'errorType': _cap(errorType!),
+    if (inboundCount != null) 'inboundCount': inboundCount,
+    if (inboundHash != null) 'inboundHash': _cap(inboundHash!),
     if (peerTail != null) 'peerTail': _cap(peerTail!),
     if (room != null) 'room': _cap(room!),
   };

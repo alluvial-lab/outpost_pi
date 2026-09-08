@@ -1,7 +1,7 @@
 ---
 id: story-metronome-paired-frame-hash-instrument
 kind: story
-stage: implementing
+stage: done
 tags: [app, relay, workflow]
 parent: null
 depends_on: []
@@ -44,3 +44,17 @@ with a parse error → dart itself (falsifiable).
 
 Bound to v0.12.0 (operator 2026-09-08) — rides rc.2; targeted gates on
 completion (tests + security minimum: payload-derived data in logs).
+
+## Implementation notes (2026-09-08, orchestrator-close)
+
+Relay: per-connection FNV-1a64 running hash over outbound frame payloads +
+counter; per-frame DEBUG record; disconnect/stream-error WARN lines carry
+frames_out/out_hash. App: per-connection inbound counter + per-message
+FNV-1a64 as fields on EXISTING wsIn rows (idx/h — no new capture events)
+and on connChannelLost. Scope deviation (documented by worker): event
+field additions required touching debug_log.dart + channel.dart +
+connection_manager.dart beyond the briefed file list — minimal edits.
+Hash basis documented at both code sites (same payload-bytes basis, same
+fold). Verification: relay fmt/clippy/test green; flutter analyze clean;
+full suite green except the documented rotating load-flakes (all
+isolation-green, 3/3 re-verified post-landing).

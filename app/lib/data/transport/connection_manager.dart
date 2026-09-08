@@ -2056,6 +2056,9 @@ class ConnectionManager extends Service {
     final details = channel is IChannelCloseDiagnostics
         ? (channel as IChannelCloseDiagnostics).closeDetails
         : null;
+    final inbound = channel is IInboundFrameHashDiagnostics
+        ? channel as IInboundFrameHashDiagnostics
+        : null;
     return ConnChannelLostEvent(
       ts: DateTime.now(),
       peerTail: _peerTail(peer.remoteEpk),
@@ -2067,6 +2070,8 @@ class ConnectionManager extends Service {
       closeReason: details?.closeReason,
       closePath: details?.localPath?.name,
       errorType: details?.errorType,
+      inboundCount: inbound?.inboundFrameCount,
+      inboundHash: inbound?.inboundHash,
     );
   }
 
