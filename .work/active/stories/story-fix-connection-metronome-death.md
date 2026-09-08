@@ -568,6 +568,48 @@ rows + VM tailscaled link-change events into one timeline.
    (15:52 sample). Path instability is observable from the VM; correlate
    flips against strike timestamps via the sampler timeline.
 
+## VERDICT #8 (2026-09-08, 16:4x): THE TUNNEL NEVER DIES — phone-side RST on a healthy tunnel; "severance" is falsified at the wire
+
+Wire capture (wgwatch docker: tcpdump `udp host <redacted phone wifi addr>` on ens18,
+e2e/.run-state/severance/wire/) covering direct episodes 16:26–16:33 and
+16:34–16:36 with strikes #5 (16:30:47, fo=749), #6 (16:32:09, fo=15), #7
+(16:35:00, fo=10 — only 7s after connect, 6s after a 309KB burst):
+
+- **Bidirectional UDP flow continues THROUGH every strike**: regular
+  234B-pair exchange both directions the second before, same cadence the
+  second after. No flow gap, no unanswered keepalive storm, no rebind, no
+  path death — at strike #5 the tunnel carried the NEXT cycle's 703KB burst
+  30s later on the same 5-tuple. Verdict #6's "the tailscale tunnel
+  connection severs" is falsified: nobody severs the tunnel.
+- At each strike second the last packet is **~96B FROM the phone** — the
+  wire size of a WG packet carrying a bare TCP RST (~40B IP+TCP + WG
+  overhead). The RST is generated ON the phone, crosses its own healthy
+  tunnel, and resets the relay's socket (IO-104). Router and VM are
+  mechanically excluded: neither can forge a WG-authenticated packet from
+  the phone.
+- Mechanism (high-confidence hypothesis, phone-logs will confirm): Android
+  tailscale is fully userspace-netstack — the TCP the relay sees terminates
+  INSIDE the phone's tailscale app process. The RST is that netstack
+  resetting its tracked flow ~6–26s after buffering a ~1.2MB rehydration
+  burst (conntrack GC / memory-pressure reset / network-callback bounce —
+  the known tailscale-android connection-reset behavior class). Every
+  earlier observation re-fits: phone-only, burst-correlated, away-leg
+  cleaner (fewer/smaller rehydrations), "IO-104" = the phone's own RST
+  arriving, direct-vs-DERP irrelevant (netstack resets either way), WG
+  handshake cadence untouched.
+- Consequences: the fix story's app-side units are moot for the strike
+  itself (the app cannot prevent a netstack RST under it). Actionable:
+  (a) phone-side — tailscale app logs + bug report with this evidence;
+  battery-optimization check; (b) app-side recovery — the parked cancel-race
+  fix (post-RST reconnect drags 2.5min) becomes the primary UX lever;
+  (c) mitigation — home-LAN relay candidate (bypasses tailscale on the
+  phone entirely; earlier LAN differential was clean) or smaller
+  rehydration envelopes (burst-size reduction: split 730KB frames).
+- Leg B (laptop over tailnet) RETAINED but reinterpreted: it now tests
+  whether a non-Android netstack reader survives the same bursts — evidence
+  FOR the phone-app theory by counter-example (laptop clean), and a
+  regression rig for any future burst-shape changes.
+
 ## VERDICT #7 (2026-09-08, 16:0x): burst-then-QUIET kills it — reset arrives FROM the phone through the tunnel; VM + relay fully exonerated in-run
 
 Same-session correlation of sampler + relay logs (3 phone strikes, each
