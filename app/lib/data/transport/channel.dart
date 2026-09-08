@@ -67,6 +67,15 @@ abstract interface class IChannelCloseDiagnostics {
   Future<void> closeWithPath(ChannelLocalClosePath path);
 }
 
+/// Expose content-free inbound frame-hash evidence for connection-loss logs.
+abstract interface class IInboundFrameHashDiagnostics {
+  /// Number of application data messages delivered on this connection.
+  int get inboundFrameCount;
+
+  /// Running FNV-1a64 hash at the latest delivered message.
+  String get inboundHash;
+}
+
 /// Exchange typed app/Pi messages while exposing explicit stream ownership.
 ///
 /// The channel owner must call [close] to release the underlying transport and

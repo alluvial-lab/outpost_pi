@@ -195,9 +195,15 @@ class _FakeChannel implements IChannel, IControlLink {
 }
 
 class _DiagnosticChannel extends _FakeChannel
-    implements IChannelCloseDiagnostics {
+    implements IChannelCloseDiagnostics, IInboundFrameHashDiagnostics {
   @override
   ChannelCloseDetails? closeDetails;
+
+  @override
+  int inboundFrameCount = 0;
+
+  @override
+  String inboundHash = '0000000000000000';
 
   @override
   Future<void> closeWithPath(ChannelLocalClosePath path) async {
@@ -251,6 +257,8 @@ void main() {
       debugLog: log,
     );
     conn.adopt(channel, _peer);
+    channel.inboundFrameCount = 2;
+    channel.inboundHash = '1234567890abcdef';
 
     await channel.lose(
       const ChannelCloseDetails(
@@ -267,6 +275,8 @@ void main() {
     expect(event['closeCode'], 4001);
     expect(event['closeReason'], 'present');
     expect(event['closePath'], 'none');
+    expect(event['inboundCount'], 2);
+    expect(event['inboundHash'], '1234567890abcdef');
     conn.dispose();
   });
 

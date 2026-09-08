@@ -11,7 +11,7 @@ use axum::extract::ws::{CloseFrame as AxumCloseFrame, Message as RegistryMessage
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{Sink, SinkExt, StreamExt};
 use hyper_util::rt::TokioIo;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
@@ -38,6 +38,90 @@ type PeerWebSocket = WebSocketStream<PreAuthGuard<TokioIo<hyper::upgrade::Upgrad
 const CLOSE_OUTBOUND_MAILBOX_SATURATED: &str = "relay_outbound_mailbox_saturated";
 const CLOSE_SAME_DEVICE_SUPERSEDED: &str = "relay_same_device_superseded";
 const CLOSE_PI_FORWARD_RATE_LIMITED: &str = "relay_pi_forward_rate_limited";
+
+const FNV1A64_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV1A64_PRIME: u64 = 0x00000100000001b3;
+
+/// Track application data messages written to one peer connection.
+///
+/// The frame hash is FNV-1a64 over the exact tungstenite payload bytes:
+/// `Text` uses its UTF-8 bytes and `Binary` uses its bytes. The connection
+/// running hash starts at the offset basis and folds each 1-based frame index
+/// and frame hash as little-endian u64 values:
+/// `running_i = FNV1a64_continue(running_(i-1), idxLE64 || frameHashLE64)`.
+/// WebSocket control frames are excluded because Dart's message stream does
+/// not deliver relay pings, pongs, or close frames to the listen callback.
+#[derive(Debug, Default)]
+struct OutboundFrameHash {
+    frames_out: u64,
+    out_hash: u64,
+}
+
+impl OutboundFrameHash {
+    fn new() -> Self {
+        Self {
+            out_hash: FNV1A64_OFFSET_BASIS,
+            ..Self::default()
+        }
+    }
+
+    fn observe(&mut self, message: &Message) {
+        let Some(payload) = application_payload(message) else {
+            return;
+        };
+        self.frames_out = self.frames_out.saturating_add(1);
+        let frame_hash = fnv1a64(payload);
+        self.out_hash = fold_running_hash(self.out_hash, self.frames_out, frame_hash);
+        debug!(
+            frame_idx = self.frames_out,
+            frame_bytes = payload.len(),
+            frame_hash = %format_hash(frame_hash),
+            out_hash = %format_hash(self.out_hash),
+            "relay outbound frame"
+        );
+    }
+}
+
+fn application_payload(message: &Message) -> Option<&[u8]> {
+    match message {
+        Message::Text(text) => Some(text.as_bytes()),
+        Message::Binary(data) => Some(data),
+        _ => None,
+    }
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(FNV1A64_OFFSET_BASIS, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV1A64_PRIME)
+    })
+}
+
+fn fold_running_hash(mut running: u64, frame_idx: u64, frame_hash: u64) -> u64 {
+    for byte in frame_idx
+        .to_le_bytes()
+        .into_iter()
+        .chain(frame_hash.to_le_bytes())
+    {
+        running = (running ^ u64::from(byte)).wrapping_mul(FNV1A64_PRIME);
+    }
+    running
+}
+
+fn format_hash(hash: u64) -> String {
+    format!("{hash:016x}")
+}
+
+async fn send_instrumented<S>(
+    sink: &mut S,
+    message: Message,
+    outbound: &mut OutboundFrameHash,
+) -> Result<(), S::Error>
+where
+    S: Sink<Message> + Unpin,
+{
+    outbound.observe(&message);
+    sink.send(message).await
+}
 
 /// Validate and upgrade a peer WebSocket with pre-authentication admission.
 ///
@@ -87,6 +171,7 @@ async fn handle_peer(
 ) {
     let peer_addr = peer_addr.to_string();
     let (mut sink, mut stream) = socket.split();
+    let mut outbound = OutboundFrameHash::new();
 
     // ── 1. Wait for hello (with timeout) ──────────────────────────────────
     let hello_text = match next_handshake_text(&mut stream).await {
@@ -112,10 +197,13 @@ async fn handle_peer(
 
     // ── 2. Send challenge ─────────────────────────────────────────────────
     let (nonce, nonce_b64) = gen_nonce();
-    if sink
-        .send(Message::text(challenge_line(&nonce_b64)))
-        .await
-        .is_err()
+    if send_instrumented(
+        &mut sink,
+        Message::text(challenge_line(&nonce_b64)),
+        &mut outbound,
+    )
+    .await
+    .is_err()
     {
         return;
     }
@@ -130,8 +218,14 @@ async fn handle_peer(
     };
 
     if let Err(e) = verify_auth(&nonce, &vk, &auth_text) {
-        warn!(addr = %peer_addr, err = %e, "auth failed, closing");
-        let _ = sink.send(Message::Close(None)).await;
+        warn!(
+            addr = %peer_addr,
+            err = %e,
+            frames_out = outbound.frames_out,
+            out_hash = %format_hash(outbound.out_hash),
+            "auth failed, closing"
+        );
+        let _ = send_instrumented(&mut sink, Message::Close(None), &mut outbound).await;
         return;
     }
     authenticated_transport.store(true, Ordering::Release);
@@ -201,6 +295,8 @@ async fn handle_peer(
                     conn_id = %registration.conn_id,
                     close_origin = "relay",
                     close_reason = CLOSE_OUTBOUND_MAILBOX_SATURATED,
+                    frames_out = outbound.frames_out,
+                    out_hash = %format_hash(outbound.out_hash),
                     "relay initiated peer socket close"
                 );
                 break;
@@ -216,6 +312,8 @@ async fn handle_peer(
                         warn!(
                             peer = %peer_short,
                             err = %e,
+                            frames_out = outbound.frames_out,
+                            out_hash = %format_hash(outbound.out_hash),
                             "websocket stream error, closing"
                         );
                         break;
@@ -256,18 +354,34 @@ async fn handle_peer(
                                     conn_id = %registration.conn_id,
                                     close_origin = "relay",
                                     close_reason = CLOSE_PI_FORWARD_RATE_LIMITED,
+                                    frames_out = outbound.frames_out,
+                                    out_hash = %format_hash(outbound.out_hash),
                                     "relay initiated peer socket close"
                                 );
                                 break;
                             },
                             ActorDispatch::Send(text) => {
-                                if sink.send(Message::text(text)).await.is_err() {
+                                if send_instrumented(
+                                    &mut sink,
+                                    Message::text(text),
+                                    &mut outbound,
+                                )
+                                .await
+                                .is_err()
+                                {
                                     break;
                                 }
                             }
                             ActorDispatch::SendMany(messages) => {
                                 for text in messages {
-                                    if sink.send(Message::text(text)).await.is_err() {
+                                    if send_instrumented(
+                                        &mut sink,
+                                        Message::text(text),
+                                        &mut outbound,
+                                    )
+                                    .await
+                                    .is_err()
+                                    {
                                         break 'routing;
                                     }
                                 }
@@ -279,7 +393,14 @@ async fn handle_peer(
             result = rx.recv() => {
                 match result {
                     Some(msg) => {
-                        if sink.send(registry_message_to_transport(msg)).await.is_err() {
+                        if send_instrumented(
+                            &mut sink,
+                            registry_message_to_transport(msg),
+                            &mut outbound,
+                        )
+                        .await
+                        .is_err()
+                        {
                             break;
                         }
                     }
@@ -290,6 +411,8 @@ async fn handle_peer(
                             conn_id = %registration.conn_id,
                             close_origin = "relay",
                             close_reason = CLOSE_SAME_DEVICE_SUPERSEDED,
+                            frames_out = outbound.frames_out,
+                            out_hash = %format_hash(outbound.out_hash),
                             "relay initiated peer socket close"
                         );
                         break;
@@ -297,7 +420,14 @@ async fn handle_peer(
                 }
             }
             _ = heartbeat.tick() => {
-                if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
+                if send_instrumented(
+                    &mut sink,
+                    Message::Ping(Vec::new().into()),
+                    &mut outbound,
+                )
+                .await
+                .is_err()
+                {
                     break;
                 }
             }
@@ -316,7 +446,14 @@ async fn handle_peer(
     if remove.peer_offlined {
         rooms.unsubscribe_all(&peer_id).await;
     }
-    info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "disconnected");
+    info!(
+        peer = %peer_short,
+        room = %room_id,
+        addr = %peer_addr,
+        frames_out = outbound.frames_out,
+        out_hash = %format_hash(outbound.out_hash),
+        "disconnected"
+    );
 }
 
 fn relay_heartbeat() -> time::Interval {
@@ -509,6 +646,39 @@ mod tests {
     use super::*;
     use futures_util::stream;
     use std::time::Duration;
+
+    #[test]
+    fn outbound_hash_tracks_utf8_payloads_and_running_fold() {
+        let first = "hé".as_bytes();
+        let second = b"second";
+        let first_hash = fnv1a64(first);
+        let second_hash = fnv1a64(second);
+        let mut instrument = OutboundFrameHash::new();
+
+        instrument.observe(&Message::text("hé"));
+        instrument.observe(&Message::text("second"));
+
+        let expected = fold_running_hash(
+            fold_running_hash(FNV1A64_OFFSET_BASIS, 1, first_hash),
+            2,
+            second_hash,
+        );
+        assert_eq!(instrument.frames_out, 2);
+        assert_eq!(instrument.out_hash, expected);
+        assert_eq!(first_hash, 0x3130f1192e1ad66f);
+        assert_eq!(format_hash(instrument.out_hash).len(), 16);
+    }
+
+    #[test]
+    fn outbound_hash_does_not_count_websocket_control_frames() {
+        let mut instrument = OutboundFrameHash::new();
+        instrument.observe(&Message::Ping(Vec::new().into()));
+        instrument.observe(&Message::Pong(Vec::new().into()));
+        instrument.observe(&Message::Close(None));
+
+        assert_eq!(instrument.frames_out, 0);
+        assert_eq!(instrument.out_hash, FNV1A64_OFFSET_BASIS);
+    }
 
     #[tokio::test(start_paused = true)]
     async fn heartbeat_first_tick_waits_one_full_interval_then_repeats() {
