@@ -2,7 +2,7 @@
 
 ## Rationale
 
-Incremental metadata updates must distinguish an omitted field from an explicit value. A patch representation carries field presence separately from the field value, so consumers preserve cached state when a producer sends a partial update while still applying explicit `false`, `null`, or replacement values according to the field contract. The same rule keeps relay state, app room caches, and compatibility metadata convergent across mixed versions. When cached metadata projects live activity, current room liveness is the independent presence signal: do not treat a cached `background` or `working` value as authoritative until the relay confirms that room is live.
+Incremental metadata updates must distinguish an omitted field from an explicit value. A patch representation carries field presence separately from the field value, so consumers preserve cached state when a producer sends a partial update while still applying explicit `false`, `null`, or replacement values according to the field contract. The field categories must stay explicit as the contract grows: nullable strings, nullable integers, and non-nullable booleans each need the corresponding presence and clear semantics. The same rule keeps relay state, app room caches, and compatibility metadata convergent across mixed versions. When cached metadata projects live activity, current room liveness is the independent presence signal: do not treat a cached `background` or `working` value as authoritative until the relay confirms that room is live.
 
 ## When to use
 
@@ -125,6 +125,59 @@ bool isRoomOrchestrating(String epk, String roomId) {
 The home tile uses the same freshness boundary before rendering its
 orchestrating pulse. Both chat and home derive from cached room metadata, but
 neither trusts it after disconnect until a live snapshot restores authority.
+
+### Example 7: Schema metadata names the additive field categories
+
+**File**: `protocol/schema/relay-control.schema.json:71-82`
+
+```json
+"branch": { "type": ["string", "null"], "maxLength": 256 },
+"ctx_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+"ctx_max": { "type": ["integer", "null"], "minimum": 0 }
+// x-outpost-pi.mergePatchSemantics:
+// nullableStrings: [..., "branch"]
+// nullableIntegers: ["ctx_percent", "ctx_max"]
+// nonNullableBooleans: ["working", "background"]
+```
+
+The schema remains the single source of truth for whether omission preserves, null clears, or a boolean value sets a field. Adding branch and context usage extends the existing additive-room-metadata recipe without inventing a second patch contract.
+
+### Example 8: Generated Rust keeps presence and null as two dimensions
+
+**File**: `relay/src/protocol/generated/room.rs:44-54`
+
+```rust
+pub struct RoomMetaPatch {
+    pub branch: Option<Option<String>>,
+    pub ctx_percent: Option<Option<u64>>,
+    pub ctx_max: Option<Option<u64>>,
+    pub working: Option<bool>,
+    pub background: Option<bool>,
+}
+```
+
+The outer `Option` records wire presence, while the inner `Option` permits explicit null for the nullable string/integer fields. Booleans need only the outer presence layer.
+
+### Example 9: App projection carries presence flags into one patch applicator
+
+**File**: `app/lib/protocol/control_frames.dart:468-521`
+
+```dart
+final String? branch;
+final int? ctxPercent;
+final int? ctxMax;
+final bool hasBranch;
+final bool hasCtxPercent;
+final bool hasCtxMax;
+
+RoomInfo applyTo(RoomInfo current) => current.copyWith(
+  branch: hasBranch ? branch : _kRoomInfoUnset,
+  ctxPercent: hasCtxPercent ? ctxPercent : _kRoomInfoUnset,
+  ctxMax: hasCtxMax ? ctxMax : _kRoomInfoUnset,
+);
+```
+
+The typed app boundary preserves omitted telemetry and applies explicit null clears through the sentinel-backed `RoomInfo.copyWith`; `ConnectionManager` consumes this one projection rather than re-enumerating fields.
 
 ## Common violations
 

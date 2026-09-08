@@ -17,6 +17,7 @@ Available patterns:
 - [lifecycle-owned-repeating-animation.md](lifecycle-owned-repeating-animation.md) — Own repeating animation controllers in StatefulWidget state and dispose them at the widget boundary.
 - [durable-first-visibility-gating.md](durable-first-visibility-gating.md) — Append canonical transcript facts before publishing replayable live visibility, and gate on recorded or duplicate authority.
 - [presence-aware-patch-merging.md](presence-aware-patch-merging.md) — Distinguish omitted patch fields from explicit values so partial updates preserve cached state.
+- [sentinel-copywith-nullable-fields.md](sentinel-copywith-nullable-fields.md) — Use a private identity sentinel so Dart copyWith distinguishes omitted nullable fields from explicit null clears.
 - [edge-triggered-convergence.md](edge-triggered-convergence.md) — Notify, persist, or publish only when a validated semantic projection changes.
 - [session-scoped-derived-identity.md](session-scoped-derived-identity.md) — Include canonical session identity in transcript reads, writes, dedupe indexes, and derived reply links.
 - [era-aware-authority-fallback-binding.md](era-aware-authority-fallback-binding.md) — Prefer durable facts, then bind only unmatched legacy facts by stable collision keys for mixed-era compatibility.
@@ -37,6 +38,7 @@ Available patterns:
 - [owner-channel-scoped-resource-ownership.md](owner-channel-scoped-resource-ownership.md) — Bind retained resources to both owner identity and concrete channel, and tear down every matching index together.
 - [asymmetric-threshold-stabilization.md](asymmetric-threshold-stabilization.md) — Use separate entry/exit conditions or consecutive healthy probes to prevent noisy state flapping.
 - [command-surface-adapter-classes.md](command-surface-adapter-classes.md) — Keep command-surface logic in thin, dependency-injected adapter classes.
+- [injected-effect-coordinators.md](injected-effect-coordinators.md) — Keep asynchronous orchestration in lifecycle-owning classes with narrow constructor-injected effect ports.
 - [typed-wire-decoders.md](typed-wire-decoders.md) — Parse/validate untrusted wire text through shared decode helpers before routing typed handlers.
 - [event-bus-unknown-payload-narrowing.md](event-bus-unknown-payload-narrowing.md) — Narrow unknown event-bus payloads to validated fields before mutating lifecycle state.
 - [subscription-unsubscribe-contract.md](subscription-unsubscribe-contract.md) — Return unsubscribe closures for event handlers and keep callback registration/teardown explicit.
