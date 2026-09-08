@@ -40,3 +40,15 @@ logging) that were never itemized.
 - **gate-refactor** (2026-09-08) — 0 findings (0 high, 0 medium, 0 low) from 4 libraries: boundaries (0 findings), lifecycle (0 findings), protocol-contract (0 findings), documentation (0 findings)
 
 - 2026-09-07 — `patterns`: inline source-read-only scanner (reduced isolation; no nested scanner available in this host); audited the v0.11.1..HEAD bundle and existing 40-pattern catalog; 2 new patterns codified, 1 existing pattern extended, 0 inconsistencies.
+
+### Gate runs
+- **gate-security** (2026-09-08) — C0/H0/M1/L0: relay branch-metadata admission bound (medium, backlog, unbound); one duplicate skipped. Adjacent correctness flag on the fleet consumed-marker fed gate-tests.
+- **gate-tests** (2026-09-08) — C0/H2/M1/L0: shared-home replay scope + long-deferral drain (both high, fixed in 20b61a61b + db8768f4b, stories done); commit-order oracle (medium, backlog).
+- **gate-cruft** (2026-09-08) — 0 blocking; unused legacy fleet-arm builder (medium, backlog). `_publishRoomMetaPatch` type-derivation cleanup confirmed landed.
+- **gate-docs** (2026-09-08) — 4 high blocking (ARCHITECTURE unions + room-meta inventory, PROTOCOL action table, CHANGELOG v0.12.0 entry — all fixed in 95430c93b, stories done); pi-extension skill staleness (medium, backlog).
+- **gate-patterns** (2026-09-08) — 0 findings; 2 new patterns (injected-effect-coordinators, sentinel-copywith-nullable-fields), 1 extended (presence-aware-patch-merging).
+- **gate-refactor** (2026-09-08) — 0 findings across 4 scan libraries, 103 paths.
+
+Backlog items parked (unbound, non-blocking per gate_finding_routing):
+gate-security-relay-branch-metadata-bound, gate-tests-fleet-report-commit-order-oracle,
+gate-cruft-unused-legacy-fleet-arm-builder, gate-docs-pi-extension-skill-fleet-messages.
