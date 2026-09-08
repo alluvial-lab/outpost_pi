@@ -461,3 +461,38 @@ settles.
   value: 1002 strikes occurred in BOTH network modes within the hour —
   docker-proxy adds no new exoneration, and the mechanism remains
   VM-internal-or-dart (the paired hashes decide).
+
+## VERDICT #5 (2026-09-08, 05:1x): paired hashes read out — corruption lives in the VM-internal relay→tailscaled segment under burst backpressure; dart-misparse is the only surviving alternative
+
+First paired capture (rc.2 app + relay 0.5.5, 7 strikes in 29 min):
+
+**Instrument validity**: cross-side hash bases verified identical (recurring
+76-byte control frame hashes `ddadba6b4b33c4f8` on both sides; 102-byte
+broadcast class likewise). Comparisons are sound.
+
+**Strike shapes** (app last-delivered idx vs relay frames_out at the RST):
+- 04:49:36 — app healthy to idx=803 (last frame 19ms before loss); relay
+  had written 809. ~6 frames in flight at teardown — death mid-burst.
+- 05:01:48 — app reads went SILENT 23s after idx=41 while the relay pumped
+  to frames_out=344: ~303 frames written-but-never-delivered. The window's
+  connections carried the firehose class at the app too (idx=120 =
+  369,471-byte envelope).
+- 04:53 / 04:58 / 05:00 — app idx == relay frames_out at death (clean
+  boundary race).
+
+**Elimination chain** (settled): tungstenite cannot emit invalid frames
+(protocol implementation); WG transit cannot corrupt (auth-tag drops);
+frames never delivered cannot cause dart parse errors (dart only errors on
+bytes it reads); dart's own kills give 1001/1006 (probes). dart READ
+garbage ⇒ the garbage entered AFTER tungstenite's write and BEFORE WG
+encryption — i.e., the **VM-internal segment: kernel TCP → TUN →
+tailscaled userspace**, under burst/backpressure conditions (369KB-class
+frames, 23s read stalls, fleet-wide broadcast bursts of 102B frames).
+
+**Next decisive step (cheap, developer-reproducible)**: a slow-reading WS
+client on the VM itself (or laptop over tailnet — NOT the phone)
+subscribed to the same firehose. Reproduces ⇒ VM-side bug with a minimal
+repro for tailscale/kernel upstream; clean ⇒ phone-side, and the
+dart-misparse hypothesis gets tested via raw-socket capture on a dev
+machine. Relay per-frame records could also gain a peer tag for cleaner
+per-connection trails (instrument tweak, non-blocking).
