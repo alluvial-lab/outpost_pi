@@ -409,3 +409,37 @@ socket-read critical path (or chunked decode) so reads never stall;
 (c) liveness tolerance under burst load (raise/disable dart pingInterval in
 favor of the app-level any-inbound-frame liveness the code already
 documents). Relay unchanged.
+
+## Probe map + verdict #3 correction (2026-09-08)
+
+Worker probes (Flutter 3.47.1 / Dart 3.13.1, raw RFC6455 fakes) pin dart's
+closeCode surface empirically:
+- abrupt mid-frame TCP death → **1006** (abnormalClosure)
+- dart's own missed-pong kill (pingInterval, silent server) → **1001**
+  (goingAway)
+- post-handshake framing garbage (reserved opcode 0x83) → **1002**
+  (protocolError)
+
+Observed strikes are closeCode **1002** ⇒ the phone's dart parser really
+parsed WS-framing violations off the socket. Two consequences:
+
+1. Verdict #4-correction's missed-pong mechanism is DEAD (would give 1001).
+2. Verdict #3's "WG integrity exonerates everything except the endpoints"
+   OVERREACHED: WG protects only the transit. Corruption between the relay
+   process and tailscaled ON THE VM (kernel TCP → TUN → tailscaled
+   userspace handoff) is encrypted faithfully and delivered corrupt —
+   WG-invisible. The VM-internal write path is back in scope. (Note: the
+   ethtool offload test disabled ens18 offloads — the TUN path doesn't
+   traverse ens18, so that test never covered this suspect.)
+
+Also exonerated by code read: PreAuthGuard (inspect-only; can kill, never
+corrupt either direction).
+
+**Next decisive instrument** (small, lands on both sides): paired frame
+hashes — relay logs a running hash of every frame tungstenite writes to
+the phone; app logs a hash of every raw frame dart delivers pre-parse.
+One strike with mismatched hashes localizes corruption to the VM-internal
+path; matching hashes with a dart parse error would implicate dart itself
+(unlikely but now falsifiable). Fix story stays stopped (escape hatch) —
+attribution relabel of 1002 is still worthwhile once the true origin
+settles.
