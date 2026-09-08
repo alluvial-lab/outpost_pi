@@ -568,6 +568,19 @@ rows + VM tailscaled link-change events into one timeline.
    (15:52 sample). Path instability is observable from the VM; correlate
    flips against strike timestamps via the sampler timeline.
 
+## Final leg tally (2026-09-08, 21:53Z — all timed legs completed)
+
+- Leg A: ONE loopback connection held the full 6h (1,022 frames, zero
+  abnormal). A2: 177 cycles, zero abnormal. Bench: 170 cycles / 168 full
+  ~1.14MB ct bursts (191MB) through the throttled reader, zero abnormal.
+- Relay ledger, 6h: 10 phone strikes (all `qQLDCu8=`), ZERO on any harness
+  peer across ~350 connection-cycles with the phone's exact wire shape.
+- All 10 phone strikes rode the DIRECT UDP path (zero on DERP-only windows,
+  though those were also low-traffic — correlated, confounded).
+- Wire signature now 4/4: strike 16:45:35 (fo=530) shows the regular
+  [124,110]B exchange continuing through the strike second with the extra
+  96B from-phone packet arriving on top of it. Tunnel healthy in all four.
+
 ## VERDICT #8 (2026-09-08, 16:4x): THE TUNNEL NEVER DIES — phone-side RST on a healthy tunnel; "severance" is falsified at the wire
 
 Wire capture (wgwatch docker: tcpdump `udp host <redacted phone wifi addr>` on ens18,
