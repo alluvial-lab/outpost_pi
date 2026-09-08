@@ -244,3 +244,35 @@ virtio NIC offload (tso/gso/gro), phone Wi-Fi stack offload, router.
 Test in flight: disable host offloads (operator, needs sudo) → strikes
 stop = host convicted; continue = phone/router side (next differential:
 force phone traffic over tailnet even at home).
+
+## VERDICT #2 (2026-09-08): host virtio offloads EXONERATED — corruption is router↔phone on the home LAN
+
+The 2026-09-07T17:23:47Z ethtool disable was runtime-only and died at the
+22:27:16Z VM reboot (container restart anchor; offloads verified back `on`
+post-reboot). Relay 0.5.4 instrumented logs give the full strike history
+(IO-104 / reset-without-handshake = the phone-strike signature):
+
+| UTC hour | strikes | regime |
+|---|---|---|
+| 15–16 | 66 | offloads ON (baseline dense) |
+| 17 | 8 (6 pre-disable + 2 at 17:26/17:29) | disable @ 17:23:47 |
+| 18 | 2 | **offloads OFF** (18:55 only) |
+| 19–20 | 48 | **offloads OFF — dense resumption** |
+| 21–22:27 | 2 | offloads OFF, quiet |
+| 22:27–01:00 | 15+ | offloads restored ON (reboot) |
+
+Decision math: ~54 strikes WITH offloads off (incl. two 20+ strike hours)
+vs. the same order post-reboot with them on — offload state made no
+difference. Control: all 77 strikes are the phone peer `qQLDCu8=`; zero
+from local pis over loopback on the same relay — the relay host process is
+exonerated alongside tailscale, docker-proxy, and now virtio offload.
+Pattern is bursty (86-min clean gap; quiet hours adjacent to dense ones) —
+usage/RF-correlated, not steady-state hardware offload corruption.
+
+Per the pre-registered tree: **strikes continue post-offload → phone Wi-Fi
+stack or router.** Next differential (operator): add the tailnet relay URL
+as primary/failover candidate in the app (ordered candidates supported) so
+at-home traffic rides tailscale; clean ⇒ mitigation = tailnet-first relay
+URL and the corrupting element is router/phone Wi-Fi (report upstream
+accordingly). No systemd ethtool unit is warranted — offloads are not the
+cause; leave them default-on.
