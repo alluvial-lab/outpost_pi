@@ -111,3 +111,22 @@ wall clocks differ by four hours. The version drill builds the relay from the
 previous unified release tag and runs it against the current app and extension
 pairing suite. Both write bounded evidence below `.work/session-notes/` and
 tear down their Compose projects.
+
+## Severance repro harness + path sampler
+
+Diagnostic pair for the connection-metronome investigation (verdict #6:
+tailscale tunnel severance under firehose bursts — see
+`.work/active/stories/story-fix-connection-metronome-death.md`). Both write
+JSONL evidence to `e2e/.run-state/severance/` (gitignored, local-only):
+
+```bash
+# Slow-reading WS client subscribed to the fleet firehose like the app;
+# per-frame FNV-1a64 accounting matches the relay's frames_out/out_hash
+# instrument exactly, so strikes align cross-side. Leg A = loopback control
+# (no tailscale in path); a laptop leg runs the same command over tailnet.
+node e2e/severance_harness.mjs --label A-localhost --url ws://127.0.0.1:3300
+
+# VM-side sampler: phone's tunnel path (endpoint/DERP/handshake) every 10s +
+# relay stream-error rows + tailscaled link-change events, one timeline.
+python3 e2e/path_sampler.py --poll-s 10
+```
