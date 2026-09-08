@@ -36,3 +36,5 @@ logging) that were never itemized.
 
 ## Gate runs
 (populated as gates execute)
+
+- 2026-09-07 — `patterns`: inline source-read-only scanner (reduced isolation; no nested scanner available in this host); audited the v0.11.1..HEAD bundle and existing 40-pattern catalog; 2 new patterns codified, 1 existing pattern extended, 0 inconsistencies.
