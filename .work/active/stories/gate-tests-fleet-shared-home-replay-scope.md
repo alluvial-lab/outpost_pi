@@ -1,7 +1,7 @@
 ---
 id: gate-tests-fleet-shared-home-replay-scope
 kind: story
-stage: implementing
+stage: done
 tags: [testing, pi-extension, bug]
 parent: null
 depends_on: []
@@ -51,3 +51,22 @@ Use a narrow persistence seam or isolated temporary state, and stub restart side
 
 ## Scanner verification
 Source-read-only executable witness: extracted the unchanged `_fleetUpdateConsumedPath` and `_consumeFleetUpdateIntent` function bodies from `index.ts`, stripped TypeScript types with Node, and evaluated three distinct virtual process contexts sharing one in-memory filesystem. First consumption of one run yielded `[true, false, false]`, rather than three successes. This is a focused source-level witness, not a production integration-suite run. No real marker files, processes, signals, or live services were touched. The permanent regression should exercise the production adapter and fail on the pre-fix implementation.
+
+## Resolution (2026-09-08)
+
+- Root cause confirmed: the durable consumption filename was keyed only by
+  `update_id`, so siblings sharing `~/.pi/remote` contended for one `wx`
+  marker.
+- Fix: consumption markers now hash both the stable broker-issued Pi peer
+  address and `update_id`; the target address is stable across that Pi's
+  process restart, while sibling addresses remain independent. Missing target
+  identity fails closed. The marker payload records the target for diagnostics.
+- Regression: `pi-extension/src/extension.test.ts` uses one shared temporary
+  home, three independent target adapters (two siblings plus coordinator),
+  phase-aware prepare/commit handlers, own nonce-bound arm files, and
+  recreated adapters. All first commits arm; same-target replays reject; new
+  update ids remain admissible.
+- Verification: `cd pi-extension && corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
+  passed (65 files, 1,155 tests passed, 3 skipped).
+- Safety: only temporary state was used; no live Pi process, signal, or marker
+  was touched.

@@ -3105,6 +3105,27 @@ function _restartMarkerPath(): string {
 }
 
 const _hotReloadNonce = randomUUID();
+let _fleetTargetIdentityOverrideForTest: string | null | undefined;
+
+/** Return the stable logical identity used to fence one Pi's fleet intent. */
+function _fleetUpdateTargetIdentity(): string | null {
+  if (_fleetTargetIdentityOverrideForTest !== undefined) return _fleetTargetIdentityOverrideForTest;
+  const address = _meshNode?.address();
+  if (address && address.length > 0) return address;
+  return _myRoomId;
+}
+
+/** Test-only override for the fleet target identity used by persistence checks. */
+export function _setFleetTargetIdentityForTest(identity: string | null | undefined): void {
+  _fleetTargetIdentityOverrideForTest = identity;
+}
+
+/** Create a production-backed fleet-consumption adapter for isolated tests. */
+export function _createFleetUpdateConsumptionAdapterForTest(targetIdentity: string): {
+  consume: (updateId: string) => boolean;
+} {
+  return { consume: (updateId) => _consumeFleetUpdateIntent(updateId, targetIdentity) };
+}
 
 /** Test-only override for resetting the shared synchronous ingress fence. */
 export function _setHotReloadingForTest(value: boolean): void {
@@ -3183,20 +3204,26 @@ function _tryArmHotReload(updateId?: string): "armed" | "already_armed" | null {
 }
 
 /** Return the durable owner-only marker path for one fleet update intent. */
-function _fleetUpdateConsumedPath(dir: string, updateId: string): string {
-  const digest = createHash("sha256").update(updateId, "utf8").digest("hex");
-  return join(dir, `.fleet-update-consumed-${digest}`);
+function _fleetUpdateConsumedPath(
+  dir: string,
+  updateId: string,
+  targetIdentity: string | null = _fleetUpdateTargetIdentity(),
+): string | null {
+  if (!targetIdentity || targetIdentity.length === 0) return null;
+  const targetDigest = createHash("sha256").update(targetIdentity, "utf8").digest("hex");
+  const updateDigest = createHash("sha256").update(updateId, "utf8").digest("hex");
+  return join(dir, `.fleet-update-consumed-${targetDigest}-${updateDigest}`);
 }
 
 /** Atomically consume one fleet update id, rejecting process-restart replays. */
-function _consumeFleetUpdateIntent(updateId: string): boolean {
+function _consumeFleetUpdateIntent(updateId: string, targetIdentity = _fleetUpdateTargetIdentity()): boolean {
   if (updateId.length === 0) return false;
   const dir = _secureHotReloadRemoteDir();
   if (!dir) return false;
-  const path = _fleetUpdateConsumedPath(dir, updateId);
-  if (existsSync(path)) return false;
+  const path = _fleetUpdateConsumedPath(dir, updateId, targetIdentity);
+  if (!path || existsSync(path)) return false;
   try {
-    writeFileSync(path, JSON.stringify({ update_id: updateId, ts: Date.now() }), {
+    writeFileSync(path, JSON.stringify({ update_id: updateId, target: targetIdentity, ts: Date.now() }), {
       mode: 0o600,
       flag: "wx",
     });
@@ -3358,9 +3385,12 @@ function _refreshDeferredFleetArm(dir: string, armedPath: string): void {
     const parsed: unknown = JSON.parse(readFileSync(armedPath, "utf8"));
     if (!parsed || typeof parsed !== "object") return;
     const request = parsed as { nonce?: unknown; ts?: unknown; update_id?: unknown };
+    const consumedPath = typeof request.update_id === "string"
+      ? _fleetUpdateConsumedPath(dir, request.update_id)
+      : null;
     if (request.nonce !== _hotReloadNonce || typeof request.update_id !== "string" ||
-        request.update_id.length === 0 ||
-        !_isOwnerOnlyRegularFile(_fleetUpdateConsumedPath(dir, request.update_id))) return;
+        request.update_id.length === 0 || !consumedPath ||
+        !_isOwnerOnlyRegularFile(consumedPath)) return;
     writeFileSync(armedPath, JSON.stringify({ ...request, ts: Date.now() }), {
       mode: 0o600,
       flag: "w",
@@ -3416,8 +3446,11 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
     return;
   }
   if (request.update_id !== undefined) {
+    const consumedPath = typeof request.update_id === "string"
+      ? _fleetUpdateConsumedPath(dir, request.update_id)
+      : null;
     if (typeof request.update_id !== "string" || request.update_id.length === 0 ||
-        !_isOwnerOnlyRegularFile(_fleetUpdateConsumedPath(dir, request.update_id))) {
+        !consumedPath || !_isOwnerOnlyRegularFile(consumedPath)) {
       _removeIfOwnerOnlyRegularFile(armedPath);
       return;
     }

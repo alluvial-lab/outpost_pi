@@ -376,6 +376,7 @@ const {
   _handleControl,
   _parseControlFrame,
   _setHotReloadingForTest,
+  _createFleetUpdateConsumptionAdapterForTest,
   _sendCaptureDeliveredNote,
   _deliverMeshMessageToAgentForTest,
   CTRL_PREFIX,
@@ -383,6 +384,7 @@ const {
 const { runStandaloneOutpostPiCli } = await import("./extension/command_surface/standalone_cli.js");
 const { acquireCwdLock } = await import("./session/cwd_lock.js");
 const { createRelayTransportPort } = await import("./extension/relay_transport.js");
+const { createFleetArmRestartHandler } = await import("./extension/fleet_update.js");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -7167,6 +7169,62 @@ describe("model meta", () => {
 
     const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
+  });
+
+  test("fleet update consumption is target-scoped in a shared home and survives target restart", () => {
+    const sharedHome = mkdtempSync(join(tmpdir(), "pi-ext-fleet-consumption-shared-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = sharedHome;
+    const updateId = "fleet-shared-home-run";
+    const targets = ["/vm@sibling-a", "/vm@sibling-b", "/vm@coordinator"];
+    const arms = new Map<string, ReturnType<typeof vi.fn>>();
+
+    try {
+      for (const target of targets) {
+        const armPath = join(sharedHome, `.test-hot-reload-armed-${target.replaceAll("/", "_")}`);
+        const nonce = `nonce-${target}`;
+        const consumption = _createFleetUpdateConsumptionAdapterForTest(target);
+        const arm = vi.fn((receivedUpdateId: string) => {
+          writeFileSync(
+            armPath,
+            JSON.stringify({ nonce, update_id: receivedUpdateId }),
+            { mode: 0o600, flag: "wx" },
+          );
+          return true;
+        });
+        arms.set(target, arm);
+        const handle = createFleetArmRestartHandler({
+          isDisposed: () => false,
+          hotReloadEnabled: () => true,
+          hasActiveWork: () => false,
+          consumeUpdate: consumption.consume,
+          arm,
+        });
+
+        // The readiness phase is side-effect free. Each target then commits its
+        // own nonce-bound arm even though all adapters share one home directory.
+        expect(handle(updateId, "prepare")).toEqual({ state: "armed" });
+        expect(arm).not.toHaveBeenCalled();
+        expect(handle(updateId, "commit")).toEqual({ state: "armed" });
+        expect(arm).toHaveBeenCalledWith(updateId);
+        expect(JSON.parse(readFileSync(armPath, "utf8"))).toEqual({ nonce, update_id: updateId });
+      }
+
+      expect(readdirSync(sharedHome).filter((name) => name.startsWith(".fleet-update-consumed-"))).toHaveLength(3);
+
+      // Recreating each target's adapter models a process restart: its own
+      // durable marker rejects the replay, while sibling markers remain usable.
+      for (const target of targets) {
+        const replay = _createFleetUpdateConsumptionAdapterForTest(target);
+        expect(replay.consume(updateId)).toBe(false);
+        expect(replay.consume(`${updateId}-next`)).toBe(true);
+      }
+      for (const arm of arms.values()) expect(arm).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(sharedHome, { recursive: true, force: true });
+    }
   });
 
   test("hot-reload: agent_settled claims once, writes marker before graceful SIGTERM", async () => {
