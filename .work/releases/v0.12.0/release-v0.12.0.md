@@ -1,7 +1,7 @@
 ---
 id: release-v0.12.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
@@ -80,3 +80,32 @@ gate-cruft-unused-legacy-fleet-arm-builder, gate-docs-pi-extension-skill-fleet-m
   +28 artifacts (slim 77f81c70…, fat a18f7a83…).
 - Relay 0.5.5 (instrument) deploying with this round; deploy order per
   runbook (relay swap → pis auto-reconnect; app via rc.2 APK).
+
+
+## Shipped
+
+Date shipped: 2026-09-08. Mapping: tag-based (v0.12.0 pushed; operator
+release on GitHub published with fat + slim-arm64 +28 artifacts). Items: 9
+(8 feature items + 1 instrument story). Gate totals: six full gates + two
+targeted rc.2 gates — 0 critical/0 high findings shipped; 6 medium/low
+parked unbound in backlog. Battery: pairing suite + 5 live lanes + 600s
+seeded soak (seed 20260908) all green. UAT: operator ack 2026-09-08
+(rc.2 in daily-driver use through the night per captures).
+
+| id | kind | git ref |
+|----|------|---------|
+| feature-fleet-update-from-mobile | feature | 5f7f54d72 |
+| feature-fleet-update-from-mobile-wire-protocol | story | 5f7f54d72 |
+| feature-fleet-update-from-mobile-extension-coordinator | story | 5f7f54d72 |
+| feature-fleet-update-from-mobile-app-ui | story | 5f7f54d72 |
+| feature-mobile-session-context-telemetry | feature | 5f7f54d72 |
+| feature-mobile-session-context-telemetry-schema-codegen | story | 5f7f54d72 |
+| feature-mobile-session-context-telemetry-extension-sampler | story | 5f7f54d72 |
+| feature-mobile-session-context-telemetry-app-render | story | 5f7f54d72 |
+| story-metronome-paired-frame-hash-instrument | story | 5f7f54d72 |
+
+Deferred/live items on record: metronome repro harness (verdict #6 —
+tailscale-layer severance question), chat_page banner-consumption wiring,
+capture-buffer retention tuning, connect-cancel race fix — all unbound
+backlog/active, none blocking. The metronome teardown FIX story remains
+active with its probe discoveries.
