@@ -72,6 +72,32 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const requireFromExt = createRequire(path.join(here, '..', 'pi-extension', 'package.json'));
 const WebSocket = requireFromExt('ws');
 
+// --- ct flood (phone-shape burst reproduction) ---------------------------------
+// The phone's metronome bursts are NOT rooms/presence snapshots (a full 19-room
+// snapshot is ~5.6KB; identically-subscribed harness peers never saw >10KB
+// frames) — they are daemon→phone ct rehydration envelopes (~730KB + ~400KB
+// pairs per reconnect). ct is opaque to the relay, so two harness peers can
+// reproduce the exact wire shape (huge frames into a slow reader) without any
+// pairing: the SINK (--flood-peer) pokes the FLOODER (--serve-flood) after
+// each (re)connect, and the flooder answers with the burst pair.
+
+const FLOOD_ROOM_DEFAULT = 'harness-bench';
+const FLOOD_GAP_MS = 8000; // second frame lands ~8s after the first (phone cadence)
+
+function envelopeFrame(destPk, room, payloadBytes) {
+  return JSON.stringify({
+    peer: destPk,
+    room,
+    ct: crypto.randomBytes(payloadBytes).toString('base64'),
+  });
+}
+
+// JSON overhead ≈ fixed keys + b64 expansion: payload = (target - overhead)·3/4
+function payloadBytesForTargetFrame(targetFrameBytes) {
+  const overhead = 96;
+  return Math.max(1, Math.round(((targetFrameBytes - overhead) * 3) / 4));
+}
+
 // --- CLI ---------------------------------------------------------------------
 
 function parseArgs(argv) {
@@ -114,6 +140,13 @@ const HELP = `Usage: severance_harness.mjs [options]
                            phone's metronome cycle (reconnect → snapshot
                            replay burst → quiet) without waiting for strikes
                            (default 0 = off)
+  --flood-peer <pk>        SINK mode: auth into --flood-room and poke this
+                           flooder peer after every (re)connect so it sends
+                           the ct burst pair at this slow reader
+  --flood-room <room>      room for sink/flooder (default harness-bench)
+  --serve-flood <pk:big:small>  FLOODER mode: auth into --flood-room; on every
+                           poke envelope from the sink send ct frames sized
+                           big/small (target frame bytes, phone-shaped)
   --duration-min <n>       stop after n minutes (default 0 = until Ctrl-C)
   --out <path>             JSONL output path (default auto)
   --fast                   shorthand for --read-ms 0 --pause-ms 0`;
@@ -133,10 +166,23 @@ const cfg = {
   watchdogMs: Number(args['watchdog-ms'] ?? 60_000),
   provokeEveryMs: Number(args['provoke-every-ms'] ?? 0),
   cycleEveryMs: Number(args['cycle-every-ms'] ?? 0),
+  floodPeer: args['flood-peer'] ?? null,
+  floodRoom: args['flood-room'] ?? FLOOD_ROOM_DEFAULT,
+  serveFlood: args['serve-flood'] ?? null,
   durationMin: Number(args['duration-min'] ?? 0),
   deviceId: (args['device-id'] ?? `severance-harness-${args.label ?? 'leg'}`).slice(0, 128),
   room: args.room ?? 'main',
 };
+if (cfg.serveFlood) {
+  const parts = cfg.serveFlood.split(':');
+  if (parts.length !== 3) {
+    console.error('--serve-flood expects <sinkPk>:<bigFrameBytes>:<smallFrameBytes>');
+    process.exit(2);
+  }
+  cfg.serveFlood = { sinkPk: parts[0], big: Number(parts[1]), small: Number(parts[2]) };
+  cfg.room = cfg.floodRoom; // flooder must be reachable in the flood room
+}
+if (cfg.floodPeer) cfg.room = cfg.floodRoom; // sink likewise
 if (!Number.isFinite(cfg.readMs) || !Number.isFinite(cfg.pauseMs)) {
   console.error('read-ms/pause-ms must be numbers');
   process.exit(2);
@@ -268,6 +314,11 @@ const header = {
   watchdogMs: cfg.watchdogMs,
   provokeEveryMs: cfg.provokeEveryMs,
   cycleEveryMs: cfg.cycleEveryMs,
+  floodPeer: cfg.floodPeer,
+  floodRoom: cfg.floodRoom,
+  serveFlood: cfg.serveFlood
+    ? { sinkPk: cfg.serveFlood.sinkPk, big: cfg.serveFlood.big, small: cfg.serveFlood.small }
+    : null,
   node: process.version,
   host: os.hostname(),
   out: outPath,
@@ -373,7 +424,10 @@ function connectOnce() {
         // First post-auth frame = readiness boundary (relay has no auth ACK).
         authed = true;
         log(`conn ${conn}: authenticated`);
-        if (!subscribed) {
+        if (cfg.serveFlood) {
+          // FLOODER: no subscriptions, no duty cycle; the poke listener in the
+          // frame handler below does the work.
+        } else if (!subscribed) {
           subscribed = true;
           // Mirrors ConnectionManager.subscribeToPeers exactly (lockstep
           // presence + rooms, then one-shot snapshots for hydration).
@@ -381,8 +435,13 @@ function connectOnce() {
           send({ type: 'subscribe_rooms', peers }, 'subscribe');
           send({ type: 'presence_check', peers }, 'subscribe');
           send({ type: 'rooms_check', peers }, 'subscribe');
+          if (cfg.floodPeer) {
+            // SINK: poke the flooder so this reconnect's burst lands on THIS
+            // connection — the daemon→phone rehydration shape.
+            send(JSON.parse(envelopeFrame(cfg.floodPeer, cfg.floodRoom, 1)), 'flood-poke');
+          }
         }
-        startDutyCycle();
+        if (!cfg.serveFlood) startDutyCycle();
       }
       // fall through to frame accounting below for this frame too
     }
@@ -394,6 +453,8 @@ function connectOnce() {
     const frameHash = fnv1a64(data);
     runHash = foldRunning(runHash, BigInt(framesIn), frameHash);
     lastFrame = { idx: framesIn, bytes: data.length, hash: hex16(frameHash) };
+    const kind =
+      parsed?.type ?? (isBinary ? 'binary' : parsed?.ct !== undefined ? 'envelope' : 'json?');
     row({
       ev: 'frame',
       conn,
@@ -401,8 +462,38 @@ function connectOnce() {
       bytes: data.length,
       hash: hex16(frameHash),
       run: hex16(runHash),
-      kind: parsed?.type ?? (isBinary ? 'binary' : 'json?'),
+      kind,
     });
+
+    // FLOODER: every inbound typeless envelope is a poke from the sink —
+    // answer with the phone-shaped ct burst pair on this connection.
+    if (cfg.serveFlood && parsed && parsed.ct !== undefined && parsed.type === undefined) {
+      send(
+        JSON.parse(
+          envelopeFrame(
+            cfg.serveFlood.sinkPk,
+            cfg.floodRoom,
+            payloadBytesForTargetFrame(cfg.serveFlood.big),
+          ),
+        ),
+        'flood-big',
+      );
+      setTimeout(
+        () =>
+          ws.readyState === WebSocket.OPEN &&
+          send(
+            JSON.parse(
+              envelopeFrame(
+                cfg.serveFlood.sinkPk,
+                cfg.floodRoom,
+                payloadBytesForTargetFrame(cfg.serveFlood.small),
+              ),
+            ),
+            'flood-small',
+          ),
+        FLOOD_GAP_MS,
+      );
+    }
   });
 
   ws.on('ping', () => {
