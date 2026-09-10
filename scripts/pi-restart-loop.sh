@@ -17,8 +17,12 @@ set -euo pipefail
 # Ensure pi is on PATH (tmux/systemd contexts may not source ~/.bashrc).
 export PATH="$HOME/.local/bin:$PATH"
 
-CWD="${1:-$(pwd)}"
-if [ "${1:-}" = "$CWD" ]; then shift; fi
+# First positional arg is pi's cwd ONLY when it names an existing directory;
+# everything else (e.g. `--continue` alone) passes through to pi. The old
+# `CWD="${1:-$(pwd)}"` form always consumed $1 because the comparison matched
+# itself — `--continue` became a bogus cwd and broke `cd`.
+CWD="$(pwd)"
+if [ "${1:-}" != "" ] && [ -d "$1" ]; then CWD="$1"; shift; fi
 PI_ARGS=("$@")
 REMOTE_DIR="${OUTPOST_PI_HOME:-$HOME/.pi/remote}"
 CHILD_PID_FILE="$(mktemp "${TMPDIR:-/tmp}/outpost-pi-child.XXXXXX")"
@@ -57,7 +61,7 @@ run_pi_foreground() {
 
 echo "[pi-restart-loop] cwd=$CWD args=${PI_ARGS[*]}"
 
-cd "$CWD"
+cd -- "$CWD"
 
 while true; do
   # Run pi in the FOREGROUND so it gets the terminal (TUI requires it).
