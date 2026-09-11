@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@noble/ciphers": "^2.3.0",
-    "@noble/curves": "^2.3.0",
+    "@noble/curves": "^2.4.0",
     "ajv": "^8.17.0",
     "ajv-formats": "^3.0.0",
     "tsx": "^4.23.12",
