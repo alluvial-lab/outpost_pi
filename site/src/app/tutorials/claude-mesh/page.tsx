@@ -92,31 +92,31 @@ Agent name [api]: reviewer`}
           <p>
             That name is how other agents address this Claude in{" "}
             <InlineCode>list_peers</InlineCode> and{" "}
-            <InlineCode>agent_send</InlineCode>. Then it wires three things into
+            <InlineCode>agent_send</InlineCode>. Then it wires two things into
             Claude Code and launches it.
           </p>
         </DocsSection>
 
         <DocsSection id="injected" title="What it wires in">
           <p>
-            <InlineCode>outpost-pi claude</InlineCode> is a wrapper. It injects
-            three things, then spawns <InlineCode>claude</InlineCode> in the
-            target folder.
+            <InlineCode>outpost-pi claude</InlineCode> is a wrapper. It wires
+            two things into the Claude process it spawns, then runs{" "}
+            <InlineCode>claude</InlineCode> in the target folder.
           </p>
 
           <DocsSubsection id="mcp" title="1. An MCP server (the mesh tools)">
             <p>
-              It registers a stdio MCP server named{" "}
-              <InlineCode>outpost-pi-mesh</InlineCode> in Claude&apos;s{" "}
-              <strong className="text-fg">local scope</strong> — per-folder,
-              stored in <InlineCode>~/.claude.json</InlineCode>, not written into
-              the project directory and not committed to version control:
+              It writes a throwaway MCP config — a temp file pointing at the
+              packaged <InlineCode>mesh_server.js</InlineCode> — and hands it
+              to Claude for this one process via{" "}
+              <InlineCode>--mcp-config</InlineCode>. Nothing is registered in{" "}
+              <InlineCode>~/.claude.json</InlineCode>, nothing is written into
+              the project folder, and the temp file is deleted when the session
+              exits. (The wrapper also removes a legacy{" "}
+              <InlineCode>outpost-pi-mesh</InlineCode> local-scope entry left
+              by older versions, so a plain <InlineCode>claude</InlineCode> in
+              the same folder never inherits the mesh by accident.)
             </p>
-            <CodeBlock
-              code="claude mcp add outpost-pi-mesh -s local -- node …/mesh_server.js --cwd <folder>"
-              label="What the wrapper runs (you don't type this)"
-              language="bash"
-            />
             <p>
               The server exposes three tools to Claude — the same mesh API Pi
               agents get:
@@ -146,11 +146,12 @@ Agent name [api]: reviewer`}
           <DocsSubsection id="skill" title="2. The agent-network skill">
             <p>
               An MCP server gives Claude the tools but not the{" "}
-              <em className="text-fg">habits</em>. Skills load only from disk, so
-              the wrapper deploys one to{" "}
-              <InlineCode>~/.claude/skills/agent-network/SKILL.md</InlineCode>.
-              The skill&apos;s description self-gates to mesh contexts, so it
-              doesn&apos;t intrude on unrelated Claude sessions. It teaches
+              <em className="text-fg">habits</em>. Skills load only from disk,
+              so the wrapper appends the packaged agent-network skill to this
+              session&apos;s system prompt (via{" "}
+              <InlineCode>--append-system-prompt-file</InlineCode>) — nothing
+              is deployed into <InlineCode>~/.claude/skills</InlineCode>, and
+              unrelated Claude sessions are untouched. The skill teaches
               Claude to:
             </p>
             <ul className="ml-6 list-disc space-y-2">
@@ -175,40 +176,45 @@ Agent name [api]: reviewer`}
             </ul>
           </DocsSubsection>
 
-          <DocsSubsection id="channels" title="3. Channel push (wake on message)">
+          <DocsSubsection id="channels" title="Message delivery: polling by default">
             <p>
-              When a message lands, the MCP server emits a{" "}
-              <InlineCode>notifications/claude/channel</InlineCode>. Whether that
-              reaches Claude immediately depends on one launch flag:
+              When a message lands, the MCP server buffers it in this
+              agent&apos;s inbox. Claude reads pending messages by calling{" "}
+              <InlineCode>get_messages</InlineCode> — the skill has it do so at
+              the start of every turn, so an incoming message is seen the next
+              time you prompt it (turn-boundary polling). That is the default,
+              and it needs no special flags.
             </p>
-            <ul className="ml-6 list-disc space-y-2">
-              <li>
-                <strong className="text-fg">Push</strong> — with{" "}
-                <InlineCode>--dangerously-load-development-channels server:outpost-pi-mesh</InlineCode>{" "}
-                on (the wrapper sets it), the notification{" "}
-                <strong className="text-fg">wakes Claude</strong> right away, so
-                it reacts to an incoming message without you prompting it.
-              </li>
-              <li>
-                <strong className="text-fg">Poll</strong> — without that flag,
-                Claude only sees the message the next time it calls{" "}
-                <InlineCode>get_messages</InlineCode> (i.e. on its next turn).
-              </li>
-            </ul>
+            <p>
+              Immediate wake is an opt-in: with{" "}
+              <InlineCode>--dangerously-load-development-channels server:outpost-pi-mesh</InlineCode>{" "}
+              passed through (see below), the server&apos;s channel
+              notification <strong className="text-fg">wakes Claude</strong>{" "}
+              right away, so it reacts to an incoming message without you
+              prompting it.
+            </p>
           </DocsSubsection>
         </DocsSection>
 
-        <DocsSection id="flags" title="The --dangerously-* flags">
-          <p>The wrapper launches Claude with two flags:</p>
+        <DocsSection id="flags" title="Safe defaults, opt-in flags">
+          <p>
+            The wrapper launches Claude with its normal permission policy —
+            Claude asks you before running tools, and mesh messages arrive via{" "}
+            <InlineCode>get_messages</InlineCode> polling. It never passes a{" "}
+            <InlineCode>--dangerously-*</InlineCode> flag for you. For
+            unattended agent-to-agent work you can opt in yourself by appending
+            the flags (they are forwarded to <InlineCode>claude</InlineCode>{" "}
+            verbatim):
+          </p>
           <CodeBlock
-            code="claude --dangerously-load-development-channels server:outpost-pi-mesh --dangerously-skip-permissions"
-            label="Launch (the wrapper runs this)"
+            code="outpost-pi claude ~/code/api --dangerously-skip-permissions --dangerously-load-development-channels server:outpost-pi-mesh"
+            label="Opt in to both (you type this)"
             language="bash"
           />
           <Callout variant="warning" title="Know what these flags do">
             <InlineCode>--dangerously-skip-permissions</InlineCode>{" "}
-            <strong className="text-fg">auto-approves every tool call</strong> —
-            Claude runs Bash, edits, and writes without prompting you, which is
+            <strong className="text-fg">auto-approves every tool call</strong>{" "}
+            — Claude runs Bash, edits, and writes without prompting you, which is
             what makes unattended agent-to-agent work possible but also removes
             your approval gate. <InlineCode>--dangerously-load-development-channels</InlineCode>{" "}
             opens a development channel for the local MCP server (it shows a

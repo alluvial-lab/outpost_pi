@@ -384,6 +384,27 @@ Name collisions in the same directory get a numeric suffix automatically
 (`backend`, `backend#2`, `backend#3`). The broker assigns it and returns the
 real address to the peer.
 
+### Claude Code on the mesh (`outpost-pi claude`)
+
+`outpost-pi claude [cwd] [claude-flags...]` starts a Claude Code session as a
+named mesh peer in that folder (first run in a folder asks for an agent name).
+The wrapper passes an ephemeral `--mcp-config` that loads the packaged mesh MCP
+server (`list_peers`, `agent_send`, `get_messages`) for that one process only,
+appends the packaged agent-network skill via `--append-system-prompt-file`, and
+forwards any trailing flags to `claude` verbatim.
+
+Launch defaults are safe: Claude keeps its own permission policy (every tool
+call asks), and mesh messages are seen at the next turn boundary through
+`get_messages` polling. `--dangerously-skip-permissions` (auto-approve every
+tool call) and `--dangerously-load-development-channels
+server:outpost-pi-mesh` (wake Claude immediately on incoming messages) are
+operator opt-ins — pass them through yourself for unattended operation:
+
+```bash
+outpost-pi claude ~/code/api --dangerously-skip-permissions \
+  --dangerously-load-development-channels server:outpost-pi-mesh
+```
+
 ---
 
 ## Command reference

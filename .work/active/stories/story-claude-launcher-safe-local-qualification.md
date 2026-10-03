@@ -1,7 +1,7 @@
 ---
 id: story-claude-launcher-safe-local-qualification
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, workflow]
 parent: null
 depends_on: []
@@ -23,94 +23,129 @@ report when messages are actually ingested during a repair round.
 
 Qualify the existing optional Claude mesh adapter, not a new mobile harness
 target. Scope is one bounded extension CLI change plus local integration
-verification. R1 and R2 are prerequisites for the consumer's first real use;
-this item is requirements intake, not an instruction to launch an unrestricted
-Claude session or edit the consumer checkout. Implementation has not begun.
+verification. R1 and R2 are prerequisites for the consumer's first real use.
 
 ## Requirements and acceptance
 
-- [ ] **R1 — safe launch authority (required).** Stop injecting
-  `--dangerously-skip-permissions` by default. Permission bypass must require
-  an explicit operator opt-in. Prefer existing Claude flag passthrough over a
-  duplicate persistent permission configuration. Ordinary launch preserves
-  Claude's configured permission policy; the wrapper must not silently widen
-  it. Regression-test default argv and explicit opt-in, along with leading
-  cwd and flag-value passthrough.
-- [ ] **R2 — local polling path (required).** Make the launcher usable without
-  `--dangerously-load-development-channels`, which is also currently injected
-  unconditionally. Channels and permission bypass must be independent choices;
-  a polling-only launch must not require either dangerous flag. Preserve an
-  explicit channels opt-in rather than deleting the optional capability.
-- [ ] Run a real interactive Claude smoke through the built launcher with
-  channels disabled and without permission bypass. Record revision/build,
-  Claude version, exact non-secret invocation, permission approvals, and the
-  distinction between transport ACK and agent ingestion. Establish: MCP
-  registers; `list_peers` discovers a live Pi peer at another cwd; unicast gets
-  a received ACK; a Pi-to-Claude envelope waits in the inbox until the next
-  prompted turn; `get_messages` returns the envelope and a subsequent drain is
-  empty; Claude replies with the received envelope id as `re`, and the Pi peer
-  observes that correlation. Immediate wake is not required. Do not present a
-  direct MCP client test or `claude -p` run as interactive qualification.
-- [ ] **R4 — subdirectory confirmation (required).** Record source-backed cwd
-  behavior and live-smoke observations for a dedicated child directory under a
-  checkout. Check inherited MCP overrides, config lookup, identity/lock,
-  package-relative skill resolution, generated MCP config, and normal Claude
-  permissions for parent-tree access. Parent-file operations may require
-  explicit Claude approval/additional-directory configuration; the cwd split
-  is not a filesystem isolation boundary. Use an owned scratch checkout, not
-  nextup's live repair files.
-- [ ] Update the owning launcher usage/docs for the actual safe defaults,
-  explicit opt-ins, and turn-boundary polling limitation. Run extension
-  typecheck/tests/build and a bounded standalone-story review. If interactive
-  auth/TTY/operator approval is unavailable, report the precise unmet
-  prerequisite and leave R2 unqualified rather than weakening acceptance.
+- [x] **R1 — safe launch authority (required).** The wrapper no longer injects
+  `--dangerously-skip-permissions` (or any `--dangerously-*` flag). Permission
+  bypass is an operator opt-in via normal claude-flag passthrough; no duplicate
+  permission configuration was added. Regression tests pin the default argv.
+- [x] **R2 — local polling path (required).** The wrapper no longer injects
+  `--dangerously-load-development-channels`; a polling-only launch needs no
+  dangerous flag, and channels remain available as explicit passthrough. Live
+  interactive smoke completed (evidence below).
+- [x] **R4 — subdirectory confirmation (required).** Confirmed by source and by
+  live smoke (evidence below). No change requested in the singleton lock or
+  folder-scoped broadcast semantics.
+- [x] Launcher usage docs updated to the actual safe defaults (help text,
+  `pi-extension/README.md`, site tutorial `site/src/app/tutorials/claude-mesh`).
+- [x] Extension typecheck/tests/build green; site lint/build green; bounded
+  standalone-story review passed.
 
-**R3 — optional stretch, not completion-blocking:** headless `claude -p` with
-channels on this box, only if cheap after the required path. Keep its evidence
-separate; skip with a reason if it requires significant setup or authority.
+**R3 — optional stretch (completed with caveat):** headless `claude -p` +
+channels qualification. The launcher itself works headless (see evidence);
+MCP tool calls are blocked by Claude's permission system in `-p` mode, so
+unattended headless use additionally needs an explicit
+`--allowedTools "mcp__outpost-pi-mesh__*"` (or an allow rule in settings) —
+an opt-in, consistent with R1's posture. No further change commissioned.
 
-## Source grounding
+## Implementation notes
 
-Direct-read only; no exploratory fan-out needed. Baseline `9cca09b59`:
+- Execution capability: inline implement (single cohesive story, one owner);
+  host session on the orchestrator provider, no implementation subagents.
+- Review weight: `standard` (default) — standalone story, bounded inline pass.
+- Files changed:
+  - `pi-extension/src/extension/command_surface/standalone_cli.ts` — extracted
+    `splitClaudeCliArgs` / `buildClaudeLaunchArgs` pure helpers; removed both
+    injected `--dangerously-*` flags; safe-default help text; headless wizard
+    TTY guard.
+  - `pi-extension/src/extension/command_surface/standalone_cli.test.ts` — new:
+    cwd/passthrough splitting (incl. flag-value-not-cwd), argv construction
+    with/without packaged skill, and a safe-default regression guard asserting
+    no `--dangerously-*` flag is ever injected.
+  - `pi-extension/README.md` — new "Claude Code on the mesh" section (safe
+    defaults, opt-in passthrough incantation).
+  - `site/src/app/tutorials/claude-mesh/page.tsx` — rewritten "What it wires
+    in" (ephemeral `--mcp-config`, `--append-system-prompt-file`; the page
+    still described the retired `mcp add -s local` + `~/.claude/skills`
+    deployment), polling-by-default delivery section, and an "opt-in flags"
+    section replacing "the wrapper sets these".
+- Discovered defect fixed in passing (fail-fast boundary): headless
+  `outpost-pi claude -p` with no folder config hung on the wizard's readline
+  (unsettled top-level await, Node exit 13). Now exits 1 immediately with the
+  two real options (run interactively once, or pre-create
+  `<cwd>/.pi/outpost-pi/config.json` — the documented scripted path).
+- Simplification: two injected flags and their ordering deleted; no new
+  config surface, no permission-policy subsystem — plain passthrough.
+- Discrepancies from design: none.
+- Adjacent issues parked (observations, not blockers):
+  - Pi→Claude bodies sent as objects by this Pi runtime arrived at the Claude
+    MCP inbox as a JSON-encoded **string** (double serialization somewhere on
+    the send path). Legal per envelope contract (body is free-form) and
+    parseable; worth a look if structured bodies matter to mesh consumers.
+  - `scripts/cmux-bootstrap-agents.sh` (legacy cmux surface, not the
+    `outpost-pi claude` launcher) still hardcodes
+    `--dangerously-skip-permissions` for its own panes; out of scope here.
 
-- `pi-extension/src/extension/command_surface/standalone_cli.ts`:
-  `launchClaudeCli` accepts only a leading positional cwd and forwards later
-  arguments; spawns Claude in the resolved target directory. It unconditionally
-  appends both dangerous flags today. It also invokes
-  `claude mcp remove outpost-pi-mesh -s local` in that directory before creating
-  a temporary MCP configuration; qualification must account for this persisted
-  legacy-registration cleanup, rather than claim launch is wholly side-effect
-  free.
-- The MCP executable and optional appended `skills/agent-network/SKILL.md`
-  resolve from the package entrypoint, not the consumer cwd. Generated MCP
-  configuration has an absolute executable path and no baked `--cwd`.
-- `pi-extension/src/mcp/mesh_server.ts` uses its inherited `process.cwd()`, not
-  `CLAUDE_PROJECT_DIR`; `OUTPOST_PI_MCP_CWD` and explicit `--cwd` can override
-  it. It canonicalizes mesh identity and calls `acquireCwdLock(_cwd)` without
-  a name argument. Do not generalize that Claude call into a statement that
-  all current Pi lock users are cwd-only: the lock helper supports names.
-- `pi-extension/src/session/local_config.ts` checks the exact cwd's
-  `.pi/outpost-pi/config.json` (or `OUTPOST_PI_DIRECT_CONFIG`), not an ancestor's
-  config. A new child directory normally triggers the launcher setup wizard.
-- The MCP server enqueues incoming envelopes before attempting an optional
-  channel notification. `get_messages` drains via `inbox.splice(0)`; the
-  instructions require a call at each turn start. This supports a polling
-  path in source but is not yet live Claude-host qualification.
+## Verification evidence
 
-## Boundaries and simplification
+Code (baseline `9cca09b59` → this branch):
 
-Keep the current Claude adapter's singleton behavior, folder-scoped local
-broadcast, cross-PC transport, and consumer worktree policy unchanged. No
-nextup edits; no relay, app, or dormant cockpit changes. No global Claude
-permission changes or restarts of existing agents for this smoke.
+- `corepack pnpm typecheck` ✓; targeted suite (226 tests) ✓; full suite
+  **66 files, 1163 passed / 3 skipped** ✓; `corepack pnpm build` ✓ (run again
+  after the TTY guard; tests predate only the guard, which no test exercises).
+- `site`: `pnpm lint` + `pnpm build` ✓ (tutorial page compiles, route listed).
 
-Remove implicit dangerous launch options rather than adding a parallel
-permission-policy subsystem. Prefer native passthrough flags and small
-behavioral regression tests. Fix only documentation assertions touched by this
-slice; broader product-positioning changes are not commissioned.
+Live R2 interactive smoke (2026-10-03, this box; Pi peer = this session at
+`/home/agent/projects/outpost_pi@outpost_pi`; scratch cwd
+`debug/claude-mesh-smoke` — gitignored, removed after capture):
 
-## Execution status
+- Revision: working tree over `9cca09b59`, built `dist/` (post-change).
+  Claude Code **2.1.284** (Opus 5.5, Claude Max). Invocation (non-secret):
+  `node pi-extension/dist/index.js claude /home/agent/projects/outpost_pi/debug/claude-mesh-smoke`
+  — no channels flag, no permission bypass. Claude's own TUI default showed
+  "auto mode on" (its local default, not wrapper-injected).
+- Wizard ran in the child dir (exact-cwd config lookup confirmed;
+  `.pi/outpost-pi/config.json` with `agent_name: claude-smoke` created);
+  folder-trust dialog answered by the operator side.
+- MCP registered without channels: transcript shows
+  "Called outpost-pi-mesh 2 times"; no `--dangerously-*` flag on argv
+  (pinned by unit tests).
+- `list_peers` returned the full local mesh verbatim, including
+  `/home/agent/projects/outpost_pi@outpost_pi`.
+- Claude→Pi unicast ACK verbatim:
+  `Delivered to /home/agent/projects/outpost_pi@outpost_pi`; the message was
+  delivered into the Pi turn (this session) — transport ACK ≠ ingestion;
+  ingestion observed here on the Pi side.
+- Pi→Claude: the reply sat in the Claude inbox until the next prompted turn;
+  `get_messages` drained it (from/re/id verbatim in transcript); a second
+  `get_messages` returned `(no messages)` — turn-boundary polling confirmed,
+  immediate wake not used.
+- `re`-correlation round-trip both directions: Claude's step-2 reply arrived
+  at the Pi peer with `re=` set to the Pi send's id; Claude's drain echoed the
+  Pi reply's `re` pointing at its own step-1 id.
 
-Scoped only. No live Claude process launched, code changed, or smoke tests run.
-No dependencies; no release binding. R1/R2 implementation and qualification
-remain outstanding. Optional R3 does not delay the consumer handoff.
+R4 (live): launcher targeting a child dir of the checkout worked end to end —
+identity/lock on the child cwd (no conflict with the root Pi agent), packaged
+MCP + skill resolved from package paths, ephemeral MCP config per process.
+Parent-tree access from the child cwd: Claude read
+`/home/agent/projects/outpost_pi/README.md` through its sandboxed shell with
+**no permission prompt** (sandbox permits reads outside cwd); parent-tree
+writes/exec remain governed by Claude's permission gates — the cwd split is
+mesh identity, not filesystem isolation. The launcher's one persisted side
+effect (legacy `claude mcp remove outpost-pi-mesh -s local` cleanup) still
+applies in shared checkouts.
+
+R3 (headless, optional): `claude -p` + passthrough channels flag, pre-created
+config: launcher exited 0 within timeout, MCP registered; `list_peers` /
+`get_messages` were **permission-blocked** in `-p` mode (no TTY to approve) —
+Claude's own guidance: allow `mcp__outpost-pi-mesh__*` for unattended use.
+First attempt (no config) surfaced the wizard hang, now fail-fast (exit 1).
+
+## Boundaries kept
+
+Singleton per-cwd lock, folder-scoped local broadcast, cross-PC transport,
+and consumer worktree policy untouched. No nextup files touched; scratch
+folder was in this repo's gitignored `debug/` and was removed after capture.
+No relay, app, or dormant cockpit changes.

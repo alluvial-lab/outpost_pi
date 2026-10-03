@@ -204,23 +204,71 @@ function outpostPiCliHelpText(): string {
     "",
     "Agent mesh:",
     "  peers                           List agents on the local + cross-PC mesh",
-    "  claude [cwd]                    Start Claude Code connected to the agent mesh",
+    "  claude [cwd] [claude-flags]     Start Claude Code on the agent mesh",
+    "                                  (safe defaults: Claude permissions stay on,",
+    "                                  messages poll at each turn via get_messages;",
+    "                                  pass claude flags through to opt in to more)",
   ].join("\n");
+}
+
+/** Split `outpost-pi claude` argv into the optional leading cwd and the verbatim claude-flag passthrough.
+ *
+ * Contract: `outpost-pi claude [cwd] [claude-flags...]`. The optional cwd is
+ * ONLY the leading positional (first token, not a flag); everything after it
+ * is forwarded verbatim to the `claude` binary (e.g. `--resume`, `-c`,
+ * `-p "prompt"`). Restricting cwd to the leading token avoids mistaking a
+ * flag's value (e.g. the id in `--resume <id>`) for the cwd. With no leading
+ * positional, the cwd defaults to the invoking process cwd and ALL args pass
+ * through.
+ */
+export function splitClaudeCliArgs(
+  args: readonly string[],
+): { targetCwd: string; passthroughArgs: string[] } {
+  const hasCwdArg = args.length > 0 && !args[0]!.startsWith("-");
+  return {
+    targetCwd: hasCwdArg ? args[0]! : process.cwd(),
+    passthroughArgs: hasCwdArg ? args.slice(1) : [...args],
+  };
+}
+
+/** Build the claude launch flags the wrapper owns: the ephemeral mesh MCP config
+ *  plus (when packaged) the agent-network skill append.
+ *
+ * Deliberately NO `--dangerously-*` flags. The wrapper must not silently widen
+ * Claude's authority: `--dangerously-skip-permissions` (auto-approve every tool
+ * call) and `--dangerously-load-development-channels server:outpost-pi-mesh`
+ * (immediate wake on incoming mesh messages) are operator opt-ins, passed
+ * through verbatim as trailing claude-flags when wanted. Without them Claude
+ * keeps its configured permission policy and sees mesh messages at the next
+ * turn boundary through `get_messages` polling.
+ */
+export function buildClaudeLaunchArgs(mcpConfigPath: string, skillPath: string | null): string[] {
+  return [
+    "--mcp-config", mcpConfigPath,
+    ...(skillPath ? [`--append-system-prompt-file=${skillPath}`] : []),
+  ];
 }
 
 /** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on missing build output. */
 export async function launchClaudeCli(args: string[], entrypointUrl: string): Promise<void> {
-  // Contract: `outpost-pi claude [cwd] [claude-flags...]`. The optional cwd is
-  // ONLY the leading positional (first token, not a flag); everything after it
-  // is forwarded verbatim to the `claude` binary (e.g. `--resume`, `-c`,
-  // `-p "prompt"`). Restricting cwd to the leading token avoids mistaking a
-  // flag's value (e.g. the id in `--resume <id>`) for the cwd.
-  const hasCwdArg = args.length > 0 && !args[0]!.startsWith("-");
-  const targetCwd = hasCwdArg ? args[0]! : process.cwd();
-  const passthroughArgs = hasCwdArg ? args.slice(1) : args;
+  const { targetCwd, passthroughArgs } = splitClaudeCliArgs(args);
 
   // Wizard when no local config exists
   if (!localConfigExists(targetCwd)) {
+    // Fail fast when the wizard cannot run: with non-interactive stdin (e.g.
+    // `outpost-pi claude -p …` headless) the readline question never settles and
+    // Node exits 13 on the unsettled top-level await. Give the operator the
+    // two real options instead of a hang: run interactively once, or pre-create
+    // the config (the documented scripted-install path).
+    if (!process.stdin.isTTY) {
+      console.log(
+        `[outpost-pi] No config found for ${targetCwd} and stdin is not a TTY — ` +
+        `cannot run the setup wizard headlessly. Run "outpost-pi claude" ` +
+        `interactively once, or create ${join(targetCwd, ".pi", "outpost-pi", "config.json")} ` +
+        `with { "agent_name": "…", "auto_start_relay": true } first.`,
+      );
+      process.exit(1);
+    }
     const suggested = defaultAgentName(targetCwd);
     process.stdout.write(`\n[outpost-pi] No config found for ${targetCwd}\n`);
     process.stdout.write("Let's set up this agent.\n\n");
@@ -266,10 +314,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
 
   try {
     spawnSync("claude", [
-      "--mcp-config", mcpConfigPath,
-      "--dangerously-load-development-channels", `server:${SERVER_NAME}`,
-      "--dangerously-skip-permissions",
-      ...(skillPath ? [`--append-system-prompt-file=${skillPath}`] : []),
+      ...buildClaudeLaunchArgs(mcpConfigPath, skillPath),
       ...passthroughArgs,
     ], {
       cwd: absCwd,
