@@ -1,7 +1,7 @@
 ---
 id: story-claude-launcher-safe-local-qualification
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, workflow]
 parent: null
 depends_on: []
@@ -149,3 +149,15 @@ Singleton per-cwd lock, folder-scoped local broadcast, cross-PC transport,
 and consumer worktree policy untouched. No nextup files touched; scratch
 folder was in this repo's gitignored `debug/` and was removed after capture.
 No relay, app, or dormant cockpit changes.
+
+## Review
+
+Bounded inline pass (standalone-story lane, `standard` weight) over the
+committed diff `0234caa97..05f3dcf96`: extraction behavior-identical to the
+old inline split; no `--dangerously-*` injection anywhere on the spawn path
+(pinned by tests); TTY guard exits before any readline setup with actionable
+guidance; docs (help/README/site) consistent with behavior and with each
+other; packaged `agent-network` skill needed no change (polling baseline,
+channel push described as conditional). Verdict: pass, no blockers. Known
+non-blocker: TTY guard is untested at unit level (no stdin seam; process-level
+boundary glue).
