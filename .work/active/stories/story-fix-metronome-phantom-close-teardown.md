@@ -1,8 +1,8 @@
 ---
 id: story-fix-metronome-phantom-close-teardown
 kind: story
-stage: drafting
-tags: [app, bug, lifecycle]
+stage: implementing
+tags: [app, bug]
 parent: null
 depends_on: []
 release_binding: null
@@ -11,96 +11,69 @@ created: 2026-09-08
 updated: 2026-10-04
 ---
 
-# Metronome root-cause fix: phantom-close attribution, firehose parse stall, missed-pong teardown
+# Close-attribution correction: dart-synthesized 1002 must not report as serverCloseFrame
 
-The metronome's full chain (story-fix-connection-metronome-death verdict
-#4 + correction, 2026-09-08): fleet firehose bursts (190KB envelopes) stall
-the phone's main-isolate inbound parse → TCP backpressure fills the relay's
-send path → dart's 45s pingInterval missed-pong watchdog kills the
-connection (dart synthesizes closeCode 1002) → the app's close attribution
-misreports it as `serverCloseFrame 1002` → cancel race drags recovery.
-Relay exonerated; underlay-independent.
+## Brief
 
-## Implementation discovery (2026-10-04) — kill-trigger premise falsified by field evidence; units re-scoped
+Re-scoped 2026-10-04 after verdict #9 (see
+`story-fix-connection-metronome-death`): the v0.12.0 instrument paired with
+relay logs proved, 5/5 production strikes, that `connChannelLost` reports
+`closeOrigin:"serverCloseFrame" closeCode:1002` while the relay never sent a
+close — the phone's netstack RST'd the socket 1.56–1.61s earlier and the app
+wrote its own close frame into the dead socket at teardown. The
+`serverCloseFrame` classification is dart-synthesized misattribution in
+`WsTransport._recordStreamDone` (`app/lib/data/transport/ws_transport.dart`):
+it treats ANY closeCode other than 1005 (noStatusReceived) / 1006
+(abnormalClosure) as a remote close frame, and dart:io surfaces 1002 on
+abnormal teardown paths.
 
-Verdict #9 (see `story-fix-connection-metronome-death`) paired the v0.12.0
-instrument with concurrent relay logs on the production path, 5/5 strikes:
-the phone's netstack RSTs the relay's socket 1.56–1.61s BEFORE the app
-teardown, the relay never closes and sees no violation, and deaths occur
-as fast as 3.8s after online — far inside any 45s pong window. The header
-chain above (parse stall → backpressure → **45s missed-pong watchdog
-kills**) is therefore falsified as the strike owner; no dart timer fires
-before the RST arrives. What survives field evidence:
+Honest attribution matters beyond diagnostics: failure classification feeds
+`classifyWsTransportFailure` → `ReachabilityFailureKind` → the retry ladder,
+and future evidence captures must distinguish "relay closed" from "path died".
 
-- **Unit 1 (attribution correction) — CONFIRMED, now field-proven 5/5**: all
-  five strikes logged `serverCloseFrame 1002` with the app's own
-  `closeInitiated` write into the dead socket and an RST at the relay.
-- **Recovery ladder — promoted to primary app-side lever**: the cancel-race
-  (`retryConnect _CancelledError` ×8, 10–30s backoffs, ~4min offline) and
-  the inbound-dead retry behavior (hello delivered, preauth never seen;
-  3s give-up) are the fixable UX surface.
-- **Units 2 (parse stall) and 3 (missed-pong liveness)** — demoted to
-  resilience/hygiene; neither owns the strike. The dart closeCode probe
-  (unit 1's empirical verification) remains worth landing.
+Former units 2 (firehose parse off critical path) and 3 (missed-pong
+liveness) were demoted by verdict #9 — neither owns the strike. The recovery
+ladder moved to `story-fix-post-strike-recovery-ladder`.
 
-Returned to `drafting` for re-design against this evidence; the strike
-itself remains phone-netstack (verdict #8 actionables: tailscale-android
-bug report with the paired evidence, battery-optimization check,
-home-LAN relay / burst-splitting mitigations).
+## Design
 
-## Fix units
+**Probe first (test-first, per the original unit 1).** Add an in-process
+probe test (`HttpServer` + `WebSocketTransformer` + real
+`IOWebSocketChannel` client) that pins dart:io closeCode/closeReason
+semantics empirically:
 
-1. **Attribution correction** — `_recordStreamDone` (ws_transport.dart)
-   must not classify dart-synthesized closeCode 1002 as
-   `serverCloseFrame`. Verify dart:io/IOWebSocketChannel closeCode
-   semantics empirically (write the probe test first), then correct the
-   heuristic so abnormal teardowns report as streamDone/abnormal with the
-   synthesized code preserved for diagnostics.
-2. **Firehose parse off the read critical path** — the ws.stream.listen
-   callback demuxes/decodes (b64 + utf8 + JSON) on the main isolate;
-   190KB envelopes stall socket reads. Move heavy decode off the callback
-   (queued/isolate/chunked — match existing app patterns; keep ordering).
-3. **Liveness tolerance** — dart `pingInterval: 45s` kills connections
-   whose pong is stuck behind backpressure. Replace or widen it with the
-   app-level any-inbound-frame liveness the code already documents (see
-   the connect-options comment block referencing
-   story-mobile-connection-flapping-drops-identity-frames).
+1. server sends a real close frame (1000 with reason; 1002 with/without
+   reason) — client `closeCode`/`closeReason`;
+2. server destroys the raw socket (RST-like) without a close frame;
+3. server closes TCP cleanly (EOF) without a close frame;
+4. local `sink.close()` initiated, then socket dies before reply;
+5. `pingInterval` expiry with a silent server.
 
-## Acceptance evidence
+The fix is derived from what the probe shows: `_recordStreamDone` may claim
+`serverCloseFrame` ONLY for codes the probe proves are frame-delivered;
+dart-synthesized codes observed on dead-path scenarios report as
+`streamDone`/`streamError` with the code preserved for diagnostics. If the
+probe shows real and synthesized 1002 are indistinguishable at this layer,
+the discriminator becomes local-close ordering instead (see next point) and
+the probe result is recorded in the story body.
 
-- Probe/regression tests: close-attribution for abnormal teardown reports
-  streamDone (+ synthesized code), NOT serverCloseFrame; a firehose-sized
-  envelope delivered with simulated slow processing does not stall reads
-  nor trigger teardown; missed-pong-under-burst scenario no longer closes
-  (or is replaced by the app-level liveness with a test for it).
-- `flutter analyze && flutter test --exclude-tags e2e` green (known
-  sync_service load-flake: isolation-green bar).
-- Live confirmation deferred to operator at rc.2 UAT (5G + home).
+**Local-close ordering audit.** `closeWithPath` and `closeConnectResources`
+already call `_recordLocalClose` before `_logCloseInitiated`; verify the
+established-channel teardown path (stream done → cleanup → sink.close) cannot
+classify a post-local-close teardown as `serverCloseFrame`, and that the
+recorded details preserve the first honest classification (`??=` semantics).
 
-## Implementation discovery
+## Acceptance
 
-The required probes were run before any production change, against Flutter
-3.47.1 / Dart 3.13.1 with the resolved `web_socket_channel` 3.0.3:
+- Probe test lands and documents (in-code) which closeCodes dart:io delivers
+  from real frames vs synthesizes on dead paths.
+- Regression: the strike shape (no local close recorded, dart closeCode 1002,
+  no reason) reports origin `streamDone` (or `streamError`) — NOT
+  `serverCloseFrame`; closeCode 1002 preserved in the event.
+- Genuine server close frames (probe scenario 1) still report
+  `serverCloseFrame` with code+reason.
+- `flutter analyze` + `flutter test --exclude-tags e2e` green.
 
-- Abrupt mid-frame TCP death: `IOWebSocketChannel` surfaced `closeCode ==
-  1006` (`WebSocketStatus.abnormalClosure`), with no server Close frame.
-- Missed-pong kill: a direct `IOWebSocketChannel` with a 50ms
-  `pingInterval`, against a handshake-complete server that never answered
-  pings, surfaced `closeCode == 1001` (`WebSocketStatus.goingAway`).
-- Framing garbage: a post-handshake reserved opcode (`0x83`) surfaced
-  `closeCode == 1002` (`WebSocketStatus.protocolError`).
+## Verification evidence
 
-Therefore the missed-pong leg does not pin the hypothesized 1002, while framing
-protocol failure does. The captured `serverCloseFrame 1002` cannot be honestly
-attributed to a dart missed-pong kill from close code alone, and the original
-VERDICT #4 CORRECTION mechanism remains unconfirmed. Per the land-mode escape
-hatch, implementation stopped here: no attribution, decode-queue, or liveness
-production changes were made. The story remains `stage: implementing` pending
-diagnosis of the captured 1002 path; genuine server-close attribution coverage
-remains unchanged.
-
-Pulled into v0.12.0 by operator decision (2026-09-08), then RETURNED to
-unbound (same day): the probe map falsified the briefed mechanism twice
-(escape hatch used correctly); the fix waits on the paired frame-hash
-instrument to settle sender-vs-transit-vs-parser. The instrument rides
-rc.2 instead; this story stays active with the open discovery.
+(accumulates during implementation)

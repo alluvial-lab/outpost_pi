@@ -16,3 +16,12 @@ retarget churn); precise attribution needs cancellation-site logging (see
 story-fix-connection-metronome-death cancel-race addendum). Fix likely:
 stabilize the retry target across the recovery window or make same-peer
 re-entrant connects join the in-flight attempt instead of cancelling it.
+
+---
+status: folded_into
+folded_into: story-fix-post-strike-recovery-ladder
+---
+
+Folded 2026-10-04: verdict #9 promoted the cancel race to a primary
+app-side lever; design + acceptance now live in
+`.work/active/stories/story-fix-post-strike-recovery-ladder.md` (unit 1).
