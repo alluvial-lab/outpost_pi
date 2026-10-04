@@ -120,6 +120,12 @@ String _formatHash(int hash) =>
 
 const int _wsOverflowAuditSummaryEvents = 100;
 const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
+
+/// Pre-auth handshake deadline owned by the transport. Fires ahead of
+/// ConnectionManager's 15s attempt deadline so the failure carries the
+/// zero-inbound (handshakeStall) classification; the relay's own auth
+/// timeout (~11s) usually closes first when its Close frame can arrive.
+const Duration defaultAuthHandshakeTimeout = Duration(seconds: 12);
 const int _finalTextFrameFirstByte = 0x81;
 const int _finalCloseFrameFirstByte = 0x88;
 
@@ -209,6 +215,7 @@ class WsTransport
     String activeRoom = 'main',
     DebugLog? debugLog,
     ConnectionCancellation? cancellation,
+    Duration authHandshakeTimeout = defaultAuthHandshakeTimeout,
   }) async {
     if (cancellation?.isCancelled ?? false) {
       throw const WsTransportError('WS connect cancelled');
@@ -250,6 +257,40 @@ class WsTransport
     bool authDone = false;
     bool cancelled = cancellation?.isCancelled ?? false;
     bool handedOff = false;
+
+    // Classify pre-auth failures by whether this socket EVER received a relay
+    // frame. Zero inbound frames means the path is wedged (outbound works,
+    // inbound dead — verdict #9): schedule the fast-cycle retry class instead
+    // of the failure kinds that climb the backoff ladder.
+    ReachabilityFailureKind preAuthFailureKind(
+      ReachabilityFailureKind framesSeenKind,
+    ) => transport._inboundFrameCount == 0
+        ? ReachabilityFailureKind.handshakeStall
+        : framesSeenKind;
+
+    // The relay is not guaranteed to close a hung handshake (during a wedge
+    // its Close frame may never arrive), and ConnectionManager's 15s attempt
+    // deadline would win the race without carrying the zero-inbound signal.
+    // Fail from HERE first, where the classification knowledge lives, ahead
+    // of the manager's backstop.
+    final authDeadlineTimer = Timer(authHandshakeTimeout, () {
+      const message = 'auth handshake timed out';
+      if (!challengeCompleter.isCompleted) {
+        challengeCompleter.completeError(
+          WsTransportError(
+            message,
+            kind: preAuthFailureKind(ReachabilityFailureKind.relayRejected),
+          ),
+        );
+      } else if (!authenticatedFrameCompleter.isCompleted) {
+        authenticatedFrameCompleter.completeError(
+          WsTransportError(
+            message,
+            kind: preAuthFailureKind(ReachabilityFailureKind.relayRejected),
+          ),
+        );
+      }
+    });
 
     final sub = ws.stream.listen(
       (raw) {
@@ -429,17 +470,17 @@ class WsTransport
         transport._recordStreamDone();
         if (!challengeCompleter.isCompleted) {
           challengeCompleter.completeError(
-            const WsTransportError(
+            WsTransportError(
               'WS closed during auth',
-              kind: ReachabilityFailureKind.relayRejected,
+              kind: preAuthFailureKind(ReachabilityFailureKind.relayRejected),
             ),
           );
         }
         if (authDone && !authenticatedFrameCompleter.isCompleted) {
           authenticatedFrameCompleter.completeError(
-            const WsTransportError(
+            WsTransportError(
               'WS closed before auth completion',
-              kind: ReachabilityFailureKind.relayRejected,
+              kind: preAuthFailureKind(ReachabilityFailureKind.relayRejected),
             ),
           );
         }
@@ -557,6 +598,7 @@ class WsTransport
       );
       rethrow;
     } finally {
+      authDeadlineTimer.cancel();
       if (!handedOff) {
         cancellation?.removeCancellationListener(cancelConnect);
       }
@@ -674,6 +716,29 @@ class WsTransport
   void _recordStreamDone() {
     if (_closeDetails != null) return;
     final code = _ws.closeCode;
+    // dart:io synthesizes closeCode 1002 (protocolError) when its OWN parser
+    // flags a framing violation, and 1001 (goingAway) for the missed-pong
+    // watchdog — neither is a received server Close frame. Pinned empirically
+    // in ws_transport_close_diagnostics_test.dart (framing garbage → 1002,
+    // silent peer → 1001, mid-frame death → 1006). The relay never closes
+    // with 1xxx codes (its closes carry 4xxx codes + reasons, or are empty),
+    // so codes synthesized by dart must not be attributed to the server.
+    // Field evidence: verdict #9 — 5/5 strikes logged serverCloseFrame/1002
+    // while the relay saw only a phone-side RST (see
+    // .work story-fix-metronome-phantom-close-teardown). If the relay ever
+    // starts closing with 1xxx codes, revisit this classification.
+    if (code == WebSocketStatus.protocolError ||
+        code == WebSocketStatus.goingAway) {
+      _closeDetails = ChannelCloseDetails(
+        origin: ChannelCloseOrigin.streamError,
+        closeCode: code,
+        closeReason: _categorizeCloseReason(_ws.closeReason),
+        errorType: code == WebSocketStatus.protocolError
+            ? 'dartProtocolError'
+            : 'dartPingWatchdog',
+      );
+      return;
+    }
     final hasRemoteCloseFrame =
         code != null &&
         code != WebSocketStatus.noStatusReceived &&

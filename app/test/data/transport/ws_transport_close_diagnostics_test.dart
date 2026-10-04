@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/domain/value_objects/reachability.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:cryptography/cryptography.dart';
@@ -125,6 +126,114 @@ void main() {
   );
 
   test(
+    'dart-synthesized protocolError close is not attributed to the server',
+    () async {
+      final relay = await _AbruptRelay.start();
+      addTearDown(relay.close);
+      final transport = await _connect(relay.url);
+      addTearDown(transport.close);
+
+      await relay.sendFramingGarbage();
+      await transport.transportClosed.timeout(const Duration(seconds: 1));
+
+      // Strike shape (verdict #9, 5/5 field strikes): dart:io synthesizes
+      // closeCode 1002 when ITS OWN parser flags a framing violation — the
+      // phone's wedged netstack delivers mangled framing, dart closes on its
+      // own protocol error, and the relay only ever sees an RST. A 1002 here
+      // is NOT a received server Close frame; the relay never closes with
+      // 1xxx codes (its closes carry 4xxx codes + reasons, or are empty).
+      expect(transport.closeDetails?.origin, ChannelCloseOrigin.streamError);
+      expect(transport.closeDetails?.closeCode, WebSocketStatus.protocolError);
+      expect(
+        transport.closeDetails?.errorType,
+        'dartProtocolError',
+      );
+      expect(
+        transport.closeDetails?.origin,
+        isNot(ChannelCloseOrigin.serverCloseFrame),
+      );
+    },
+  );
+
+  test(
+    'pre-auth close with zero inbound classifies as a handshake stall',
+    () async {
+      final relay = await _AbruptRelay.start(
+        helloReply: _ProbeHelloReply.closeFrame,
+      );
+      addTearDown(relay.close);
+
+      // The relay closes cleanly before any data frame arrived (its own
+      // auth-timeout shape). Zero inbound frames on an open socket whose
+      // hello was sent = wedged path, not relay rejection: the failure must
+      // carry the fast-cycle kind so retries do not climb the ladder.
+      await expectLater(
+        _connect(relay.url),
+        throwsA(
+          isA<WsTransportError>().having(
+            (error) => error.kind,
+            'kind',
+            ReachabilityFailureKind.handshakeStall,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'handshake deadline on a silent relay classifies as a handshake stall',
+    () async {
+      final relay = await _AbruptRelay.start(
+        helloReply: _ProbeHelloReply.silent,
+      );
+      addTearDown(relay.close);
+
+      // Wedge shape (verdict #9): hello reaches the relay, nothing ever comes
+      // back, and the relay's Close may never arrive either. The transport's
+      // own deadline must fail the attempt with the zero-inbound kind.
+      await expectLater(
+        _connect(relay.url, authHandshakeTimeout: const Duration(milliseconds: 300)),
+        throwsA(
+          isA<WsTransportError>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReachabilityFailureKind.handshakeStall,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                'auth handshake timed out',
+              ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'handshake deadline after inbound frames keeps the frames-seen kind',
+    () async {
+      final relay = await _AbruptRelay.start(
+        helloReply: _ProbeHelloReply.challengeOnly,
+      );
+      addTearDown(relay.close);
+
+      // Challenge arrived (inbound > 0) but the authenticated frame never
+      // did: this socket was NOT wedged — keep the ladder classification.
+      await expectLater(
+        _connect(relay.url, authHandshakeTimeout: const Duration(milliseconds: 300)),
+        throwsA(
+          isA<WsTransportError>().having(
+            (error) => error.kind,
+            'kind',
+            ReachabilityFailureKind.relayRejected,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'inbound rows carry per-message hash and loss exposes running hash',
     () async {
       final relay = await _CloseRelay.start();
@@ -233,23 +342,31 @@ final class _RecordingDebugLog implements DebugLog {
   void dispose() {}
 }
 
-Future<WsTransport> _connect(String relayUrl, {DebugLog? debugLog}) async =>
+Future<WsTransport> _connect(
+  String relayUrl, {
+  DebugLog? debugLog,
+  Duration authHandshakeTimeout = defaultAuthHandshakeTimeout,
+}) async =>
     WsTransport.connect(
       relayUrl: relayUrl,
       peerPubkey: 'cGVlcg==',
       ed25519Key: await Ed25519().newKeyPair(),
       deviceId: 'close-diagnostics-device',
       debugLog: debugLog,
+      authHandshakeTimeout: authHandshakeTimeout,
     );
+
+enum _ProbeHelloReply { challenge, challengeOnly, silent, closeFrame }
 
 /// Raw relay fixture that can terminate a valid WebSocket after an incomplete
 /// server-to-client text frame has been written.
 final class _AbruptRelay {
-  _AbruptRelay._(this._server);
+  _AbruptRelay._(this._server, this._helloReply);
 
   static const _webSocketGuid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
   final ServerSocket _server;
+  final _ProbeHelloReply _helloReply;
   final _connected = Completer<void>();
   final _ready = Completer<void>();
   final _connections = <Socket>[];
@@ -260,9 +377,11 @@ final class _AbruptRelay {
   String get url => 'ws://${_server.address.host}:${_server.port}';
   Future<void> get connected => _connected.future;
 
-  static Future<_AbruptRelay> start() async {
+  static Future<_AbruptRelay> start({
+    _ProbeHelloReply helloReply = _ProbeHelloReply.challenge,
+  }) async {
     final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final relay = _AbruptRelay._(server);
+    final relay = _AbruptRelay._(server, helloReply);
     relay._serverSubscription = server.listen(relay._accept);
     return relay;
   }
@@ -272,6 +391,7 @@ final class _AbruptRelay {
     _connections.add(socket);
     final parser = _AbruptClientParser(
       socket: socket,
+      helloReply: _helloReply,
       onConnected: () {
         if (!_connected.isCompleted) _connected.complete();
       },
@@ -316,11 +436,13 @@ final class _AbruptRelay {
 final class _AbruptClientParser {
   _AbruptClientParser({
     required this.socket,
+    required this.helloReply,
     required this.onConnected,
     required this.onReady,
   });
 
   final Socket socket;
+  final _ProbeHelloReply helloReply;
   final void Function() onConnected;
   final void Function() onReady;
   final _buffer = <int>[];
@@ -397,6 +519,7 @@ final class _AbruptClientParser {
       }
       _buffer.removeRange(0, cursor + length);
       if ((first & 0x0f) == 0x1) _handleText(payload);
+      if ((first & 0x0f) == 0x8) onReady();
     }
   }
 
@@ -404,16 +527,27 @@ final class _AbruptClientParser {
     final frame = jsonDecode(utf8.decode(payload)) as Map<String, dynamic>;
     switch (frame['type']) {
       case 'hello':
-        _sendText(
-          jsonEncode({
-            'type': 'challenge',
-            'nonce': base64Encode(Uint8List(32)),
-          }),
-        );
+        switch (helloReply) {
+          case _ProbeHelloReply.challenge:
+          case _ProbeHelloReply.challengeOnly:
+            _sendText(
+              jsonEncode({
+                'type': 'challenge',
+                'nonce': base64Encode(Uint8List(32)),
+              }),
+            );
+          case _ProbeHelloReply.silent:
+            break;
+          case _ProbeHelloReply.closeFrame:
+            // Clean server Close frame with no code, before any data frame —
+            // the relay-side shape of an auth-timeout close arriving on an
+            // otherwise healthy outbound path.
+            socket.add(const <int>[0x88, 0x00]);
+        }
       case 'auth':
         _authenticated = true;
       case 'presence_check':
-        if (_authenticated) {
+        if (_authenticated && helloReply == _ProbeHelloReply.challenge) {
           _sendText(jsonEncode({'type': 'presence', 'states': <Object>[]}));
           onReady();
         }

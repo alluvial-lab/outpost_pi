@@ -13,7 +13,14 @@ enum ReachabilityState { connecting, online, degraded, offline, retrying }
 /// The adapter records this classification so retry policy and UI projection
 /// consume the same consecutive-failure streak instead of maintaining their
 /// own counters.
-enum ReachabilityFailureKind { transport, relayRejected, unknown }
+///
+/// [handshakeStall] marks attempts whose socket opened and hello was sent but
+/// which never received a single relay frame before failing (clean pre-auth
+/// close or handshake deadline). Field evidence (verdict #9): during a
+/// post-strike netstack wedge the phone's outbound works while inbound is
+/// dead — such attempts should fast-cycle the socket instead of climbing the
+/// backoff ladder, because the path recovers on phone-side timing, not ours.
+enum ReachabilityFailureKind { transport, relayRejected, handshakeStall, unknown }
 
 /// Keep the connection status quiet for one transient failure, then expose
 /// liveness once the retry loop has demonstrated that it is still active.
@@ -41,6 +48,13 @@ const reachabilityBackoff = <Duration>[
   Duration(seconds: 10),
   Duration(seconds: 30),
 ];
+
+/// Retry delay while the current failure streak is handshake stalls only.
+///
+/// A wedged path (zero inbound frames) is best re-socketed immediately and
+/// cheaply: the ladder cannot help, and sleeping through 30s backoffs turns a
+/// seconds-long wedge into minutes of outage (verdict #9: ~4 min observed).
+const reachabilityHandshakeStallRetryDelay = Duration(seconds: 1);
 
 /// Return the retry delay for [attempt], clamped to the policy bounds.
 Duration reachabilityBackoffForAttempt(int attempt) {

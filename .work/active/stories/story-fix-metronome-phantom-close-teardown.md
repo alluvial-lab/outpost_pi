@@ -1,7 +1,7 @@
 ---
 id: story-fix-metronome-phantom-close-teardown
 kind: story
-stage: implementing
+stage: review
 tags: [app, bug]
 parent: null
 depends_on: []
@@ -76,4 +76,24 @@ recorded details preserve the first honest classification (`??=` semantics).
 
 ## Verification evidence
 
-(accumulates during implementation)
+Implemented 2026-10-04 over `3af572be7`:
+
+- Probe verdicts (existing suite + new e2e regression): dart:io delivers
+  real server Close frames with code+reason (4001 test); it SYNTHESIZES
+  1002 on locally-detected framing violations (garbage probe), 1001 on the
+  missed-pong watchdog, 1006 on mid-frame death. The relay only closes with
+  4xxx codes + reasons or an empty Close — never 1xxx — so both synthesized
+  codes are now excluded from `serverCloseFrame` classification in
+  `_recordStreamDone` (`ws_transport.dart`): they report origin
+  `streamError` with `errorType` `dartProtocolError` / `dartPingWatchdog`,
+  closeCode preserved. Revisit condition documented inline: if the relay
+  ever starts closing with 1xxx codes, the classification must change.
+- Local-close ordering audit: `closeWithPath` / `closeConnectResources`
+  already record `localClose` before the close write; `??=` keeps the first
+  honest classification. No change needed.
+- New regression test 'dart-synthesized protocolError close is not attributed
+  to the server' fails on the old heuristic (verified red-first) and pins
+  the strike shape end-to-end through `WsTransport`.
+- `flutter analyze` clean; full suite `flutter test --exclude-tags e2e
+  --concurrency=2`: **1,072 passed** (includes the 10-test close-diagnostics
+  suite).
