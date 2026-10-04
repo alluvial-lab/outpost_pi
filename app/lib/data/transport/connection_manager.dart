@@ -4,12 +4,12 @@
 //
 //   [noPeer] → connect() → [connecting] → success → [online]
 //                              ↓                         ↓
-//                           failure               (WS close or 2 ping misses)
-//                              ↓                         ↓
-//                          [offline] ←── canRetry=false
+//                           failure            (WS close, or 3 missed app pongs
+//                              ↓                per the canonical reachability
+//                          [offline] ←── canRetry=false   policy)
 //                          [retrying] ←── backoff 1→2→5→10→30s
-//                              (handshake-stall streaks: fixed 1s, rung frozen —
-//                               wedged paths fast-cycle; verdict #9)
+//                              (handshake-stall streaks: fixed 1s, rung frozen
+//                              — wedged paths fast-cycle)
 //                              ↓
 //                          connect() → [connecting] → …
 //
