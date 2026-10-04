@@ -1,3 +1,37 @@
+## v0.12.1 — 2026-10-04
+
+### Fixes
+
+- **Safe Claude launcher** — `outpost-pi claude` no longer injects
+  `--dangerously-skip-permissions` or
+  `--dangerously-load-development-channels`; both are operator opt-ins
+  passed through as normal claude flags. Defaults: Claude's own permission
+  policy stays on, mesh messages arrive at each turn via `get_messages`
+  polling. A headless first run without a folder config now fails fast with
+  guidance instead of hanging (previously an unsettled-await exit 13).
+- **Honest close attribution** — dart-synthesized WebSocket close codes
+  (1002 protocol error, 1001 missed-pong watchdog) report as `streamError`
+  with `dartProtocolError`/`dartPingWatchdog` detail instead of
+  `serverCloseFrame`. Field-proven against paired capture + relay logs: the
+  phone's netstack RST precedes every such teardown; the relay never sent a
+  close.
+- **Post-strike recovery** — same-peer reconnect requests join the in-flight
+  attempt instead of cancelling it (retarget churn no longer multiplies each
+  strike into a `_CancelledError` chain), and zero-inbound handshake stalls
+  (wedged path: hello delivered, nothing returns) retry at a fixed 1s with
+  the backoff ladder rung frozen instead of escalating 1→30s. The
+  auth-handshake deadline is transport-owned at 9s, ordered ahead of the
+  production candidate timeout and the whole-attempt deadline, and disarmed
+  the moment failure cleanup begins.
+
+### Internal
+
+- Patterns: `evidence-local-failure-classification`,
+  `join-in-flight-operations` codified.
+- Docs: Claude mesh wrapper recorded as present capability
+  (VISION/DECISIONS/PROTOCOL); reachability handshake-stall exception
+  documented; pattern references refreshed.
+
 ## v0.12.0 — 2026-09-08
 
 ### Features
