@@ -1,14 +1,14 @@
 ---
 id: story-fix-metronome-phantom-close-teardown
 kind: story
-stage: implementing
+stage: drafting
 tags: [app, bug, lifecycle]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-10-04
 ---
 
 # Metronome root-cause fix: phantom-close attribution, firehose parse stall, missed-pong teardown
@@ -20,6 +20,33 @@ send path → dart's 45s pingInterval missed-pong watchdog kills the
 connection (dart synthesizes closeCode 1002) → the app's close attribution
 misreports it as `serverCloseFrame 1002` → cancel race drags recovery.
 Relay exonerated; underlay-independent.
+
+## Implementation discovery (2026-10-04) — kill-trigger premise falsified by field evidence; units re-scoped
+
+Verdict #9 (see `story-fix-connection-metronome-death`) paired the v0.12.0
+instrument with concurrent relay logs on the production path, 5/5 strikes:
+the phone's netstack RSTs the relay's socket 1.56–1.61s BEFORE the app
+teardown, the relay never closes and sees no violation, and deaths occur
+as fast as 3.8s after online — far inside any 45s pong window. The header
+chain above (parse stall → backpressure → **45s missed-pong watchdog
+kills**) is therefore falsified as the strike owner; no dart timer fires
+before the RST arrives. What survives field evidence:
+
+- **Unit 1 (attribution correction) — CONFIRMED, now field-proven 5/5**: all
+  five strikes logged `serverCloseFrame 1002` with the app's own
+  `closeInitiated` write into the dead socket and an RST at the relay.
+- **Recovery ladder — promoted to primary app-side lever**: the cancel-race
+  (`retryConnect _CancelledError` ×8, 10–30s backoffs, ~4min offline) and
+  the inbound-dead retry behavior (hello delivered, preauth never seen;
+  3s give-up) are the fixable UX surface.
+- **Units 2 (parse stall) and 3 (missed-pong liveness)** — demoted to
+  resilience/hygiene; neither owns the strike. The dart closeCode probe
+  (unit 1's empirical verification) remains worth landing.
+
+Returned to `drafting` for re-design against this evidence; the strike
+itself remains phone-netstack (verdict #8 actionables: tailscale-android
+bug report with the paired evidence, battery-optimization check,
+home-LAN relay / burst-splitting mitigations).
 
 ## Fix units
 

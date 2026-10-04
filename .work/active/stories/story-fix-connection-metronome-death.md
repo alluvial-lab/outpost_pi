@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-09-01
-updated: 2026-09-08
+updated: 2026-10-04
 ---
 
 # Connection dies ~13-35s after connect (worsening); swallows agent turns mid-flap
@@ -664,3 +664,54 @@ with 10s-resolution tunnel telemetry):
   socket dies) → strike on next activity... though strikes fire DURING the
   quiet, not on next activity — so Doze-throttle alone is insufficient;
   the router fork stays live.
+
+## VERDICT #9 (2026-10-04, 21:2x–21:4xZ): production-path confirmation — paired instrument reads out 5/5; relay exonerated live; inbound-dead asymmetry during recovery
+
+Field capture `debug/app-capture-2026-10-04T21-42-33-190Z-277802736e11.bin`
+(6786 events, v0.12.0+28 daily driver) paired with concurrent relay logs
+(relay 0.5.5 instrument, DEBUG; excerpt
+`.work/session-notes/metronome-2026-10-04-relay-window.log`). Five strikes,
+all on the real phone→relay path — first production confirmation of verdict
+#8's phone-RST theory without harness legs:
+
+| # | app channelLost (cid) | relay saw (addr) | Δ | relay frames_out |
+|---|---|---|---|---|
+| 1 | 21:24:09.274 (63) | 21:24:07.675 IO-104 RST (:50714) | 1.60s | 339 |
+| 2 | 21:24:27.575 (65) | 21:24:25.996 IO-104 RST (:49222) | 1.58s | 148 |
+| 3 | 21:24:47.820 (67) | 21:24:46.225 IO-104 RST (:54878) | 1.59s | 46 |
+| 4 | 21:31:17.143 (72) | 21:31:15.585 IO-104 RST (:40408) | 1.56s | 27 |
+| 5 | 21:41:01.246 (77) | 21:40:59.635 IO-104 RST (:39002) | 1.61s | 2163 |
+
+New facts beyond #7/#8:
+
+1. **The RST→app-teardown gap is a 1.56–1.61s constant across 5/5** —
+   metronome-grade determinism on the real path. The relay NEVER sent a
+   close and saw no protocol violation; every reset originates phone-side.
+2. **App `closeInitiated` (firstByte 136) fires at −0.00s in all 5** — the
+   app writes its close frame into an already-RST'd socket; the relay
+   receives RST, not close. `closeOrigin:"serverCloseFrame" closeCode:1002`
+   is definitively dart-synthesized misattribution (fix-story unit 1 now
+   field-proven 5/5).
+3. **Inbound-dead asymmetry during episodes** (new): every retry ladder
+   connection sends `hello` (relay receives it — relay logs
+   `handshake step failed phase="auth"` ~11s later from each retry port),
+   the relay's preauth reply NEVER appears in app `wsIn` (zero rows for
+   those connectionIds), the app gives up ~3s in and closes. Phone→relay
+   delivery works; relay→phone is dead for the episode duration. One-way
+   reachability, not just a killed flow — strengthens the phone
+   tailscale-netstack wedge theory and the pending tailscale-android bug
+   report.
+4. **Burst correlation in production**: relay frames_out before each RST
+   (339/148/46/27/2163); capture shows a 216KB single envelope 2.9s before
+   strike 2 plus ~30 envelope floods in the final second; strike 5 rode a
+   2,163-frame push. Online→lost spans: 3.8s / 11.3s / 161.9s / 336.9s —
+   burst-correlated, not fixed-period; the metronome can strike within
+   seconds of online.
+5. **Recovery pain field-confirmed**: after strikes 2–3 the ladder burned
+   8× `retryConnect _CancelledError` + 1 TimeoutException across
+   1s/2s/5s/10s/30s backoffs — ~4 min offline. The parked cancel-race fix
+   is the primary UX lever (verdict #8 consequence (b), now with production
+   shape).
+
+The v0.12.0 instrument delivered exactly the conclusive pairing it was cut
+for; no tungstenite frame=trace was needed (no WS-layer violation exists).
