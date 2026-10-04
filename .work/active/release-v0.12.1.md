@@ -36,4 +36,5 @@ not done work; binding would pend readiness; stay unbound per two-lane
 selective binding).
 
 ## Gate runs
+- **gate-refactor** (2026-10-04) — 0 findings; 3 libraries (boundaries, lifecycle, protocol-contract) loaded, all 13 reference rules applied to the 11 bundle files. Adjacent note: scanner independently confirmed the production factory-timeout ordering issue now tracked by gate-tests.
 (populated during Phase 4)
