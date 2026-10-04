@@ -177,5 +177,50 @@ void main() {
         expect(adapter.connectInFlight, isFalse);
       },
     );
+
+    test('handshake-stall streak fast-cycles with a frozen attempt rung', () {
+      final adapter = ReachabilityAdapter();
+
+      // Climb to attempt rung 2 (5s delay) with unclassified failures.
+      adapter.onConnectRequested();
+      adapter.onConnectFailedRetryable();
+      adapter.onRetryTimerFired(); // attempt 1
+      adapter.onConnectFailedRetryable();
+      adapter.onRetryTimerFired(); // attempt 2
+      adapter.onConnectFailedRetryable();
+      expect(adapter.nextRetryDelay, const Duration(seconds: 5));
+
+      // A handshake-stall streak takes over: fixed short delay, no climbing.
+      adapter.onConnectFailedRetryable(
+        failureKind: ReachabilityFailureKind.handshakeStall,
+      );
+      expect(
+        adapter.nextRetryDelay,
+        reachabilityHandshakeStallRetryDelay,
+      );
+      for (var i = 0; i < 5; i++) {
+        adapter.onRetryTimerFired();
+        adapter.onConnectFailedRetryable(
+          failureKind: ReachabilityFailureKind.handshakeStall,
+        );
+        expect(adapter.nextRetryDelay, reachabilityHandshakeStallRetryDelay);
+      }
+      expect(
+        adapter.retryAttempt,
+        2,
+        reason: 'stall-fired retry timers must not advance the ladder rung',
+      );
+
+      // The first non-stall failure resumes the ladder from the frozen rung.
+      adapter.onConnectFailedRetryable(
+        failureKind: ReachabilityFailureKind.transport,
+      );
+      expect(adapter.nextRetryDelay, const Duration(seconds: 5));
+
+      // Real inbound traffic resets everything.
+      adapter.onAppFrameObserved();
+      expect(adapter.retryAttempt, 0);
+      expect(adapter.nextRetryDelay, const Duration(seconds: 1));
+    });
   });
 }

@@ -25,7 +25,11 @@ final class ReachabilityAdapter {
       _failureKind ?? ReachabilityFailureKind.unknown;
   DateTime? get lastAttemptAt => _lastAttemptAt;
   DateTime? get nextRetryAt => _nextRetryAt;
-  Duration get nextRetryDelay => reachabilityBackoffForAttempt(_retryAttempt);
+  Duration get nextRetryDelay =>
+      _failureKind == ReachabilityFailureKind.handshakeStall &&
+          _consecutiveFailureCount > 0
+      ? reachabilityHandshakeStallRetryDelay
+      : reachabilityBackoffForAttempt(_retryAttempt);
   bool get waitingForRetry => _state == ReachabilityState.retrying;
 
   void onConnectRequested({DateTime? at}) {
@@ -98,7 +102,12 @@ final class ReachabilityAdapter {
   }
 
   void onRetryTimerFired() {
-    _retryAttempt += 1;
+    // Handshake-stall retries keep the attempt rung frozen: a wedged path
+    // fast-cycles without climbing the ladder, and the first non-stall
+    // failure afterwards resumes the rung it left instead of jumping to 30s.
+    if (_failureKind != ReachabilityFailureKind.handshakeStall) {
+      _retryAttempt += 1;
+    }
     _nextRetryAt = null;
     _state = ReachabilityState.connecting;
     _connectInFlight = true;

@@ -8,6 +8,8 @@
 //                              ↓                         ↓
 //                          [offline] ←── canRetry=false
 //                          [retrying] ←── backoff 1→2→5→10→30s
+//                              (handshake-stall streaks: fixed 1s, rung frozen —
+//                               wedged paths fast-cycle; verdict #9)
 //                              ↓
 //                          connect() → [connecting] → …
 //
@@ -751,7 +753,18 @@ class ConnectionManager extends Service {
     }
 
     final inFlight = _connectInFlight;
-    if (inFlight != null && _connectTarget == target) return inFlight;
+    // Join a same-PEER in-flight connect even when the room component of the
+    // target churned (post-strike retarget: _markActiveRoomOffline and room
+    // switching update _activeRoomId between attempts). The room is not a
+    // reason to cancel a healthy in-flight handshake: _performConnect's
+    // same-peer branch retains the live room, and _propagateActiveRoom
+    // re-points the adopted channel. Cancelling over the tuple difference
+    // multiplied every strike into a _CancelledError chain (verdict #9:
+    // 8× per episode, ~4 min outage). A genuinely different PEER still
+    // invalidates below.
+    if (inFlight != null && _connectTarget?.peerEpk == target.peerEpk) {
+      return inFlight;
+    }
 
     final generation = ++_connectGeneration;
     _connectCancel?.cancel();

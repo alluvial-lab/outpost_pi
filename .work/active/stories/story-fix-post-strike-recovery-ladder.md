@@ -1,7 +1,7 @@
 ---
 id: story-fix-post-strike-recovery-ladder
 kind: story
-stage: implementing
+stage: review
 tags: [app, bug, lifecycle]
 parent: null
 depends_on: []
@@ -85,4 +85,55 @@ channel-loss events ignored, backoff reset only on real inbound.
 
 ## Verification evidence
 
-(accumulates during implementation)
+Implemented 2026-10-04 over `3af572be7`:
+
+- **Unit 1 (join)**: `_connect` now joins any in-flight connect whose PEER
+  matches, not just the exact `(peerEpk, roomId)` tuple — the room component
+  churns during post-strike retargets while `_performConnect`'s same-peer
+  branch retains the live room and `_propagateActiveRoom` re-points the
+  adopted channel. Diverged-PEER invalidation unchanged. The 3s
+  `reconnectFallbackDelay` hedge remains (it hedges, but hedge-loser closes
+  don't route failures or burn ladder rungs).
+- **Unit 2 (fast-cycle)**: `WsTransport` now owns a pre-auth handshake
+  deadline (`defaultAuthHandshakeTimeout` 12s — ahead of the manager's 15s
+  backstop, injectable for tests) so the zero-inbound classification
+  survives instead of being raced away by the manager timeout. Pre-auth
+  failures on sockets that never received a single relay frame classify as
+  the new `ReachabilityFailureKind.handshakeStall`; `ReachabilityAdapter`
+  holds retries at a fixed 1s (`reachabilityHandshakeStallRetryDelay`) with
+  the ladder rung frozen during stall-only streaks; the first non-stall
+  failure resumes the frozen rung; real inbound resets everything.
+- Tests (all green-first against the fix): manager join ×2 (same-peer room
+  churn joins — factory called once, token not cancelled; different peer
+  still replaces), adapter stall ladder (freeze at rung 2, 1s through a
+  5-stall streak, transport resumes at 5s, inbound resets), transport ×3
+  (clean pre-auth close → stall; silent relay + deadline → stall with
+  'auth handshake timed out'; challenge-then-silence deadline → frames-seen
+  kind preserved as relayRejected).
+- `flutter analyze` clean; full suite `flutter test --exclude-tags e2e
+  --concurrency=2`: **1,072 passed**.
+- Expected field effect (for v0.12.1 UAT): strikes still occur (netstack
+  owns them) but captures report `streamError`/`dartProtocolError` honestly
+  (story A), no `retryConnect _CancelledError` chains, and post-strike
+  recovery cycles ~1s instead of climbing 1→30s over ~4 min.
+
+## Implementation notes
+
+- Execution capability: inline implement (same owner as verdict #9 evidence
+  chain; app transport is one cohesive surface).
+- Review weight: standard — bounded inline pass (standalone story).
+- Files changed: `app/lib/domain/value_objects/reachability.dart`,
+  `app/lib/data/transport/reachability_adapter.dart`,
+  `app/lib/data/transport/ws_transport.dart`,
+  `app/lib/data/transport/connection_manager.dart`, plus the three test
+  files (`ws_transport_close_diagnostics_test.dart`,
+  `reachability_adapter_test.dart`, `connection_manager_test.dart`).
+- Design decisions: factory-owned handshake deadline over manager-timeout
+  re-routing (classification knowledge lives where the frames are counted;
+  avoids `_ConnectSuperseded` cause-tunnelling through the hedge race);
+  `handshakeStall` kept app-local (the reachability schema owns
+  states/backoff/heartbeat only — no cross-language failure-kind consumers).
+- Discrepancies from design: the give-up path turned out to be the 3s
+  fallback hedge plus the 15s manager deadline, not a dedicated preauth
+  timeout — resolved by the factory deadline rather than chasing either.
+- Adjacent issues parked: none new.

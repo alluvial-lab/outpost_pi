@@ -1140,4 +1140,94 @@ void main() {
       conn.dispose();
     });
   });
+
+  group('ConnectionManager same-peer connect join', () {
+    test(
+      're-entrant same-peer connect with room churn joins the in-flight attempt',
+      () async {
+        Completer<IChannel>? pendingFactory;
+        var factoryCalls = 0;
+        CancelToken? activeToken;
+        final conn = ConnectionManager(
+          factory: (peer, token) {
+            factoryCalls++;
+            activeToken = token;
+            final pending = Completer<IChannel>();
+            pendingFactory = pending;
+            token.addCancellationListener(() {
+              if (!pending.isCompleted) {
+                pending.completeError(Exception('factory cancelled'));
+              }
+            });
+            return pending.future;
+          },
+          storage: _ControlledStorage([]),
+          emitDebounce: Duration.zero,
+        );
+        addTearDown(conn.dispose);
+
+        final first = conn.connectTo(_peer);
+        await _settle();
+        expect(factoryCalls, 1);
+
+        // Post-strike retarget shape: the live room churns while the same
+        // peer's connect is still in flight. The join must hold — cancelling
+        // here multiplied every strike into a _CancelledError chain
+        // (verdict #9).
+        conn.switchRoom('other-room');
+        final second = conn.connectTo(_peer);
+        await _settle();
+        expect(
+          factoryCalls,
+          1,
+          reason: 'same-peer re-entrant connect must join the in-flight attempt',
+        );
+
+        final channel = _FakeChannel();
+        pendingFactory!.complete(channel);
+        await Future.wait([first, second]).timeout(
+          const Duration(seconds: 2),
+        );
+        expect(factoryCalls, 1);
+        expect(activeToken?.isCancelled, isFalse);
+      },
+    );
+
+    test('a different peer still replaces the in-flight attempt', () async {
+      var factoryCalls = 0;
+      final conn = ConnectionManager(
+        factory: (peer, token) {
+          factoryCalls++;
+          final pending = Completer<IChannel>();
+          token.addCancellationListener(() {
+            if (!pending.isCompleted) {
+              pending.completeError(Exception('factory cancelled'));
+            }
+          });
+          return pending.future;
+        },
+        storage: _ControlledStorage([]),
+        emitDebounce: Duration.zero,
+      );
+      addTearDown(conn.dispose);
+
+      unawaited(conn.connectTo(_peer));
+      await _settle();
+      expect(factoryCalls, 1);
+
+      await conn
+          .connectTo(
+            const PeerRecord(
+              remoteEpk: 'other-epk',
+              sessionName: 'Pi',
+              relayUrl: 'ws://localhost',
+              pairedAt: '2026-01-01T00:00:00Z',
+            ),
+          )
+          .timeout(const Duration(seconds: 2))
+          .catchError((Object _) {});
+      await _settle();
+      expect(factoryCalls, 2);
+    });
+  });
 }
