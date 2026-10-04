@@ -499,6 +499,12 @@ class WsTransport
 
     Future<void>? connectCleanup;
     Future<void> closeConnectResources(ChannelLocalClosePath path) {
+      // Disarm the auth deadline the moment failure/cancellation cleanup
+      // begins: if the endpoint withholds the upgrade, sink.close below can
+      // stay pending and the settle-`finally` never runs — an armed timer
+      // would then error a completer nobody awaits (uncaught async
+      // exception; reproduced by the security gate with short deadlines).
+      authDeadlineTimer.cancel();
       if (connectCleanup != null) return connectCleanup!;
       transport._recordLocalClose(path);
       transport._logCloseInitiated(path);
@@ -509,6 +515,7 @@ class WsTransport
     }
 
     Future<void> cancelConnect() async {
+      authDeadlineTimer.cancel();
       cancelled = true;
       if (!authDone && !challengeCompleter.isCompleted) {
         challengeCompleter.completeError(

@@ -36,6 +36,7 @@ not done work; binding would pend readiness; stay unbound per two-lane
 selective binding).
 
 ## Gate runs
+- **gate-security** (2026-10-04) — 0 critical / 0 high; 2 medium (MCP inbox unbounded [release-relevant, unbound per routing — operator may bind]; tmp-config symlink path [ambient]) → backlog; 1 low (auth-deadline unhandled error after cancellation — reproduced in new code, marked blocking-by-judgment, FIXED: timer disarmed at cleanup start).
 - **gate-docs** (2026-10-04) — 13 findings (6 foundation-doc assertions + 7 pattern-skill staleness), ALL fixed in-pass: VISION/DECISIONS/PROTOCOL Claude-wrapper present tense, reachability stall exception qualified in DECISIONS/ARCHITECTURE/schema companion, 7 pattern file:line refs refreshed.
 - **gate-tests** (2026-10-04) — 1 critical (production timeout composition defeated handshakeStall classification; FIXED: 9s deadline + hoisted consts + ordering seam test), 1 medium (join adoption/room-binding assertions; strengthened same pass). Test-integrity pass: 0 issues; no tautological tests.
 - **battery** (patch scope) — pairing suite ✓ (18 tests + redaction canaries); live failure lane ✓; live state-shapes lane ✓.
