@@ -107,6 +107,23 @@ class StatusOffline extends ConnectionStatus {
 }
 
 // ---------------------------------------------------------------------------
+// Retry-timing constants — the seam test in
+// `app/test/config/production_connection_factory_test.dart` pins their
+// ordering against `defaultAuthHandshakeTimeout` and
+// `productionWsConnectTimeout`: a hedged fallback attempt starts after
+// [kReconnectFallbackDelay] and its auth deadline must still fire before the
+// whole-attempt [kConnectAttemptDeadline], or the zero-inbound
+// handshake-stall classification is lost to a bare timeout.
+// ---------------------------------------------------------------------------
+
+/// Delay before a hedged fallback connect attempt starts alongside the
+/// primary (see `_connectWithFreshFallback`).
+const Duration kReconnectFallbackDelay = Duration(seconds: 3);
+
+/// Whole-attempt deadline for one supervised connect (primary + hedges).
+const Duration kConnectAttemptDeadline = Duration(seconds: 15);
+
+// ---------------------------------------------------------------------------
 // Factory typedef — injectable for tests
 // ---------------------------------------------------------------------------
 
@@ -314,8 +331,8 @@ class ConnectionManager extends Service {
     DebugLog? debugLog,
     Duration emitDebounce = const Duration(milliseconds: 50),
     Duration legacyRoomRetryDelay = const Duration(milliseconds: 250),
-    Duration reconnectFallbackDelay = const Duration(seconds: 3),
-    Duration connectAttemptDeadline = const Duration(seconds: 15),
+    Duration reconnectFallbackDelay = kReconnectFallbackDelay,
+    Duration connectAttemptDeadline = kConnectAttemptDeadline,
     DateTime Function()? clock,
     this.pingInterval = const Duration(seconds: 25),
   }) : _factory = factory,

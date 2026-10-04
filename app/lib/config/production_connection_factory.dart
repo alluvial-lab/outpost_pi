@@ -15,6 +15,12 @@ import 'package:cryptography/cryptography.dart';
 
 /// Connect one candidate relay transport for an established peer.
 ///
+/// Per-candidate timeout for the production transport connect (WebSocket
+/// connect + Ed25519 challenge round-trip). Without it an unreachable relay
+/// hangs a candidate indefinitely. Public const so the seam test can pin the
+/// ordering against [defaultAuthHandshakeTimeout].
+const Duration productionWsConnectTimeout = Duration(seconds: 10);
+
 /// The cancellation capability belongs to this individual candidate attempt;
 /// implementations must close their resources when it is cancelled.
 typedef ProductionTransportConnector =
@@ -90,7 +96,7 @@ class ProductionConnectionFactory {
     // challenge round-trip can hang indefinitely if the relay is unreachable.
     // Each candidate owns a child cancellation token so a timed-out path is
     // closed before the next endpoint is attempted.
-    const wsConnectTimeout = Duration(seconds: 10);
+    const wsConnectTimeout = productionWsConnectTimeout;
     Object? lastError;
     StackTrace? lastStack;
     for (final relayUrl in relayUrls) {

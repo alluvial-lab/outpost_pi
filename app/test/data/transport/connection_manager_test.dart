@@ -1183,13 +1183,24 @@ void main() {
           reason: 'same-peer re-entrant connect must join the in-flight attempt',
         );
 
-        final channel = _FakeChannel();
+        final channel = _RecordingChannel();
         pendingFactory!.complete(channel);
+        final statuses = <ConnectionStatus>[];
+        final sub = conn.statusStream.listen(statuses.add);
         await Future.wait([first, second]).timeout(
           const Duration(seconds: 2),
         );
+        await pumpEventQueue();
+        await sub.cancel();
         expect(factoryCalls, 1);
         expect(activeToken?.isCancelled, isFalse);
+        // The joined callers adopt the SAME channel once, converge online
+        // exactly once, and re-bind to the churned room — no retry, no
+        // second adoption, no stale destination.
+        expect(conn.activeRoomId, 'other-room');
+        expect(channel.setActiveRoomCalls, contains('other-room'));
+        expect(statuses.whereType<StatusOnline>(), hasLength(1));
+        expect(statuses.whereType<StatusRetrying>(), isEmpty);
       },
     );
 

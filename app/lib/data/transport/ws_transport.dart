@@ -121,11 +121,15 @@ String _formatHash(int hash) =>
 const int _wsOverflowAuditSummaryEvents = 100;
 const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
 
-/// Pre-auth handshake deadline owned by the transport. Fires ahead of
-/// ConnectionManager's 15s attempt deadline so the failure carries the
-/// zero-inbound (handshakeStall) classification; the relay's own auth
-/// timeout (~11s) usually closes first when its Close frame can arrive.
-const Duration defaultAuthHandshakeTimeout = Duration(seconds: 12);
+/// Pre-auth handshake deadline owned by the transport. MUST fire before
+/// the production factory's per-candidate timeout
+/// (`productionWsConnectTimeout`, 10s) so a wedged handshake fails with the
+/// zero-inbound (`handshakeStall`) classification instead of the factory's
+/// bare `TimeoutException` (transport kind); and, with the manager's 3s
+/// fallback head start (`kReconnectFallbackDelay`), before the whole-attempt
+/// deadline (`kConnectAttemptDeadline`, 15s). The ordering is pinned by
+/// `production_connection_factory_test.dart`.
+const Duration defaultAuthHandshakeTimeout = Duration(seconds: 9);
 const int _finalTextFrameFirstByte = 0x81;
 const int _finalCloseFrameFirstByte = 0x88;
 

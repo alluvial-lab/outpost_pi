@@ -3,8 +3,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app/config/production_connection_factory.dart';
-import 'package:app/data/identity/device_id.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/ws_transport.dart';
+import 'package:app/data/identity/device_id.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
@@ -18,6 +19,29 @@ const _configuredRelay = 'https://configured.example';
 const _pairedRelay = 'http://paired.example';
 
 void main() {
+  test(
+    'timeout composition preserves the handshake-stall classification ordering',
+    () {
+      // A wedged handshake (zero inbound frames) must fail from WsTransport's
+      // own auth deadline — carrying ReachabilityFailureKind.handshakeStall —
+      // before the production factory's per-candidate timeout can erase it
+      // with a bare TimeoutException (transport kind).
+      expect(
+        defaultAuthHandshakeTimeout,
+        lessThan(productionWsConnectTimeout),
+        reason: 'auth deadline must fire before the candidate timeout',
+      );
+      // A hedged fallback attempt starts kReconnectFallbackDelay after the
+      // primary; its auth deadline must still precede the manager's
+      // whole-attempt deadline.
+      expect(
+        kReconnectFallbackDelay + defaultAuthHandshakeTimeout,
+        lessThan(kConnectAttemptDeadline),
+        reason: 'fallback-start + auth deadline must beat the attempt deadline',
+      );
+    },
+  );
+
   test(
     'configured primary failure closes its attempt before paired alternate connects',
     () async {
