@@ -1,8 +1,6 @@
 ---
 name: patterns
-description: "Project code patterns and conventions. Auto-loads when implementing,
-  designing, verifying, or reviewing code. Provides detailed pattern definitions
-  with code examples."
+description: "Project code patterns and conventions. Auto-loads when implementing, designing, verifying, or reviewing code. Provides detailed pattern definitions with code examples."
 user-invocable: false
 allowed-tools: Read, Glob, Grep
 ---
@@ -23,6 +21,7 @@ Available patterns:
 - [era-aware-authority-fallback-binding.md](era-aware-authority-fallback-binding.md) — Prefer durable facts, then bind only unmatched legacy facts by stable collision keys for mixed-era compatibility.
 - [canonical-projection-equivalence-oracle.md](canonical-projection-equivalence-oracle.md) — Compare optimized or migrated projections with an independent canonical oracle over prefixes, duplicates, and reopen cases.
 - [content-free-diagnostic-categories.md](content-free-diagnostic-categories.md) — Project boundary failures to closed reason codes and bounded metadata before logging; never persist raw payloads or arbitrary error text.
+- [evidence-local-failure-classification.md](evidence-local-failure-classification.md) — Assign recovery categories at the evidence-owning boundary and consume them upstream without reclassification.
 - [frame-byte-bounded-admission.md](frame-byte-bounded-admission.md) — Check count and retained-byte budgets before enqueueing burst-controlled work, then release both counters on every exit path.
 - [identity-scoped-monotonic-high-watermarks.md](identity-scoped-monotonic-high-watermarks.md) — Advance security watermarks only under their matching owner/key generation and never permit stale or lower values to win.
 - [recoverable-secure-channel-circuit-breakers.md](recoverable-secure-channel-circuit-breakers.md) — Detach after a bounded invalid-frame streak, retain valid persisted keys, and recover through authenticated reattach plus state synchronization.
@@ -51,6 +50,7 @@ Available patterns:
 - [awaited-pane-teardown-contract.md](awaited-pane-teardown-contract.md) — Remove pane ownership before awaiting teardown, and expose a Future that completes only after its resources close.
 - [stale-capability-eviction.md](stale-capability-eviction.md) — On a Pi stale-context error, evict only the matching captured capability before degrading or propagating the failure.
 - [fresh-operation-gateway-factories.md](fresh-operation-gateway-factories.md) — Create a fresh, lifecycle-owned gateway through an injected factory for each independent process, agent, terminal, or pairing operation.
+- [join-in-flight-operations.md](join-in-flight-operations.md) — Share one completion future for equivalent concurrent work, and release only the matching operation on settlement.
 - [atomic-snapshot-store-marker-last-migration.md](atomic-snapshot-store-marker-last-migration.md) — Flush complete snapshots through temp-and-rename, and write a migration completion marker only after all destinations finish.
 - [dual-execution-path-contract-documentation.md](dual-execution-path-contract-documentation.md) — Document capability-dependent operations as both in-process and managed-restart paths, including ownership, acknowledgement, teardown, and convergence.
 - [paired-brightness-semantic-palettes.md](paired-brightness-semantic-palettes.md) — Define semantic color roles as complete dark/light pairs and resolve brightness once at each surface's composition boundary, never in leaf components.
