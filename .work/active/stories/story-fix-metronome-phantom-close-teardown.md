@@ -1,7 +1,7 @@
 ---
 id: story-fix-metronome-phantom-close-teardown
 kind: story
-stage: review
+stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
@@ -97,3 +97,13 @@ Implemented 2026-10-04 over `3af572be7`:
 - `flutter analyze` clean; full suite `flutter test --exclude-tags e2e
   --concurrency=2`: **1,072 passed** (includes the 10-test close-diagnostics
   suite).
+
+## Review
+
+Bounded inline pass (standalone-story lane, `standard` weight) over commit
+`2177087f1`: classification change is probe-grounded and scoped to the two
+codes dart demonstrably synthesizes; relay never closes 1xxx (verified at
+its close sites — `Close(None)` or 4xxx-with-reason), revisit condition
+  documented inline; regression test verified red-first; no other consumer
+keys off `closeOrigin` for retry policy (failureKind is unaffected).
+Verdict: pass, no blockers.

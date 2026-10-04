@@ -1,7 +1,7 @@
 ---
 id: story-fix-post-strike-recovery-ladder
 kind: story
-stage: review
+stage: done
 tags: [app, bug, lifecycle]
 parent: null
 depends_on: []
@@ -116,6 +116,17 @@ Implemented 2026-10-04 over `3af572be7`:
   owns them) but captures report `streamError`/`dartProtocolError` honestly
   (story A), no `retryConnect _CancelledError` chains, and post-strike
   recovery cycles ~1s instead of climbing 1→30s over ~4 min.
+
+## Review
+
+Bounded inline pass (standalone-story lane, `standard` weight) over commit
+`68cd86479`: join-on-peerEpk leaves no stale-room hazard (`_activeRoomId`
+remains the send-time authority; `_activePeer.roomId` consumers are
+target-computation only, which reads the live room for same-peer); timer
+lifecycle cancels on every exit path incl. successful handoff; adapter
+rung-freeze verified against interleaved kinds; fixture cruft (one stray
+parser line) removed post-pass and suites re-run green. Verdict: pass, no
+blockers.
 
 ## Implementation notes
 

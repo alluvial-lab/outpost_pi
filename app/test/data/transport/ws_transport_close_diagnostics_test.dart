@@ -519,7 +519,6 @@ final class _AbruptClientParser {
       }
       _buffer.removeRange(0, cursor + length);
       if ((first & 0x0f) == 0x1) _handleText(payload);
-      if ((first & 0x0f) == 0x8) onReady();
     }
   }
 
