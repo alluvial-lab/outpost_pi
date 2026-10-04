@@ -256,7 +256,11 @@ non-transcript convergence signal and never selects app state by itself. See
 
 Reachability is one generated contract in
 `protocol/schema/reachability.json`: `Connecting / Online / Degraded / Offline /
-Retrying` plus the shared `[1, 2, 5, 10, 30]` backoff policy. The app,
+Retrying` plus the shared `[1, 2, 5, 10, 30]` backoff policy — the NORMAL
+retry path for ordinary failures. The app carries one bounded stack-local
+exception: zero-inbound handshake stalls fast-cycle at a fixed 1s with the
+ladder rung frozen (see `ReachabilityFailureKind.handshakeStall`); the
+schema owns the canonical ladder and is unchanged. The app,
 extension, and relay project those values into stack-native state while keeping
 transport-resource ownership local to each adapter.
 

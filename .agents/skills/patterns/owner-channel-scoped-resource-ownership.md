@@ -68,7 +68,7 @@ The owner id selects the logical channel while the concrete handle selects the c
 
 ### Example 3: Connection loss acts only on the active channel instance
 
-**File:** `app/lib/data/transport/connection_manager.dart:1872-1906`
+**File:** `app/lib/data/transport/connection_manager.dart:2049-2080`
 
 ```dart
 void _onChannelLost(

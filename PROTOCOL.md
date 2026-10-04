@@ -40,7 +40,7 @@ plan with `git show <commit>:plan/NN-name.md`.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Agent layer       Pi coding agent (future: Claude Code, OpenCode)  │
+│  Agent layer       Pi coding agent (+ optional `outpost-pi claude`) │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Envelope          {from, to, id, re, body}  — 5-field JSONL        │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -593,8 +593,11 @@ Details in `plan/04-pairing.md`.
 Short term:
 - Wave E3: server-side clone detection (alert when two WS connections for the same Pi-pubkey come from different IPs)
 
+Shipped:
+- **Claude Code mesh wrapper** (`outpost-pi claude`): a Claude Code session joins the local UDS broker as a named peer through an opt-in terminal wrapper, with safe defaults (own permission policy, turn-boundary message polling via `get_messages`)
+
 Medium term:
-- **Harness wrappers** (`outpost-pi claude`, `outpost-pi opencode`): other coding agents connect to the local UDS broker through a wrapper, gaining mesh capability without reimplementing the protocol
+- **Further harness wrappers** (e.g. `outpost-pi opencode`): other coding agents connect to the local UDS broker through the same wrapper pattern, gaining mesh capability without reimplementing the protocol
 - E2E protection for cross-PC Pi↔Pi payloads
 
 Long term:

@@ -49,8 +49,10 @@ A developer who runs Pi as their coding agent and wants to:
 
 ## What this is NOT
 
-- **Not a multi-harness product.** Pi-only. No Claude Code, OpenCode, Goose,
-  or Aider targets.
+- **Pi is the core harness; Claude Code is an optional mesh adapter.**
+  `outpost-pi claude` is a terminal-only, per-folder opt-in wrapper that
+  puts a Claude Code session on the local agent mesh — it is not a
+  multi-harness control plane, and OpenCode/Goose/Aider remain non-targets.
 - **Owner payloads are E2E-protected; relay-visible metadata is not.**
   Post-pairing app↔Pi owner payloads use the protected owner channel. The relay
   still sees routing metadata and cross-PC Pi↔Pi envelope contents; self-hosting

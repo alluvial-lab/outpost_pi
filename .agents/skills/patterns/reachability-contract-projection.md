@@ -2,7 +2,7 @@
 
 ## Rationale
 
-Protocol state machines that cross transport boundaries should be defined once as contracts (`state` list, backoff schedule, heartbeat policy) and projected into each stack using the same bounded-domain shape. This keeps reachability behavior semantically aligned and lets each component implement checks/clamping in local idioms while preserving compatibility.
+Protocol state machines that cross transport boundaries should be defined once as contracts (`state` list, backoff schedule, heartbeat policy) and projected into each stack using the same bounded-domain shape. This keeps reachability behavior semantically aligned and lets each component implement checks/clamping in local idioms while preserving compatibility. Bounded stack-local exceptions for locally-classified failure kinds are permitted (the app's zero-inbound handshake-stall 1s fast-cycle) as long as the canonical contract stays the policy for ordinary failures.
 
 ## When to use
 
@@ -42,7 +42,7 @@ export function reachabilityBackoffMs(attempt: number): number {
 
 ### Example 2: App-domain contract projection
 
-**File:** `app/lib/domain/value_objects/reachability.dart:21`
+**File:** `app/lib/domain/value_objects/reachability.dart:9`
 
 ```dart
 enum ReachabilityState { connecting, online, degraded, offline, retrying }

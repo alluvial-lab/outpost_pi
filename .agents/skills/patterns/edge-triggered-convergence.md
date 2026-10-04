@@ -36,7 +36,7 @@ Every stateful screen gets the same edge-triggered notification boundary.
 
 ### Example 2: Room working projection persists only on a changed value
 
-**File:** `app/lib/data/transport/connection_manager.dart:1499-1510`
+**File:** `app/lib/data/transport/connection_manager.dart:1630-1675`
 
 ```dart
 if (list[idx].working == working) return;

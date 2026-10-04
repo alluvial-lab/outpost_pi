@@ -36,6 +36,7 @@ not done work; binding would pend readiness; stay unbound per two-lane
 selective binding).
 
 ## Gate runs
+- **gate-docs** (2026-10-04) — 13 findings (6 foundation-doc assertions + 7 pattern-skill staleness), ALL fixed in-pass: VISION/DECISIONS/PROTOCOL Claude-wrapper present tense, reachability stall exception qualified in DECISIONS/ARCHITECTURE/schema companion, 7 pattern file:line refs refreshed.
 - **gate-tests** (2026-10-04) — 1 critical (production timeout composition defeated handshakeStall classification; FIXED: 9s deadline + hoisted consts + ordering seam test), 1 medium (join adoption/room-binding assertions; strengthened same pass). Test-integrity pass: 0 issues; no tautological tests.
 - **battery** (patch scope) — pairing suite ✓ (18 tests + redaction canaries); live failure lane ✓; live state-shapes lane ✓.
 - **gate-patterns** (2026-10-04) — 2 patterns codified (evidence-local-failure-classification, join-in-flight-operations); 1 inconsistency (new join tests' `_settle()` sleep vs deterministic-completion-barriers → unbound drafting story). Tracking item bound.

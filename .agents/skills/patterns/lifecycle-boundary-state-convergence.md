@@ -51,7 +51,7 @@ Both active projections converge before the relay is stopped, so a killed or rep
 
 ### Example 3: App disposal clears cached room activity before closing its channel
 
-**File**: `app/lib/data/transport/connection_manager.dart:687-707`
+**File**: `app/lib/data/transport/connection_manager.dart:715-745`
 
 ```dart
 _disposed = true;

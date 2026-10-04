@@ -62,7 +62,7 @@ A partial `room_meta_update` cannot erase an unrelated cached field; explicit va
 
 ### Example 3: App incremental updates preserve omitted room fields
 
-**File**: `app/lib/data/transport/connection_manager.dart:1214-1224`
+**File**: `app/lib/protocol/control_frames.dart:512-520 (and the tri-state merge at app/lib/data/transport/connection_manager.dart:1261-1292)`
 
 ```dart
 final nextSessionId = hasSessionId ? sessionId : current.sessionId;
@@ -76,7 +76,7 @@ The app uses presence flags for nullable string metadata and nullable-as-absent 
 
 ### Example 4: App room snapshots preserve local-only and legacy metadata selectively
 
-**File**: `app/lib/data/transport/connection_manager.dart:1252-1277`
+**File**: `app/lib/data/transport/connection_manager.dart:1279-1300`
 
 ```dart
 final preservedName = byId[r.roomId]?.name ?? r.name;

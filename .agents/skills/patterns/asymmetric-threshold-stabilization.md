@@ -41,7 +41,7 @@ The composer enters below 280dp but does not restore standard chrome until heigh
 
 ### Example 2: Reachability degrades after misses and recovers on real inbound traffic
 
-**File:** `app/lib/data/transport/reachability_adapter.dart:50-60` and `app/lib/domain/value_objects/reachability.dart:44-61`
+**File:** `app/lib/data/transport/reachability_adapter.dart:87-103` and `app/lib/domain/value_objects/reachability.dart:68-76`
 
 ```dart
 void onAppFrameObserved() {
