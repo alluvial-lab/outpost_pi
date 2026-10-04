@@ -5,7 +5,7 @@ stage: done
 tags: [app, bug, lifecycle]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.12.1
 gate_origin: null
 created: 2026-10-04
 updated: 2026-10-04
