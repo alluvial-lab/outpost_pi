@@ -807,7 +807,7 @@ void main() {
       await _settle();
       // Dispose invalidates the connect supervisor while the attempt is
       // in flight — the cancel-race investigation's third canceller class.
-      await conn.dispose();
+      conn.dispose();
       await _settle();
 
       final invalidated = _assertEvent<ConnCancelEvent>(

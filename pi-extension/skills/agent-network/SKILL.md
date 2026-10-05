@@ -39,9 +39,10 @@ it.** How a message reaches you depends on your runtime:
   or `(no messages)` when nothing is waiting — that's normal, keep working. If
   your session runs with the mesh wake enabled (launched with
   `--outpost-mesh-wake`), an idle session may be nudged awake by a channel
-  push (`📨 mesh message from … arrived — call get_messages …`): the nudge
-  carries no payload and no message id — `get_messages` is always the
-  authoritative drain, at turn start, wake or no wake.
+  push (`📨 mesh message from … arrived — call get_messages …`) when a
+  LOCAL peer messages you (cross-PC messages only buffer for your next
+  drain): the nudge carries no payload and no message id — `get_messages`
+  is always the authoritative drain, at turn start, wake or no wake.
 
 - **Pi:** the runtime delivers each incoming message directly as a new turn
   input the moment it arrives — no polling, no `get_messages`. You'll see it
@@ -148,10 +149,12 @@ fire-and-forget (`status: "sent"`).
 a peer that's mid-turn is still delivered: the broker forwards it and the
 peer's harness (Pi) or MCP inbox (Claude) queues it for its upcoming turn.
 On Claude, `received` means *accepted by the broker and handed to the
-peer's process*, not *handled* — the in-memory inbox survives mid-turn
-waits but not an MCP restart or session exit before a drain. You never need
-to retry because a peer was busy. `re=<id>` is purely **correlation** — set
-it so the recipient (and you) can thread an answer to a question; it
+peer's process*, not *handled* — retention is bounded best-effort (the
+in-memory inbox holds at most 1,000 messages / 4 MiB, shedding the oldest
+beyond that and rejecting individually oversized messages), so a drain can
+legitimately miss messages that arrived during long gaps. You never need
+to retry because a peer was busy. `re=<id>` is purely **correlation** —
+set it so the recipient (and you) can thread an answer to a question; it
 carries no special delivery semantics.
 
 ---

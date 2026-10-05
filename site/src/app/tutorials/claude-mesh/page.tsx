@@ -234,7 +234,8 @@ Agent name [api]: reviewer`}
             what makes unattended agent-to-agent work possible but also removes
             your approval gate. <InlineCode>--outpost-mesh-wake</InlineCode>{" "}
             changes <em className="text-fg">who can start a turn</em>: any
-            mesh peer, not just you. It keeps the permission policy intact —
+            LOCAL mesh peer, not just you (cross-PC messages only buffer for
+            the next drain — remote-initiated turns stay opt-out). It keeps the permission policy intact —
             but combined with skip-permissions, a peer message can drive
             unattended tool execution. Only point this at folders and peers
             you trust — same posture as promoting a folder to a{" "}

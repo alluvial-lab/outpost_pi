@@ -400,7 +400,8 @@ call asks), and mesh messages are seen at the next turn boundary through
 - **Authority** — `--dangerously-skip-permissions` auto-approves every tool
   call. Pass it through yourself for unattended operation; the wrapper never
   injects it.
-- **Initiative** — `--outpost-mesh-wake` lets mesh peers START turns on the
+- **Initiative** — `--outpost-mesh-wake` lets LOCAL mesh peers START turns
+  on the
   session. The wrapper expands it to the development-channels flag (Claude
   asks one consent question at launch — answer once and proceed) and
   pre-approves the read-only `get_messages` drain, so an unattended woken
