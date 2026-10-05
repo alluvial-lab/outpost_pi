@@ -1,7 +1,7 @@
 ---
 id: feature-claude-host-mesh-idle-wake-qualification
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, workflow]
 parent: feature-claude-host-mesh-idle-wake
 depends_on: []

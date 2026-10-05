@@ -176,6 +176,82 @@ fallback.
   in-memory and dies with the process — SKILL.md's "Delivery is reliable"
   line gains this precision).
 
+## Qualification evidence (2026-10-05, story -qualification; Claude Code 2.1.289, Opus 5.5 · Claude Max, auth = claude.ai OAuth)
+
+Scratch cell: `/tmp/wakequal` via `outpost-pi claude <dir> <flag>` in tmux;
+sender = this repo's Pi session on the mesh; pane observed via capture-pane.
+
+**Q2 core — channel-notification wake: PASS 3/3 within 15s** (declared
+criteria N=3/T=15s), launched with
+`--dangerously-load-development-channels server:outpost-pi-mesh`:
+
+- Wake 1 (single): turn started ~6–8s after ACK. The channel notification
+  renders as a session input (`← outpost-pi-mesh: 📨 Message from …`),
+  the turn runs with no typed text. Woken turn: 13s, ~350–1000 tokens.
+- Wake 2 (single): turn started ~4–6s; 7s total (tools already loaded).
+- Burst (3a+3c simultaneous, 3b +6s after sender-side error): 3a+3c
+  **coalesced into ONE turn client-side** (same-timestamp inputs); 3b got
+  its own turn. ⇒ Claude Code merges simultaneous notifications; messages
+  straddling turn boundaries each wake — server-side edge-triggered
+  coalescing still adds value, and the rate cap remains the loop backstop.
+- Permission mode: this box's default is "auto mode" — **no approval
+  stalls** on MCP tool calls. Strict default-perms cell NOT run (public-
+  consumer concern only; the --allowedTools pairing is designed anyway).
+  P4 stall remains unconfirmed-but-plausible for gated modes.
+- Woken-session self-report: full message text arrives inline but without
+  the message id (nudge redesign notes the id must come from the drain).
+
+**Q1 enablement paths:**
+
+- `--dangerously-load-development-channels server:<name>` — space form
+  parses; **consent dialog every launch** (default option 1 = proceed; one
+  Enter). Hidden from `claude --help`.
+- `--channels server:<name>` — accepted, **no dialog, but silent no-op**:
+  session idles, message buffers in inbox (pull intact), NO wake. The
+  "approved channels" registration surface is unknown — open follow-up if
+  the dangerous flag ever needs replacing.
+- `--allowedTools` grammar: space/comma-separated variadic list
+  (`--allowedTools mcp__outpost-pi-mesh__get_messages` shape; exact MCP
+  tool naming to confirm at landing).
+
+**Q3 server-alive paths:**
+
+- Spawn timing: MCP process spawns **eagerly at session start** (no lazy
+  process spawn for --mcp-config on 2.1.289); one early respawn observed
+  then stable. Tool **schemas** lazy-load — the first wake costs one extra
+  tool-search call (this is the real "lazy" the fleet CHANGELOG named).
+- Lock contention (second session, same cwd): second MCP retry-then-
+  `failLoud`-exits; main TUI looks normal; `/mcp` shows `✘ outpost-pi-mesh`
+  (visible if checked, not proactive). Folder-keyed address ⇒ sender still
+  gets "Delivered" — to the lock holder. Silent-wake-death risk confirmed
+  as designed-for.
+- No-config path: not live-tested (wizard gates it on the wrapper);
+  code-level analysis stands (stays connected, never joins, tools report
+  why).
+
+**Q4 background-task wake: PASS** — idle session with a background
+`sleep 25` started a new turn on task completion
+(`● Background command … completed (exit code 0)` → `✻ Brewed for 1s`).
+**Lane B (`outpost-pi mesh-wait` as a background task) is viable** on
+supported surfaces with no dev channel.
+
+**Hooks premise:** not live-tested (both lanes passed; deprioritized).
+`Notification`-hook-can-start-a-turn remains an open footnote.
+
+**Cross-PC:** no `<pc>:` peers exist today — untestable; local-only-wake
+default stands as designed.
+
+**Cost:** woken turns 3–13s wall, ~350–1000 tokens each. Negligible at
+current fleet message rates.
+
+**Lane decision: Lane A lands** (channel notification via the dangerous
+flag + consent-Enter). It passed 3/3 + burst; consent dialog is the one
+operational wrinkle — per-launch one Enter (operator or launch script
+send-keys). Lane B is confirmed viable and stays the documented fallback
+if the dev channel drifts or the consent burden becomes a problem.
+Fleet wake-on = append the flag to the claude-nextup tmux launch line
+(per-surface delivery decision, already recorded).
+
 ## Implementation Units
 
 ### Unit 1: Live qualification protocol (trickiest — designed first)
