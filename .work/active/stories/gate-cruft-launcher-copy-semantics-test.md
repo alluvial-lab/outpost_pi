@@ -1,14 +1,14 @@
 ---
 id: gate-cruft-launcher-copy-semantics-test
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: cruft
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Array-aliasing test is implementation-bound and unused by the CLI contract
@@ -30,3 +30,8 @@ the result immediately). Launcher behavior is unchanged either way.
 ## Removal
 Delete the test unless non-aliasing is made an explicit public API contract.
 Keep the positional-CWD and verbatim-passthrough tests.
+
+## Implementation notes (2026-10-05)
+
+- Test deleted (non-aliasing not a public contract; launcher spreads the
+  result immediately). Positional-CWD + passthrough tests retained.

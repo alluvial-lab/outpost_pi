@@ -1,14 +1,14 @@
 ---
 id: gate-cruft-verdict-archaeology-comments
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: cruft
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Transport comments retain transient verdict and .work archaeology
@@ -37,3 +37,11 @@ and synthetic-close attribution exist (zero-inbound wedged path; dart
 synthesizes 1002/1001), without the incident narrative. (The
 connection-manager header block is handled in
 `gate-cruft-ping-miss-threshold-comment`.)
+
+## Implementation notes (2026-10-05)
+
+- Seven sites trimmed to current-state rationale (reachability ×2,
+  ws_transport ×2, connection_manager ×1, close-diagnostics test ×2):
+  verdict numbers, strike counts, outage durations, .work links removed;
+  the WHY (zero-inbound wedge class, dart-synthesized 1002/1001
+  attribution) preserved.

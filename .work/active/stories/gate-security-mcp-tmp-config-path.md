@@ -1,14 +1,14 @@
 ---
 id: gate-security-mcp-tmp-config-path
 kind: story
-stage: implementing
+stage: done
 tags: [security]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Predictable MCP temporary file permits symlink following / config substitution
@@ -34,3 +34,9 @@ depends on filesystem protections.
 ## Remediation direction
 Create an unpredictable owner-only temp directory (mkdtemp semantics),
 exclusively create the config inside it, remove the directory on cleanup.
+
+## Implementation notes (2026-10-05)
+
+- `writeEphemeralMcpConfig`/`removeEphemeralMcpDir` in standalone_cli.ts:
+  mkdtemp 0700 dir + exclusive (`wx`) config create inside; whole-dir
+  removal on exit. Test asserts 0700 + wx-rejection + cleanup.

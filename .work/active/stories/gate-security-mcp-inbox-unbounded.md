@@ -1,14 +1,14 @@
 ---
 id: gate-security-mcp-inbox-unbounded
 kind: story
-stage: implementing
+stage: done
 tags: [security]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Polling-only Claude sessions retain an unbounded mesh inbox
@@ -36,3 +36,11 @@ Bound retained messages by count and bytes with an explicit overflow policy
 polling-only defaults. Release-relevant per scanner (exposure amplified by
 this release's polling default); unbound per medium routing — operator may
 bind case-by-case.
+
+## Implementation notes (2026-10-05)
+
+- New `pi-extension/src/mcp/inbox.ts`: BoundedInbox (count 1,000 + bytes
+  4 MiB, drop-oldest, single-oversize reject, surfaced+reset-on-drain drop
+  count). mesh_server rewired: wake edge reads eligible state via
+  find/some, get_messages prepends the drop warning. 7 unit tests incl.
+  wake-edge reads and drop-counter reset.

@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-09-01
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Connection dies ~13-35s after connect (worsening); swallows agent turns mid-flap
@@ -715,3 +715,27 @@ New facts beyond #7/#8:
 
 The v0.12.0 instrument delivered exactly the conclusive pairing it was cut
 for; no tungstenite frame=trace was needed (no WS-layer violation exists).
+
+
+## Stride (2026-10-05, autopilot pre-release drain)
+
+- Verdict #9 field evidence cross-checked against shipped code: the
+  attribution relabel (dart-synthesized 1002/1001 → streamError +
+  dartProtocolError/dartPingWatchdog) ALREADY LANDED in v0.12.1
+  (story-fix-metronome-phantom-close-teardown, 2177087f1). Verdict #9's
+  capture ran the v0.12.0+28 daily driver, so its serverCloseFrame/1002
+  rows validated the fix's premise, not a missing fix. Unit 1 closed.
+- Cancellation-site attribution logging LANDED this stride: typed
+  `ConnCancelEvent` (tag connCancel; sites factoryStart /
+  reentrantConnect / supervisorInvalidate / performConnectEntry, each
+  carrying the connect generation) wired at every `_connectCancel.cancel()`
+  site + factory checkpoint; registry + production-seam routing test
+  (generations pair the checkpoint with its attempt and its superseder).
+  The next field capture names the cancel-race canceller from these rows.
+- Remaining work is NOT autonomously completable: (a) operator-side —
+  tailscale-android bug report with the verdict #8/#9 evidence package,
+  battery-optimization check, repro confirm on a v0.12.1+ build; (b) the
+  cancel-race BEHAVIORAL fix, deliberately held until the new logging
+  names the canceller (story discipline: no blind behavioral fixes);
+  (c) optional mitigations (home-LAN relay candidate, rehydration burst
+  splitting) — undecided, operator call.

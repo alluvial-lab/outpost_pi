@@ -1,14 +1,14 @@
 ---
 id: gate-patterns-inconsistency-settle-sleep
 kind: story
-stage: implementing
+stage: done
 tags: [refactor, testing]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: patterns
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # New manager join tests infer progress from a fixed sleep
@@ -31,3 +31,11 @@ factory-start barrier (e.g. a completer completed inside the factory before
 returning the pending channel future, awaited before the second
 `connectTo`), or an explicit event-loop drain appropriate for a
 synchronously-started async prefix. Test-only change; behavior-preserving.
+
+## Implementation notes (2026-10-05)
+
+- Join-group `_settle()` calls replaced with per-call factory-start
+  completers (completed synchronously inside the factory; awaiting proves
+  _performConnect's bookkeeping is visible to re-entrant connectTo —
+  deterministic, no wall clock). Both same-peer and different-peer tests
+  converted; other `_settle()` sites out of scope per the finding.
