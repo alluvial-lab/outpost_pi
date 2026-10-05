@@ -426,6 +426,20 @@ export class BrokerRemote implements RemoteRouter {
     // addressed to the original sender (env.to is the original sender's
     // prefixed address; strip the prefix and deliver via UDS).
     if (fromPc === "_relay") {
+      // Security (gate-security v0.13.0): the relay-synthesised transport-error
+      // path is the ONLY legitimate use of from_pc="_relay". Anything else
+      // claiming that origin — a forged local-looking sender, an arbitrary
+      // body — is a relay/MITM impersonation attempt: this branch skips
+      // sibling validation, so it must validate the envelope IS a genuine
+      // relay transport error before injecting anything into the local
+      // broker. Fail closed: drop and log.
+      if (!isRelayTransportError(env)) {
+        this.log(
+          `[broker_remote] drop: from_pc "_relay" with non-relay-error envelope ` +
+          `(from=${String(env.from).slice(0, 48)}) — spoof attempt`,
+        );
+        return;
+      }
       this._propagateTransportError(env);
       return;
     }
@@ -690,6 +704,20 @@ export class BrokerRemote implements RemoteRouter {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** True when an envelope is a genuine relay-synthesised transport error
+ *  (the only legitimate from_pc="_relay" shape: sender "_relay",
+ *  body type "transport_error", single string recipient). Anything else
+ *  claiming that origin is dropped by handleIncoming — the branch skips
+ *  sibling validation, so it must validate the envelope itself. */
+function isRelayTransportError(env: Envelope): boolean {
+  return (
+    env.from === "_relay" &&
+    typeof env.to === "string" &&
+    !!env.body && typeof env.body === "object" &&
+    (env.body as { type?: unknown }).type === "transport_error"
+  );
+}
 
 /**
  * Parse a `<pc>:<peer>` address. Returns null when the input doesn't

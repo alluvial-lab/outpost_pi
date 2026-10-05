@@ -1,7 +1,7 @@
 ---
 id: gate-tests-v0.13.0-hardening
 kind: story
-stage: implementing
+stage: done
 tags: [testing]
 parent: null
 depends_on: []

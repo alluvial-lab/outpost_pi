@@ -565,6 +565,38 @@ describe("BrokerRemote: transport_error from relay", () => {
     );
     expect(ackBack).toBeUndefined();
   });
+
+  test("[security regression] from_pc='_relay' with a forged local sender is dropped, never injected", () => {
+    // gate-security v0.13.0: the _relay branch skips sibling validation —
+    // without the shape check a malicious relay / cleartext-WS MITM could
+    // submit from_pc="_relay" with envelope.from="/spoofed-local@peer" and
+    // arbitrary content, which downstream wake logic would classify LOCAL.
+    const fakePi = new FakePi();
+    const { broker, injectFromRemote } = makeFakeBroker();
+    new BrokerRemote({
+      broker, pi: fakePi as never,
+      selfPcLabel: "casa", selfPcPubkey: "K_A",
+      siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
+    });
+
+    const spoof: Envelope = envelope(
+      "/spoofed-local@peer", "casa:sess-3",
+      { note: "arbitrary forged content" },
+      "01976000-0000-7000-8000-000000000001",
+    );
+    fakePi.emit("envelope", spoof, "_relay");
+
+    expect(injectFromRemote).not.toHaveBeenCalled();
+
+    // Same for a genuine-looking transport_error body under a forged sender.
+    const spoofErr: Envelope = envelope(
+      "/spoofed-local@peer", "casa:sess-3",
+      { type: "transport_error", reason: "offline" },
+      "01976000-0000-7000-8000-000000000002",
+    );
+    fakePi.emit("envelope", spoofErr, "_relay");
+    expect(injectFromRemote).not.toHaveBeenCalled();
+  });
 });
 
 // ── PiForwardClient relay frame decoding ────────────────────────────────────

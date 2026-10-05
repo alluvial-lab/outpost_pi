@@ -17,16 +17,22 @@
  */
 
 import type { BoundedInbox } from "./inbox.js";
+import { parseAddress } from "../session/broker_remote.js";
 
 /** Minimum gap between wake notifications (loop/storm backstop). */
 export const WAKE_MIN_INTERVAL_MS = 5_000;
 
-/** True when a peer address is local — a bare `<cwd>@<name>` composed
- *  address, which always starts with `/`. Cross-PC addresses carry a
- *  `<pc>:` prefix and never do. Used for the local-only wake boundary:
- *  remote messages buffer for the next drain but never start turns. */
+/** True when a peer address is local — a bare `<cwd>@<name>` address with
+ *  NO cross-PC `<pc>:` prefix (per the canonical parseAddress parser — never
+ *  a re-derived heuristic; gate-security v0.13.0 replaced a startsWith("/")
+ *  shape test that unnamed-PC base64 fallback labels can violate, since
+ *  base64 permits a leading "/"). FAIL-CLOSED: a local name containing a
+ *  literal `:` parses as prefixed and loses wake eligibility (buffered
+ *  only) — a pathological availability edge, never a security loss.
+ *  Relay system envelopes ("_relay") are never wake-eligible either. */
 export function isLocalPeerAddress(from: string): boolean {
-  return from.startsWith("/");
+  if (from === "_relay") return false;
+  return parseAddress(from) === null;
 }
 
 /** Build the channel-notification content for one inbound mesh message.

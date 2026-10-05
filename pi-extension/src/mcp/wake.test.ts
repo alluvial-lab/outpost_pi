@@ -76,6 +76,23 @@ describe("isLocalPeerAddress", () => {
     expect(isLocalPeerAddress("laptop:/home/a/proj@agent")).toBe(false);
     expect(isLocalPeerAddress("pc-two:/tmp/x@y")).toBe(false);
   });
+
+  test("[security regression] slash-leading base64 fallback PC labels are remote", () => {
+    // Unnamed-PC labels are raw base64 pubkey prefixes (siblings.ts) and
+    // base64 permits a leading '/' — the startsWith('/') heuristic would
+    // have classified this local and woken the session.
+    expect(isLocalPeerAddress("/wAAAAAA:/tmp/remote@peer")).toBe(false);
+    expect(isLocalPeerAddress("/9+/AbCd:/x@y")).toBe(false);
+  });
+
+  test("relay system envelopes are never wake-eligible", () => {
+    expect(isLocalPeerAddress("_relay")).toBe(false);
+  });
+
+  test("fail-closed: a local name containing a colon parses as prefixed (no wake)", () => {
+    // Documented availability edge — buffered, never a security loss.
+    expect(isLocalPeerAddress("weird:name@local")).toBe(false);
+  });
 });
 
 // ── Coordinator wiring tests (gate-tests findings: the server-boundary
