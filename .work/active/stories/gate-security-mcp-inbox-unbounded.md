@@ -1,7 +1,7 @@
 ---
 id: gate-security-mcp-inbox-unbounded
 kind: story
-stage: done
+stage: implementing
 tags: [security]
 parent: null
 depends_on: []
