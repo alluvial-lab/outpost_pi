@@ -80,6 +80,11 @@ promoted same day.
   turn, batching while busy (landed after the characterized interruption
   complaint, archived `backlog-mesh-message-wake-interrupts-agent`). Claude
   hosts have no equivalent.
+- NextUp-side Claude sessions currently run with plugin disables (their
+  project policy b561e12, expedience against bundled-CLI drift — operator:
+  reversible, plugins can be toggled back on). No current wake lane needs a
+  Claude-side plugin, but don't treat that policy as a hard constraint if a
+  design lands there.
 - Code surfaces (all this repo): `pi-extension/src/mcp/mesh_server.ts`,
   `pi-extension/src/extension/command_surface/standalone_cli.ts`
   (`outpost-pi claude` launcher + flag passthrough),
