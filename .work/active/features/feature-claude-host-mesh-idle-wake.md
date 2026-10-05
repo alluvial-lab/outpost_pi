@@ -1,7 +1,7 @@
 ---
 id: feature-claude-host-mesh-idle-wake
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, workflow]
 parent: null
 depends_on: []
@@ -427,6 +427,46 @@ export function shouldWake(inboxLengthBefore: number): boolean;
   confirmed at first live wake use of the toggle; `--channels` approved-
   registration surface undocumented; consent-Enter per launch for tmux-
   scripted sessions (send-keys or operator press).
+
+## Review record (2026-10-05)
+
+- Mode: substrate feature review; effective weight: **standard** (one
+  balanced fresh-context pass); reviewer: `openai-codex/gpt-6-astra`
+  (cross-model), read full diff + surrounding integration.
+- Verdict on arrival: Request changes — 2 blockers + 3 importants, all
+  receiver-verified against the code and fixed in the same cycle:
+  1. **BLOCKER — cross-PC messages woke sessions** (design said local-only
+     wake): implemented `isLocalPeerAddress` + eligible-edge wiring. Remote
+     (`<pc>:`-prefixed) messages buffer for the next drain and never start
+     turns; a local message arriving behind undrained remote ones still
+     wakes (the edge tracks wake-ELIGIBLE unread state); the deferred
+     re-check names a local sender. Tests added.
+  2. **BLOCKER — dev-channels dedupe also dropped the drain pre-approval**:
+     `--allowedTools` generation is now independent of the channel dedupe
+     (an operator-passed channel flag stands; the pre-approval still
+     generates). The test that enshrined the old behavior was corrected.
+  3. **IMPORTANT — cap-boundary clock tick could strand a suppressed edge**
+     (decision and scheduling used separate `Date.now()` samples): single
+     sample now feeds both; the deferred callback re-arms instead of
+     dropping when it finds the cap unsatisfied (clock-skew safety).
+     Skew-safety test added.
+  4. **IMPORTANT — skill overstated the ACK**: the broker ACKs on socket
+     write, before the recipient processes the envelope; reworded to
+     broker-accepted/forwarded with the non-durability warning preserved.
+  5. **IMPORTANT — stale foundation assertion** (docs/DECISIONS.md
+     "dangerous flags are explicit operator passthrough"): rolled forward
+     to the authority/initiative distinction.
+- Reviewer rejections, receiver-concurs: shell injection (argv array,
+  shell:false), drain/timer interleave (synchronous), signature breakage
+  (defaults on new params), channel-markup escape (escaping is not
+  injection immunity; no exploit verified — stance stays "untrusted input,
+  escaped").
+- Limitation: the mesh_server wiring (timer/drain/message interleave) is
+  not unit-importable — the script has module-load side effects. Coverage
+  is WakeGate-level tests + post-fix receiver re-review; a live e2e wake
+  lane at next release would close the residual gap.
+- Closure: standard policy — receiver-confirmed blockers fixed and
+  verified (typecheck, targeted + full suite, build); no second pass.
 
 ## Grounding (scoping evidence, retained)
 

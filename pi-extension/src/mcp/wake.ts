@@ -19,6 +19,14 @@
 /** Minimum gap between wake notifications (loop/storm backstop). */
 export const WAKE_MIN_INTERVAL_MS = 5_000;
 
+/** True when a peer address is local — a bare `<cwd>@<name>` composed
+ *  address, which always starts with `/`. Cross-PC addresses carry a
+ *  `<pc>:` prefix and never do. Used for the local-only wake boundary:
+ *  remote messages buffer for the next drain but never start turns. */
+export function isLocalPeerAddress(from: string): boolean {
+  return from.startsWith("/");
+}
+
 /** Build the channel-notification content for one inbound mesh message.
  *
  * `from` is untrusted wire data (any mesh peer, cross-PC included) and is

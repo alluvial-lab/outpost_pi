@@ -137,7 +137,7 @@ inspect the status — it dictates what to do next.**
 
 | Status | Means | What you do |
 |---|---|---|
-| `received` | Broker delivered the envelope. On Pi the harness enqueues it into the peer's next turn. On Claude (MCP) it means the peer's MCP process **buffered** it for the next `get_messages` drain — the buffer is in-memory, so an MCP restart or session exit before a drain can drop it. | Move on. Any reply arrives later. |
+| `received` | The broker accepted the envelope and forwarded it to the peer (it ACKs on socket write, before the recipient processes it). On Pi the harness enqueues it into the peer's next turn; on Claude (MCP) the peer's MCP process buffers it for the next `get_messages` drain — that buffer is in-memory, so an MCP restart or session exit before a drain can drop it. | Move on. Any reply arrives later. |
 | `denied` | Peer explicitly refused (or no such peer). | Do NOT retry. Report to the user. |
 | `timeout` | No ACK (~5s). Transport error — broker down, or peer vanished. | Treat as transient. Retry once after ~10s, then escalate. |
 
@@ -145,13 +145,14 @@ For `to: "broadcast"` (or a name array), there's no single ACK — it's
 fire-and-forget (`status: "sent"`).
 
 **Delivery is reliable on the wire — no retry-on-busy.** A message sent to
-a peer that's mid-turn is still delivered: the peer's harness (Pi) or MCP
-inbox (Claude) queues it and processes it on its upcoming turn. On Claude,
-`received` means *buffered by the peer's process*, not *handled* — the
-in-memory inbox survives mid-turn waits but not an MCP restart or session
-exit before a drain. You never need to retry because a peer was busy.
-`re=<id>` is purely **correlation** — set it so the recipient (and you) can
-thread an answer to a question; it carries no special delivery semantics.
+a peer that's mid-turn is still delivered: the broker forwards it and the
+peer's harness (Pi) or MCP inbox (Claude) queues it for its upcoming turn.
+On Claude, `received` means *accepted by the broker and handed to the
+peer's process*, not *handled* — the in-memory inbox survives mid-turn
+waits but not an MCP restart or session exit before a drain. You never need
+to retry because a peer was busy. `re=<id>` is purely **correlation** — set
+it so the recipient (and you) can thread an answer to a question; it
+carries no special delivery semantics.
 
 ---
 

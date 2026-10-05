@@ -93,13 +93,20 @@ describe("buildClaudeLaunchArgs", () => {
     ]);
   });
 
-  test("operator-passed dev-channels flag suppresses the expansion (no clobber/duplicate)", () => {
+  test("operator-passed dev-channels flag suppresses only the channel expansion", () => {
+    // The operator supplied their own channel flag AND asked for wake via the
+    // toggle: their channel flag stands, but the drain pre-approval must
+    // still be generated — without it an approval-gated session wakes and
+    // then stalls on the get_messages dialog nobody answers.
     for (const passthrough of [
       ["--dangerously-load-development-channels", "server:outpost-pi-mesh"],  // space form
       ["--dangerously-load-development-channels=server:outpost-pi-mesh"],     // = form
     ]) {
       const flags = buildClaudeLaunchArgs("/tmp/mcp.json", null, true, passthrough);
-      expect(flags).toEqual(["--mcp-config", "/tmp/mcp.json"]);
+      expect(flags).toEqual([
+        "--mcp-config", "/tmp/mcp.json",
+        "--allowedTools=mcp__outpost-pi-mesh__get_messages",
+      ]);
     }
   });
 });

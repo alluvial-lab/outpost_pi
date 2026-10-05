@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { WAKE_MIN_INTERVAL_MS, WakeGate, wakeNudgeContent } from "./wake.js";
+import { WAKE_MIN_INTERVAL_MS, WakeGate, isLocalPeerAddress, wakeNudgeContent } from "./wake.js";
 
 describe("wakeNudgeContent", () => {
   test("names the sender, directs the drain, and carries no body", () => {
@@ -61,5 +61,23 @@ describe("WakeGate", () => {
     expect(delay).toBe(CAP - 500);
     // Timer fires late (past the cap window): the re-check succeeds.
     expect(gate.onDeferredRecheck(1_500 + delay + 50)).toBe(true);
+  });
+
+  test("a re-check that fires inside the cap window is re-suppressed (skew safety)", () => {
+    const gate = new WakeGate(CAP);
+    gate.onMessage(0, 1_000);
+    gate.onMessage(0, 1_500);                            // suppressed edge
+    // Timer fires EARLY (clock skew): the re-check must fail, not force a wake —
+    // the wiring re-arms instead of dropping the pending work.
+    expect(gate.onDeferredRecheck(1_800)).toBe(false);
+    expect(gate.retryAfterMs(1_800)).toBe(CAP - 800);
+  });
+});
+
+describe("isLocalPeerAddress", () => {
+  test("bare cwd addresses are local; pc:-prefixed are remote", () => {
+    expect(isLocalPeerAddress("/home/a/proj@agent")).toBe(true);
+    expect(isLocalPeerAddress("laptop:/home/a/proj@agent")).toBe(false);
+    expect(isLocalPeerAddress("pc-two:/tmp/x@y")).toBe(false);
   });
 });

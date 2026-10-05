@@ -279,8 +279,14 @@ export function buildClaudeLaunchArgs(
   return [
     "--mcp-config", mcpConfigPath,
     ...(skillPath ? [`--append-system-prompt-file=${skillPath}`] : []),
+    // The drain pre-approval is independent of the channel dedupe: an
+    // operator who passed their own dev-channels flag still asked for wake
+    // when they added MESH_WAKE_FLAG — dropping the pre-approval too would
+    // stall approval-gated sessions on the very drain the wake requests.
     ...(meshWake && !operatorPassedDevChannels ? [
       "--dangerously-load-development-channels=server:outpost-pi-mesh",
+    ] : []),
+    ...(meshWake ? [
       "--allowedTools=mcp__outpost-pi-mesh__get_messages",
     ] : []),
   ];
