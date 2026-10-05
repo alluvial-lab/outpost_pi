@@ -1,10 +1,13 @@
 ---
 id: gate-refactor-lifecycle-file-viewer-shortcut-promise
 created: 2026-08-26
-updated: 2026-08-26
+updated: 2026-10-05
 tags: []
 release_binding: null
 gate_origin: refactor
+
+status: folded
+folded_into: backlog-file-viewer-action-ownership
 ---
 
 # File-viewer keyboard shortcuts discard async action promises

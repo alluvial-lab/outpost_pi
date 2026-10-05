@@ -1,8 +1,11 @@
 ---
 id: idea-multi-endpoint-per-folder-mesh
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 tags: []
+
+status: folded
+folded_into: backlog-mcp-endpoint-ownership
 ---
 
 Documented support for two agents sharing one folder's mesh via the broker.

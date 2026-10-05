@@ -1,8 +1,11 @@
 ---
 id: idea-mesh-lock-contention-mcp-visibility
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 tags: []
+
+status: folded
+folded_into: backlog-mcp-endpoint-ownership
 ---
 
 Surface "folder busy" lock-contention failures through the MCP channel, not

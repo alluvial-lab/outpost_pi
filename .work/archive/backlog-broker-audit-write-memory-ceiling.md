@@ -1,8 +1,11 @@
 ---
 id: backlog-broker-audit-write-memory-ceiling
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-10-05
 tags: [pi-extension, security]
+
+status: folded
+folded_into: backlog-bounded-audit-writes
 ---
 
 # Broker audit-write serialization has no in-memory ceiling

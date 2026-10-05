@@ -1,10 +1,13 @@
 ---
 id: gate-docs-site-readme-playwright-workflow
 created: 2026-08-26
-updated: 2026-08-26
+updated: 2026-10-05
 tags: [documentation]
 release_binding: null
 gate_origin: docs
+
+status: folded
+folded_into: backlog-site-verification-contract-sync
 ---
 
 # Site command guidance omits the checked-in Playwright and check workflow

@@ -7,7 +7,10 @@ depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-08-29
-updated: 2026-08-29
+updated: 2026-10-05
+
+status: folded
+folded_into: backlog-safe-unmanaged-session-replacement
 ---
 
 # Authenticated session replacement can terminate an unmanaged Pi process

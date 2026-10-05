@@ -1,10 +1,13 @@
 ---
 id: gate-refactor-lifecycle-relay-callback-promises
 created: 2026-08-26
-updated: 2026-08-26
+updated: 2026-10-05
 tags: []
 release_binding: null
 gate_origin: refactor
+
+status: folded
+folded_into: backlog-relay-transport-detached-ownership
 ---
 
 # Relay transport drops post-connect callback promises

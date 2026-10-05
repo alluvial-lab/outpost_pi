@@ -1,10 +1,13 @@
 ---
 id: gate-tests-frame-hash-shared-known-answers
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-10-05
 tags: [testing, app, relay]
 release_binding: null
 gate_origin: tests
+
+status: folded
+folded_into: backlog-bounded-diagnostic-hashing
 ---
 
 # Pin paired frame hashes with shared independent known answers

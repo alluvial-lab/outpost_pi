@@ -1,8 +1,11 @@
 ---
 id: backlog-ext-audit-rotation-load-flake
 created: 2026-08-16
-updated: 2026-08-26
+updated: 2026-10-05
 tags: [pi-extension, testing, bug]
+
+status: folded
+folded_into: backlog-bounded-audit-writes
 ---
 
 # pi-extension audit-rotation timing tests flake under uncapped full-suite load

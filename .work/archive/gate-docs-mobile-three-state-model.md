@@ -1,10 +1,13 @@
 ---
 id: gate-docs-mobile-three-state-model
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-10-05
 tags: [documentation]
 release_binding: null
 gate_origin: docs
+
+status: folded
+folded_into: backlog-background-axis-docs
 ---
 
 # Mobile remote-coding checklist omits the distinct orchestrating state

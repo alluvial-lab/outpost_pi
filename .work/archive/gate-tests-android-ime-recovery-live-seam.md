@@ -1,10 +1,13 @@
 ---
 id: gate-tests-android-ime-recovery-live-seam
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-10-05
 tags: [testing, app]
 release_binding: null
 gate_origin: tests
+
+status: folded
+folded_into: backlog-android-ime-live-evidence
 ---
 
 # Exercise stale-IME recovery through the real Android window-insets seam

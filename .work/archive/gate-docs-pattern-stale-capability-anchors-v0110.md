@@ -1,10 +1,13 @@
 ---
 id: gate-docs-pattern-stale-capability-anchors-v0110
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-10-05
 tags: [documentation]
 release_binding: null
 gate_origin: docs
+
+status: folded
+folded_into: backlog-pattern-anchor-refresh-v0110
 ---
 
 # Stale-capability pattern points at pre-cleanup SDK line ranges

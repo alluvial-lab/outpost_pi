@@ -1,10 +1,13 @@
 ---
 id: gate-tests-remove-fake-ime-convergence-assertion
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-10-05
 tags: [testing, app, cleanup]
 release_binding: null
 gate_origin: tests
+
+status: folded
+folded_into: backlog-android-ime-live-evidence
 ---
 
 # Remove the self-fulfilling fake-IME convergence assertion

@@ -1,10 +1,13 @@
 ---
 id: gate-security-bound-inbound-hash-work
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-10-05
 tags: [security, app]
 release_binding: null
 gate_origin: security
+
+status: folded
+folded_into: backlog-bounded-diagnostic-hashing
 ---
 
 # Bound diagnostic hashing before allocating oversized relay frames

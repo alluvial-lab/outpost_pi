@@ -1,10 +1,13 @@
 ---
 id: gate-docs-pi-extension-room-background
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-10-05
 tags: [documentation]
 release_binding: null
 gate_origin: docs
+
+status: folded
+folded_into: backlog-background-axis-docs
 ---
 
 # Pi extension skill omits the RoomMeta background projection

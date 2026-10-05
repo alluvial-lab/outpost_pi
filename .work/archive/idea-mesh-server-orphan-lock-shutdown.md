@@ -1,8 +1,11 @@
 ---
 id: idea-mesh-server-orphan-lock-shutdown
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 tags: []
+
+status: folded
+folded_into: backlog-mcp-endpoint-ownership
 ---
 
 Orphaned mesh_server processes must not hold a per-folder cwd lock

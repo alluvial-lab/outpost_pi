@@ -1,8 +1,11 @@
 ---
 id: story-new-wedge-bare-pi-reopen
 created: 2026-08-29
-updated: 2026-10-04
+updated: 2026-10-05
 tags: [pi-extension, bug, lifecycle]
+
+status: folded
+folded_into: backlog-safe-unmanaged-session-replacement
 ---
 
 # Bare-pi /new reopened: live rebind-branch gap + settle-emit isolation
