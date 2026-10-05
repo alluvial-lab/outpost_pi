@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { existsSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { MESH_WAKE_FLAG, buildClaudeLaunchArgs, removeEphemeralMcpDir, splitClaudeCliArgs, writeEphemeralMcpConfig } from "./standalone_cli.js";
@@ -108,17 +108,29 @@ describe("buildClaudeLaunchArgs", () => {
 });
 
 describe("writeEphemeralMcpConfig (gate-security-mcp-tmp-config-path)", () => {
-  test("creates an unpredictable owner-only dir with an exclusive config inside", () => {
-    const configPath = writeEphemeralMcpConfig("/fake/mesh_server.js");
+  test("creates unpredictable owner-only dirs with the exact server config, exclusively", () => {
+    const first = writeEphemeralMcpConfig("/fake/mesh_server.js");
+    const second = writeEphemeralMcpConfig("/fake/mesh_server.js");
     try {
-      const dirMode = statSync(dirname(configPath)).mode & 0o777;
-      expect(dirMode).toBe(0o700); // owner-only: no pre-positioning by other local users
-      expect(existsSync(configPath)).toBe(true);
-      // Exclusive-create contract: a second write into the same path must fail.
-      expect(() => writeFileSync(configPath, "{}", { flag: "wx" })).toThrow();
+      // Unpredictable across calls: two launches never share a path another
+      // local user could pre-position.
+      expect(dirname(first)).not.toBe(dirname(second));
+      for (const configPath of [first, second]) {
+        const dirMode = statSync(dirname(configPath)).mode & 0o777;
+        expect(dirMode).toBe(0o700); // owner-only
+        // The execution-bearing content is exactly the wrapper's contract.
+        const parsed = JSON.parse(readFileSync(configPath, "utf8")) as {
+          mcpServers: Record<string, { command: string; args: string[] }>;
+        };
+        const server = parsed.mcpServers["outpost-pi-mesh"]!;
+        expect(server.command).toBe(process.execPath);
+        expect(server.args).toEqual(["/fake/mesh_server.js"]);
+      }
     } finally {
-      removeEphemeralMcpDir(configPath);
-      expect(existsSync(configPath)).toBe(false);
+      removeEphemeralMcpDir(first);
+      removeEphemeralMcpDir(second);
+      expect(existsSync(first)).toBe(false);
+      expect(existsSync(second)).toBe(false);
     }
   });
 });

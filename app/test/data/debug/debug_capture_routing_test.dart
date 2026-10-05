@@ -580,11 +580,17 @@ void main() {
       // Connection lifecycle events fired during _connectedManager setup
       // (connecting → online → hydrate). Assert them against the full event
       // log before clearing for the per-phase room-snapshot assertions below.
-      expect(_tags(s.log.events).take(3), <DebugTag>[
-        DebugTag.connStatus,
-        DebugTag.connStatus,
-        DebugTag.connHydrate,
-      ]);
+      // connCancel attribution rows are a different concern axis (connect
+      // supersession bookkeeping, not lifecycle) — exclude them here so this
+      // assertion stays about the status/hydrate flow.
+      expect(
+        _tags(s.log.events.where((e) => e is! ConnCancelEvent)).take(3),
+        <DebugTag>[
+          DebugTag.connStatus,
+          DebugTag.connStatus,
+          DebugTag.connHydrate,
+        ],
+      );
       final connecting = _assertEvent<ConnStatusEvent>(
         s.log.events,
         DebugTag.connStatus,
@@ -756,20 +762,60 @@ void main() {
         DebugTag.connCancel,
         where: (event) => event.site == ConnectCancelSite.performConnectEntry,
       );
+      // First-connect rows are suppressed (nothing to cancel), so every
+      // attributed row here belongs to the supersession; pair the checkpoint
+      // with the attempt it started by generation, not first occurrence.
       final checkpoint = _assertEvent<ConnCancelEvent>(
         log.events,
         DebugTag.connCancel,
-        where: (event) => event.site == ConnectCancelSite.factoryStart,
+        where: (event) =>
+            event.site == ConnectCancelSite.factoryStart &&
+            event.generation == entry.generation,
       );
-      final reentrant = _assertEvent<ConnCancelEvent>(
+      _assertEvent<ConnCancelEvent>(
         log.events,
         DebugTag.connCancel,
-        where: (event) => event.site == ConnectCancelSite.reentrantConnect,
+        where: (event) =>
+            event.site == ConnectCancelSite.reentrantConnect &&
+            event.generation == entry.generation,
       );
-      // Generations pair the checkpoint with the attempt it started and the
-      // cancellation that superseded it.
+      // The superseding attempt is generation 2 — it cancelled generation 1.
+      expect(entry.generation, 2);
       expect(checkpoint.generation, entry.generation);
-      expect(reentrant.generation, greaterThan(entry.generation));
+    },
+  );
+
+  test(
+    'ConnectionManager routes supervisor invalidation through connect-cancel diagnostics',
+    () async {
+      final log = _FakeDebugLog();
+      final conn = ConnectionManager(
+        factory: (peer, token) {
+          final pending = Completer<IChannel>();
+          token.addCancellationListener(() {
+            if (!pending.isCompleted) {
+              pending.completeError(Exception('factory cancelled'));
+            }
+          });
+          return pending.future;
+        },
+        storage: _FakeStorage(),
+        debugLog: log,
+      );
+
+      unawaited(conn.connectTo(_peer));
+      await _settle();
+      // Dispose invalidates the connect supervisor while the attempt is
+      // in flight — the cancel-race investigation's third canceller class.
+      await conn.dispose();
+      await _settle();
+
+      final invalidated = _assertEvent<ConnCancelEvent>(
+        log.events,
+        DebugTag.connCancel,
+        where: (event) => event.site == ConnectCancelSite.supervisorInvalidate,
+      );
+      expect(invalidated.generation, greaterThanOrEqualTo(2));
     },
   );
 
@@ -1423,6 +1469,15 @@ void main() {
         DebugTag.replayDedup,
         'dropped',
         (e) => e is ReplayDedupEvent && e.dropped == true,
+      ),
+      // Connect-supersession attribution (connCancel): the re-entrant
+      // connect site asserted in the attribution test above.
+      (
+        DebugTag.connCancel,
+        'reentrant-connect',
+        (e) =>
+            e is ConnCancelEvent &&
+            e.site == ConnectCancelSite.reentrantConnect,
       ),
     ];
 

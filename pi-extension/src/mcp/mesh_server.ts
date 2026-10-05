@@ -19,8 +19,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { MeshNode } from "../session/mesh_node.js";
 import { loadLocalConfig, defaultAgentName, localConfigExists } from "../session/local_config.js";
-import { WAKE_MIN_INTERVAL_MS, WakeGate, isLocalPeerAddress, wakeNudgeContent } from "./wake.js";
 import { BoundedInbox, jsonByteSize, renderInboxMessage } from "./inbox.js";
+import { WAKE_MIN_INTERVAL_MS, WakeGate, createWakeCoordinator, wakeNudgeContent } from "./wake.js";
 import { sessionSockPath, sessionAuditPath, LOCAL_SESSION_NAME } from "../session/global_config.js";
 import { resolveRelayUrl } from "../config.js";
 import { acquireCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
@@ -64,47 +64,35 @@ interface IncomingMsg {
 
 const inbox = new BoundedInbox<IncomingMsg>(jsonByteSize);
 
-// ── Wake gate (edge-triggered, rate-capped) ──────────────────────────────────
+// ── Wake wiring (policy lives in wake.ts; this is the server-side adapter) ───
 
-// One notification per empty→non-empty transition, re-armed by a get_messages
-// drain, with a minimum gap between wakes so two woken peers ping-ponging (or
-// a broadcast burst) cannot storm the session. Cap-suppressed edges arm a
-// deferred re-check: capped messages still surface (liveness) — the cap never
-// drops inbox messages, only additional wakes.
 const wakeGate = new WakeGate(WAKE_MIN_INTERVAL_MS);
 let _deferredWakeTimer: ReturnType<typeof setTimeout> | null = null;
-
-function emitWake(from: string): void {
-  // Transport errors only: an un-opted client silently ignores custom
-  // notification methods, so this catch can NEVER signal "wake off" — the
-  // server cannot detect whether the session runs the dev channel.
-  void mcp.server.notification({
-    method: "notifications/claude/channel",
-    params: { content: wakeNudgeContent(from) },
-  }).catch((err: unknown) => {
-    logErr(`wake notification transport error: ${String(err)}`);
-  });
-}
-
-function armDeferredWake(nowMs: number): void {
-  if (_deferredWakeTimer) return;
-  const delay = wakeGate.retryAfterMs(nowMs);
-  if (delay === null) return;
-  const t = setTimeout(() => {
-    _deferredWakeTimer = null;
-    // Liveness re-check: the inbox may have drained meanwhile (nothing to
-    // wake about) or still hold capped local messages that never woke
-    // anyone. A re-check that fires inside the cap window (clock skew)
-    // re-arms instead of forcing a wake or dropping the pending work.
-    const local = inbox.find((m) => isLocalPeerAddress(m.from));
-    if (!local) return;
-    const now = Date.now();
-    if (wakeGate.onDeferredRecheck(now)) emitWake(local.from);
-    else armDeferredWake(now);
-  }, delay);
-  t.unref?.();
-  _deferredWakeTimer = t;
-}
+const wakeCoordinator = createWakeCoordinator(
+  inbox,
+  wakeGate,
+  (from) => {
+    // Transport errors only: an un-opted client silently ignores custom
+    // notification methods, so this catch can NEVER signal "wake off" — the
+    // server cannot detect whether the session runs the dev channel.
+    void mcp.server.notification({
+      method: "notifications/claude/channel",
+      params: { content: wakeNudgeContent(from) },
+    }).catch((err: unknown) => {
+      logErr(`wake notification transport error: ${String(err)}`);
+    });
+  },
+  {
+    arm: (delayMs, fire) => {
+      const t = setTimeout(fire, delayMs);
+      t.unref?.();
+      _deferredWakeTimer = t;
+    },
+    cancel: () => {
+      if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
+    },
+  },
+);
 
 // ── Mesh node ─────────────────────────────────────────────────────────────────
 
@@ -247,9 +235,7 @@ mcp.registerTool("get_messages", {
   const { items: msgs, dropped } = inbox.drain();
   // A full drain empties the inbox: re-arm the wake edge and cancel any
   // pending deferred re-check (nothing left to wake about).
-  if (msgs.length > 0) {
-    if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
-  }
+  if (msgs.length > 0) wakeCoordinator.onDrain();
   if (msgs.length === 0 && dropped === 0) {
     return { content: [{ type: "text" as const, text: "(no messages)" }] };
   }
@@ -302,26 +288,11 @@ async function main(): Promise<void> {
       re: env.re,
       at: isoNow(),
     };
-    const hadLocalUnread = inbox.some((m) => isLocalPeerAddress(m.from));
-    inbox.push(msg);
-    // Local-only wake boundary: cross-PC senders (`<pc>:`-prefixed, riding
-    // non-E2E relay traffic) buffer for the next drain but never start
-    // turns — remote-initiated unattended turns stay opt-out by default.
-    // The wake edge tracks wake-ELIGIBLE (local) unread state, so a local
-    // message arriving behind an undrained remote one still wakes. One
-    // clock sample feeds both the decision and any deferred scheduling —
-    // two samples could strand a suppressed edge at the cap boundary
-    // (decision suppressed, scheduler sees the cap satisfied, arms nothing).
-    // Edge-triggered (eligible-empty→non-empty only, rate-capped): a burst
-    // or broadcast wakes once; a drain re-arms. Only sessions launched with
-    // the dev-channels flag honor the notification — for everyone else it
-    // is inertly ignored and get_messages polling remains the delivery
-    // path.
-    const now = Date.now();
-    if (isLocalPeerAddress(msg.from) && !hadLocalUnread) {
-      if (wakeGate.onMessage(0, now)) emitWake(msg.from);
-      else armDeferredWake(now);
-    }
+    // Local-only, edge-triggered, rate-capped wake decision (see
+    // createWakeCoordinator). Only sessions launched with the dev-channels
+    // flag honor the notification — for everyone else it is inertly ignored
+    // and get_messages polling remains the delivery path.
+    wakeCoordinator.onMessage(msg);
   });
 
   // Connect the stdio transport FIRST and unconditionally, so Claude Code

@@ -27,12 +27,17 @@ describe("BoundedInbox (gate-security-mcp-inbox-unbounded)", () => {
   });
 
   test("byte overflow sheds oldest until under budget; drop count surfaces", () => {
-    const inbox = new BoundedInbox<Msg>(sizeOf, { maxMessages: 100, maxBytes: sizeOf({ from: "x", body: "" }) * 3 });
+    const budget = sizeOf({ from: "x", body: "" }) * 3;
+    const inbox = new BoundedInbox<Msg>(sizeOf, { maxMessages: 100, maxBytes: budget });
     for (let i = 0; i < 10; i++) inbox.push({ from: `p${i}`, body: "" });
     const { items, dropped } = inbox.drain();
-    expect(items.length).toBeLessThanOrEqual(3);
-    expect(dropped).toBe(10 - items.length);
-    expect(items[items.length - 1]!.from).toBe("p9"); // newest always retained
+    // The retained set must actually be UNDER the byte budget — a loose
+    // length bound would miss precisely the resource violation this gate
+    // exists to catch (e.g. 3 × 23B = 69 > a 66B budget).
+    const retainedBytes = items.reduce((n, m) => n + sizeOf(m), 0);
+    expect(retainedBytes).toBeLessThanOrEqual(budget);
+    expect(items.map((m) => m.from)).toEqual(["p8", "p9"]);
+    expect(dropped).toBe(8);
   });
 
   test("a single message larger than the byte budget is rejected, not retained", () => {

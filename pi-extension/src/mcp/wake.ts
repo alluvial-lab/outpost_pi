@@ -16,6 +16,8 @@
  *   deferred re-check so capped messages still surface (liveness).
  */
 
+import type { BoundedInbox } from "./inbox.js";
+
 /** Minimum gap between wake notifications (loop/storm backstop). */
 export const WAKE_MIN_INTERVAL_MS = 5_000;
 
@@ -78,4 +80,81 @@ export class WakeGate {
     this.lastReleaseMs = nowMs;
     return true;
   }
+}
+
+// ── Wake coordinator (wiring seam) ───────────────────────────────────────
+
+/** Full inbound message shape the coordinator retains and wakes on. */
+export interface WakeMessage {
+  readonly from: string;
+  readonly body: unknown;
+  readonly id: string;
+  readonly re: string | null;
+  readonly at: string;
+}
+
+/** Injected timer surface so coordinator scheduling is fake-time testable. */
+export interface WakeScheduler {
+  arm(delayMs: number, fire: () => void): void;
+  cancel(): void;
+}
+
+export interface WakeCoordinator {
+  /** Retain one inbound message and run the local-only edge-triggered wake
+   *  decision (broker/system envelopes must be filtered by the caller). */
+  onMessage(msg: WakeMessage): void;
+  /** Called after a full inbox drain: re-arm the edge, cancel pending
+   *  deferred re-checks (nothing left to wake about). */
+  onDrain(): void;
+}
+
+/** Wire the wake policy to an inbox: LOCAL-PEER-ONLY, edge-triggered
+ *  (wake-eligible empty→non-empty only), rate-capped, with a deferred
+ *  liveness re-check when a cap suppresses the edge. Remote (`<pc>:`-prefixed
+ *  non-E2E relay traffic) messages buffer for the next drain and never start
+ *  turns; a local message arriving behind undrained remote ones still wakes
+ *  (the edge tracks wake-ELIGIBLE unread state, not raw inbox length).
+ *  Extracted from mesh_server so the wiring itself is unit-testable — the
+ *  server script's module-load side effects resist direct import. */
+export function createWakeCoordinator(
+  inbox: BoundedInbox<WakeMessage>,
+  gate: WakeGate,
+  emit: (from: string) => void,
+  scheduler: WakeScheduler,
+  now: () => number = Date.now,
+): WakeCoordinator {
+  let armed = false;
+
+  const armDeferred = (): void => {
+    if (armed) return;
+    const delay = gate.retryAfterMs(now());
+    if (delay === null) return;
+    armed = true;
+    scheduler.arm(delay, () => {
+      armed = false;
+      // Liveness re-check: the inbox may have drained (nothing to wake
+      // about) or still hold capped local messages that never woke anyone.
+      // An early fire inside the cap window (clock skew) re-arms instead of
+      // forcing a wake or dropping the pending work.
+      const local = inbox.find((m) => isLocalPeerAddress(m.from));
+      if (!local) return;
+      if (gate.onDeferredRecheck(now())) emit(local.from);
+      else armDeferred();
+    });
+  };
+
+  return {
+    onMessage(msg: WakeMessage): void {
+      const hadLocalUnread = inbox.some((m) => isLocalPeerAddress(m.from));
+      inbox.push(msg);
+      if (!isLocalPeerAddress(msg.from)) return; // remote: buffer only
+      if (hadLocalUnread) return; // not a wake-eligible edge
+      if (gate.onMessage(0, now())) emit(msg.from);
+      else armDeferred();
+    },
+    onDrain(): void {
+      armed = false;
+      scheduler.cancel();
+    },
+  };
 }

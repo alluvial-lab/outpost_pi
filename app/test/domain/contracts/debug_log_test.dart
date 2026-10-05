@@ -229,6 +229,11 @@ void main() {
         sessionIdTail: huge,
         retryScheduled: true,
       ),
+      ConnCancelEvent(
+        ts: now,
+        site: ConnectCancelSite.reentrantConnect,
+        generation: 2,
+      ),
       LayoutModeEvent(
         ts: now,
         twoPane: false,

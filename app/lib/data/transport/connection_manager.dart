@@ -783,8 +783,14 @@ class ConnectionManager extends Service {
     }
 
     final generation = ++_connectGeneration;
-    _connectCancel?.cancel();
-    _logConnCancel(ConnectCancelSite.reentrantConnect, generation);
+    // Attribution rows are meaningful only when a prior attempt existed —
+    // a first connect cancels nothing and must not pollute the capture with
+    // phantom supersession events.
+    final priorAttempt = _connectCancel;
+    priorAttempt?.cancel();
+    if (priorAttempt != null) {
+      _logConnCancel(ConnectCancelSite.reentrantConnect, generation);
+    }
     late final Future<void> operation;
     operation = () async {
       if (inFlight != null) await inFlight;
@@ -834,8 +840,11 @@ class ConnectionManager extends Service {
   Future<void> _performConnect(PeerRecord peer) async {
     _cancelRetry();
     _cancelPing();
-    _connectCancel?.cancel();
-    _logConnCancel(ConnectCancelSite.performConnectEntry, _connectGeneration);
+    final priorAttempt = _connectCancel;
+    priorAttempt?.cancel();
+    if (priorAttempt != null) {
+      _logConnCancel(ConnectCancelSite.performConnectEntry, _connectGeneration);
+    }
     _channelSub?.cancel();
     _channelSub = null;
     _controlSub?.cancel();

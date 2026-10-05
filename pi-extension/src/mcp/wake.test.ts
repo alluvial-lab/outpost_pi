@@ -1,5 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { WAKE_MIN_INTERVAL_MS, WakeGate, isLocalPeerAddress, wakeNudgeContent } from "./wake.js";
+import {
+  WAKE_MIN_INTERVAL_MS,
+  WakeGate,
+  createWakeCoordinator,
+  isLocalPeerAddress,
+  wakeNudgeContent,
+  type WakeMessage,
+  type WakeScheduler,
+} from "./wake.js";
+import { BoundedInbox } from "./inbox.js";
 
 describe("wakeNudgeContent", () => {
   test("names the sender, directs the drain, and carries no body", () => {
@@ -79,5 +88,137 @@ describe("isLocalPeerAddress", () => {
     expect(isLocalPeerAddress("/home/a/proj@agent")).toBe(true);
     expect(isLocalPeerAddress("laptop:/home/a/proj@agent")).toBe(false);
     expect(isLocalPeerAddress("pc-two:/tmp/x@y")).toBe(false);
+  });
+});
+
+// ── Coordinator wiring tests (gate-tests findings: the server-boundary
+// behavior was previously only reachable through the unimportable script) ──
+
+class FakeScheduler implements WakeScheduler {
+  armed: { delayMs: number; fire: () => void } | null = null;
+  cancelled = 0;
+  arm(delayMs: number, fire: () => void): void { this.armed = { delayMs, fire }; }
+  cancel(): void { this.cancelled++; this.armed = null; }
+}
+
+function msg(from: string, body: unknown = "x", id = "id-1"): WakeMessage {
+  return { from, body, id, re: null, at: "t" };
+}
+
+function rig(limits = { maxMessages: 100, maxBytes: 1_000_000 }) {
+  const inbox = new BoundedInbox<WakeMessage>((m) => JSON.stringify(m).length, limits);
+  const gate = new WakeGate(WAKE_MIN_INTERVAL_MS);
+  const emits: string[] = [];
+  const scheduler = new FakeScheduler();
+  let clock = 10_000;
+  const coord = createWakeCoordinator(
+    inbox, gate, (from) => emits.push(from), scheduler, () => clock,
+  );
+  return { inbox, coord, emits, scheduler, tick: (ms: number) => { clock += ms; } };
+}
+
+describe("createWakeCoordinator (server-boundary wiring)", () => {
+  test("remote-only traffic never wakes; messages stay drainable", () => {
+    const r = rig();
+    r.coord.onMessage(msg("laptop:/x@y", { secret: "BODY-ID-SENTINEL" }));
+    r.coord.onMessage(msg("pc2:/y@z"));
+    expect(r.emits).toEqual([]);
+    expect(r.scheduler.armed).toBeNull();
+    const { items } = r.inbox.drain();
+    expect(items.map((m) => m.from)).toEqual(["laptop:/x@y", "pc2:/y@z"]);
+  });
+
+  test("a local message behind an undrained remote one still wakes, once, naming the local sender", () => {
+    const r = rig();
+    r.coord.onMessage(msg("laptop:/x@y"));
+    r.coord.onMessage(msg("/local@a", "SENTINEL-BODY", "SENTINEL-ID"));
+    expect(r.emits).toEqual(["/local@a"]); // local sender, not the remote
+    // Content exclusion composes with wakeNudgeContent (which carries no
+    // body/id) — the coordinator hands the adapter only the `from` string.
+    const content = wakeNudgeContent(r.emits[0]!);
+    expect(content).not.toContain("SENTINEL");
+    // A second local while the first is undrained: no new edge, no emit.
+    r.coord.onMessage(msg("/local@b"));
+    expect(r.emits).toEqual(["/local@a"]);
+  });
+
+  test("burst of simultaneous local messages wakes exactly once", () => {
+    const r = rig();
+    r.coord.onMessage(msg("/a@1"));
+    r.coord.onMessage(msg("/a@2"));
+    r.coord.onMessage(msg("/a@3"));
+    expect(r.emits).toEqual(["/a@1"]);
+  });
+
+  test("cap-suppressed edge arms a deferred re-check that fires without a new arrival (liveness)", () => {
+    const r = rig();
+    r.coord.onMessage(msg("/a@1")); // wake (t=10000)
+    r.inbox.drain(); // the woken session read the message
+    r.coord.onDrain();
+    r.tick(WAKE_MIN_INTERVAL_MS - 1_000);
+    r.coord.onMessage(msg("/a@2")); // fresh edge, capped → armed
+    expect(r.emits).toEqual(["/a@1"]);
+    expect(r.scheduler.armed).not.toBeNull();
+    r.tick(5_000); // past the cap window
+    r.scheduler.armed!.fire();
+    expect(r.emits).toEqual(["/a@1", "/a@2"]);
+    // /a@1 was drained mid-test; /a@2 (the capped message the deferred
+    // re-check surfaced) is still retained.
+    expect(r.inbox.drain().items.map((m) => m.from)).toEqual(["/a@2"]);
+  });
+
+  test("drain before the deferred fire cancels it — no phantom wake", () => {
+    const r = rig();
+    r.coord.onMessage(msg("/a@1"));
+    r.tick(WAKE_MIN_INTERVAL_MS - 1_000);
+    r.coord.onMessage(msg("/a@2")); // capped, armed
+    r.inbox.drain();
+    r.coord.onDrain();
+    expect(r.scheduler.cancelled).toBe(1);
+    expect(r.scheduler.armed).toBeNull();
+    // Even if a stale fire somehow ran, the inbox holds no local message.
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    // (no scheduler.armed to fire — cancelled)
+    expect(r.emits).toEqual(["/a@1"]);
+  });
+
+  test("early fire inside the cap window re-arms instead of forcing or dropping", () => {
+    const r = rig();
+    r.coord.onMessage(msg("/a@1"));
+    r.inbox.drain();
+    r.coord.onDrain();
+    r.tick(1_000);
+    r.coord.onMessage(msg("/a@2")); // fresh edge, capped, armed (~4s remaining)
+    r.tick(1_000); // still inside the cap window
+    r.scheduler.armed!.fire(); // fires early (skew)
+    expect(r.emits).toEqual(["/a@1"]); // no forced wake
+    expect(r.scheduler.armed).not.toBeNull(); // re-armed
+    r.tick(WAKE_MIN_INTERVAL_MS); // now past the window
+    r.scheduler.armed!.fire();
+    expect(r.emits).toEqual(["/a@1", "/a@2"]);
+  });
+
+  test("eviction of all capped locals before the deferred fire: no wake, drops surfaced, later local still wakes", () => {
+    const r = rig({ maxMessages: 4, maxBytes: 1_000_000 });
+    r.coord.onMessage(msg("/a@1")); // wake
+    r.inbox.drain(); // the woken session read the message — the edge re-arms
+    r.coord.onDrain();
+    r.tick(1_000);
+    r.coord.onMessage(msg("/a@2")); // fresh edge, capped → armed
+    // Remote flood evicts both retained locals (drop-oldest, count budget 4).
+    r.coord.onMessage(msg("pc:/r@1"));
+    r.coord.onMessage(msg("pc:/r@2"));
+    r.coord.onMessage(msg("pc:/r@3"));
+    r.coord.onMessage(msg("pc:/r@4"));
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    // The deferred re-check finds no local message: no remote-triggered wake.
+    expect(r.emits).toEqual(["/a@1"]);
+    const { items, dropped } = r.inbox.drain();
+    expect(items.every((m) => m.from.startsWith("pc:"))).toBe(true);
+    expect(dropped).toBe(1); // /a@2 shed by the flood (/a@1 was drained)
+    // A fresh local message is a genuine new edge and wakes again.
+    r.coord.onMessage(msg("/a@3"));
+    expect(r.emits).toEqual(["/a@1", "/a@3"]);
   });
 });
