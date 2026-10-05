@@ -1,14 +1,15 @@
 ---
 id: gate-cruft-unused-parse-hello-wrapper
 kind: story
-stage: drafting
+stage: done
 tags: [cleanup, relay]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: cruft
 created: 2026-07-20
-updated: 2026-07-19
+updated: 2026-10-04
+resolved: 2026-10-04 (hygiene pass: verified removed — tests call parse_hello_bootstrap directly)
 ---
 
 # Remove the test-only parse_hello passthrough wrapper

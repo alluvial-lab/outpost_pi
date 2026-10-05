@@ -1,17 +1,29 @@
 ---
 id: story-new-wedge-bare-pi-reopen
-kind: story
-stage: implementing
-tags: [pi-extension, bug, lifecycle]
-parent: null
-depends_on: []
-release_binding: null
-gate_origin: null
 created: 2026-08-29
-updated: 2026-09-07
+updated: 2026-10-04
+tags: [pi-extension, bug, lifecycle]
 ---
 
 # Bare-pi /new reopened: live rebind-branch gap + settle-emit isolation
+
+## Parked status (2026-10-04, hygiene pass)
+
+Substantive fixes landed and live-verified 2026-09-07 (wrapper-path wedge
+dead; background-work SIGTERM protection both halves). Residual scope when
+revived for a fix lane — two investigation threads:
+
+1. **Bare-pi rebind-branch gap** — live /new on a bare pi takes the
+   fail-closed exit instead of the in-process rebind (Test B below):
+   inspect live `session_new` entry conditions (which ctx binding exists
+   when /new arrives through the delivery path on a settled bare session)
+   vs the real-SDK harness test that exercises that branch.
+2. **Settle-emit exception isolation** — does pi's runner abort remaining
+   handlers when a third-party extension throws inside `agent_settled`,
+   and should in-process /new recovery be exception-isolated so one
+   extension cannot wedge the room re-serve? (herdr-side stale-ctx guards
+   already fixed locally.)
+
 ## Post-release finding (2026-09-07, operator field report)
 
 The v0.11.1 in-process /new path (agent-workspace incident): session
