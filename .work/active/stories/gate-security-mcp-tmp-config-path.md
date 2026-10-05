@@ -1,7 +1,7 @@
 ---
 id: gate-security-mcp-tmp-config-path
 kind: story
-stage: drafting
+stage: implementing
 tags: [security]
 parent: null
 depends_on: []
