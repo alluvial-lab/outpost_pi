@@ -24,8 +24,7 @@ whenever the Claude side is idle (observed 2026-10-04, claude-nextup session).
 
 This feature closes that gap: qualify a wake mechanism that makes inbound
 mesh messages reach an idle Claude Code session without human jostling, and
-land the chosen mechanism as a first-class (toggleable) launcher capability
-of `outpost-pi claude`.
+land the chosen mechanism as a first-class (toggleable) capability.
 
 Origin: operator finding via the projects-root fleet session (2026-10-04,
 fleet CHANGELOG); parked as `backlog-claude-host-mesh-delivery-pull-only`,
@@ -34,136 +33,135 @@ promoted same day.
 ## Strategic decisions (scoped 2026-10-04)
 
 - **Mechanism: qualification-first, not pre-committed.** Empirically qualify
-  the existing `notifications/claude/channel` wake end-to-end before building
-  anything new; fall back to the MCP server→client sampling-request lane only
-  if the dev channel proves unreliable. — The wake already exists server-side;
-  the unknowns are qualification facts.
+  candidate wake lanes end-to-end before landing one. — The unknowns are
+  qualification facts.
 - **Default posture: wake ON for this fleet's Claude sessions** (operator:
-  "I'd at least want it on here"), exposed as a wrapper toggle rather than a
-  silent hard-wired default. — Pi hosts already wake by default; the box's
+  "I'd at least want it on here"), exposed as an explicit toggle rather than
+  a silent hard-wired default. — Pi hosts already wake by default; the box's
   operator-piloted sessions want parity. Public/default posture for other
-  consumers is a design-time call informed by qualification (dev-channel
-  stability risk).
-- **rc-HTTP-nudge lane: out of scope here — handed to NextUp.** The
-  remote-control HTTP channel is a NextUp-side surface; the candidate nudge
-  lane was handed to the NextUp resident agent (mesh handoff 2026-10-04) and
-  is parked there as `mesh-idle-wake-rc-nudge` (nextup commit 93f4ae2), with
-  pickup conditions (this feature qualifies+lands; rc channel verified able
-  to inject a turn noninteractively) and a void-if-covered condition (voids
-  if the channel-notification path here fully covers idle wake). Their side
-  will coordinate on-mesh before implementing — double-wake race (rc
-  injection + channel notification) is the noted interaction to avoid.
-  This feature stays single-repo (mesh-server + wrapper + skill + docs).
+  consumers is a design-time call informed by qualification.
+- **rc-HTTP-nudge lane: out of scope here — handed to NextUp.** Parked there
+  as `mesh-idle-wake-rc-nudge` (nextup commit 93f4ae2) with pickup/void
+  conditions; double-wake race is the noted interaction. This feature stays
+  single-repo (mesh-server + wrapper + skill + docs).
 
-## Grounding (scoping evidence)
+## Review adjudication (Opus 5.5 architect lane, 2026-10-04, claude -p)
 
-- The server side already fires the wake: `mesh_server.ts` pushes
-  `notifications/claude/channel` on every inbound peer message (broker/system
-  presence envelopes filtered out), with a no-op catch when channels aren't
-  enabled. It works only when Claude Code is launched with
-  `--dangerously-load-development-channels server:outpost-pi-mesh` — per
-  current docs the ONLY known enablement path; the wrapper forwards such
-  flags verbatim but never passes this one itself.
-- The 2026-10-04 claude-nextup session ran the mesh MCP staged on **lazy
-  spawn** — while idle the server process may not exist: nothing subscribes
-  to the broker, nothing buffers, nothing can notify. At least two candidate
-  causes for the observed pull-only behavior: flag absent, and/or server not
-  alive while idle.
-- Candidate directions from the operator finding: (a) MCP sampling request
-  when a message lands (if Claude Code honors sampling, that starts a turn);
-  (b) rc-HTTP nudge — deferred to NextUp per strategic decisions; (c) Claude
-  Code hooks that force-check `get_messages`. Hooks cannot wake a truly idle
-  session (no hook events fire while idle — they only cover turn boundaries,
-  which the skill's turn-start discipline already covers): expect
-  evaluate-and-drop unless qualification proves otherwise.
-- Pi-side contrast: `_deliverMeshMessageToAgent` injects and triggers the
-  turn, batching while busy (landed after the characterized interruption
-  complaint, archived `backlog-mesh-message-wake-interrupts-agent`). Claude
-  hosts have no equivalent.
-- NextUp-side Claude sessions currently run with plugin disables (their
-  project policy b561e12, expedience against bundled-CLI drift — operator:
-  reversible, plugins can be toggled back on). No current wake lane needs a
-  Claude-side plugin, but don't treat that policy as a hard constraint if a
-  design lands there.
-- Code surfaces (all this repo): `pi-extension/src/mcp/mesh_server.ts`,
-  `pi-extension/src/extension/command_surface/standalone_cli.ts`
-  (`outpost-pi claude` launcher + flag passthrough),
-  `pi-extension/skills/agent-network/SKILL.md` (source; `~/.pi/remote` is the
-  deployed copy), `site/src/app/tutorials/claude-mesh/page.tsx`,
-  `pi-extension/README.md`.
+Review artifact: `~/.claude/plans/you-are-the-architect-lane-compiled-blossom.md`.
+Verified load-bearing claims against the tree before folding in (cmux
+launch line, cwd-detection argv, sampling semantics). Disposition:
 
-## Qualification ladder (design inputs, not a plan)
-
-1. Enumerate Claude Code enablement paths for the channel notification
-   (flag is documented; settings.json/env equivalent — unknown, verify
-   against current Claude Code).
-2. Qualify the existing wake live: relaunch a Claude mesh session with the
-   flag, send it a mesh message while idle, observe whether a turn starts;
-   repeat with the MCP lazily-spawned vs already-running to pin the lazy-spawn
-   interaction (does a down server mean dropped messages, or does the broker
-   queue for absent peers?).
-3. If the dev channel is unreliable: qualify the sampling-request lane
-   (does Claude Code honor server-initiated sampling on this build? approval
-   UX for operator-piloted sessions?).
-4. Hooks lane: confirm the idle-no-events premise; expected evaluate-and-drop.
+- **Accepted, design-changing**: P1 fleet launch path never sees the wrapper
+  toggle (cmux claude-teams); P2 the invariant narrows the wrong thing (wake
+  changes *who can start a turn*, not permissions — "initiative" is its own
+  authority class); P3 no storm/loop control → server-side edge-triggered
+  coalescing + rate cap; P4 nudge stalls on get_messages approval → pair
+  with --allowedTools pre-approval; P5 --mesh-wake placement breaks cwd
+  detection → filter before cwd detection; P6 sampling is not a wake
+  mechanism (returns completion to server, not a session turn) → fallback
+  replaced with background-task wake and PTY/cmux injection candidates,
+  qualified in parallel; P7 lazy-spawn likely misdiagnosis → demoted, lock
+  contention + no-config silent killers elevated; P8 the no-op catch
+  detects nothing; P9 dev-channels flag argv grammar unverified; P12
+  research-preview prerequisites (auth mode, org policy, startup consent
+  dialog) enter Q1.
+- **Accepted, protocol-level**: launch-path census (Q0); Q2 becomes a
+  scenario matrix (permissions × pre-approval × burst × broadcast ×
+  two-peer loop × mid-typing/dialog/plan-mode/compaction/resume); Q3 adds
+  lock-contention and no-config paths with sender-visible ACK states; pass
+  criteria (N/N wakes within T seconds) so "unreliable" is defined;
+  cross-PC wake question (trust model); measured cost per woken turn;
+  hooks premise weakened (Notification hook fires on idle — check, don't
+  assert); P11 delivered-semantics wording (received = buffered, not
+  handled; inbox is in-memory and dies with the MCP process).
+- **Partially accepted**: P7 — lazy-spawn narrative demoted but Q3 still
+  measures spawn timing (cheap, and the fleet's nxuC staging is a different
+  mechanism whose lazy behavior was real in the CHANGELOG's terms).
 
 ## Architectural choice
 
-Three candidate architectures:
+Candidate architectures (post-review):
 
-- **A. Wrapper toggle over the existing channel-notification lane** — the
-  server already emits `notifications/claude/channel` on every inbound peer
-  message; the only missing piece is launch-side enablement plus docs/tests.
-  Optimizes for minimal new machinery and reuse of shipped code; sacrifices
-  stability guarantees (rides a Claude Code development channel with no
-  compatibility contract).
-- **B. Server-initiated sampling-request lane as primary** — MCP-documented
-  capability, potentially stabler than a dev channel; but each wake costs a
-  model roundtrip with approval UX, and Claude Code's honoring of
-  server-initiated sampling is unverified on this box.
-- **C. Hooks lane** — dead on arrival for true idle: Claude Code fires no hook
-  events in an idle session, so hooks only reinforce turn boundaries the
-  skill's turn-start drain already covers.
+- **A. Channel-notification lane + wrapper toggle** — the server already
+  emits `notifications/claude/channel`; missing pieces are launch-side
+  enablement, coalescing, pre-approval pairing, and docs/tests. Rides a
+  research-preview development channel with no compatibility contract, a
+  startup consent dialog, and auth-mode prerequisites.
+- **B. Background-task wake** — a blocking `outpost-pi mesh-wait` command
+  the agent runs as a background Bash job; Claude Code re-invokes the
+  session when a background task completes; the skill re-arms it each turn.
+  Uses supported surfaces, no dev channel; costs one always-running
+  background job per session and adds a re-arm discipline to the skill.
+- **C. PTY/cmux injection** — the orchestrator (or a wrapper-owned PTY)
+  types a "check get_messages" line into the idle session. No Claude Code
+  surface dependency at all; orchestrator-side, overlapping with NextUp's
+  rc-nudge lane.
+- **D. Hooks** — weakened premise: the `Notification` hook fires on idle
+  prompts; whether any hook output can START a turn is a qualification
+  question, not an assumption. Evaluate-and-drop unless it surprises.
 
-**Chosen: A**, with B sketched as a conditional fallback unit that activates
-only if qualification kills the dev-channel lane. This implements the locked
-strategic decision (qualification-first) and keeps the landing single-repo.
+**Chosen: qualify A and B in parallel** (B replaces the dead sampling
+fallback — MCP `sampling/createMessage` returns a completion to the server,
+it cannot inject a session turn, so the original fallback could never wake
+anything). C stays recorded as the orchestrator-side lane; D is a premise
+check. Landing picks the lane that passes the pass-criteria; A is preferred
+if both pass (no re-arm discipline needed), B is the supported-surface
+fallback.
 
 ## Design decisions
 
-- **Toggle shape: wrapper-owned `--mesh-wake` flag** — intercepted by the
-  wrapper (any position, filtered from passthrough) and expanded to
-  `--dangerously-load-development-channels server:outpost-pi-mesh` on the
-  claude argv. If the passthrough already carries that raw flag, skip
-  expansion (dedupe). No env-var twin — one source of truth; fleet launch
-  scripts can append a flag as easily as an env. — Minimal surface, explicit
-  operator intent, composes with the existing verbatim passthrough.
-- **Guarded-invariant change (explicit)**: `buildClaudeLaunchArgs`'s
-  "never inject a `--dangerously-*` flag" regression guard narrows to
-  "never inject `--dangerously-skip-permissions`; the dev-channels wake flag
-  only via explicit `--mesh-wake`". The safe-default principle is about not
-  silently widening Claude's *authority*; the wake flag starts turns but
-  changes no permission policy — a woken Claude still faces its approval
-  gate. Test + JSDoc updated together with this rationale in the landing
-  story; the guard against authority-widening stays absolute.
-- **Notification content becomes a nudge, not a payload** — on wake, emit
-  `📨 mesh message from <from> arrived — call get_messages to read it and
-  reply (echo its id via re)` instead of the current full-body dump. Keeps
-  `get_messages` the single authoritative drain surface; a full-body channel
-  message would let Claude reply without draining, leaving a stale duplicate
-  in the inbox that resurfaces at the next turn boundary. — Single source of
-  truth on the inbox.
-- **Skill discipline unchanged**: turn-start `get_messages` drain stays in
-  the agent-network skill even with wake on — it is the fallback when
-  channels are disabled AND the authoritative drain; the skill gains a note
-  that wake mode may deliver a nudge before/without a drain.
-- **Lazy-spawn handling is qualification-gated, launch-side only** — if
-  Claude Code lazy-spawns `--mcp-config` servers, a server-side fix is
-  structurally impossible (nothing runs to subscribe). Options post-Q3:
-  accept + document the from-launch gap (wake coverage begins after the
-  first tool call spawns the server), or consume a spawn-timing knob if Q1
-  finds one. The rc-nudge lane (NextUp) remains the recorded complement for
-  true idle-from-start.
+- **Toggle: wrapper-owned `--outpost-mesh-wake`** (namespaced so a future
+  Claude Code flag of the same short name can't be silently swallowed by
+  the wrapper's interception). Intercepted at any argv position and
+  filtered out **before cwd detection** (P5: `splitClaudeCliArgs` treats
+  only a leading non-flag token as cwd; filtering after would mis-launch
+  and pass the path to claude as a prompt). Expands to
+  `--dangerously-load-development-channels=server:outpost-pi-mesh` (canonical
+  `=`-form; exact argv grammar — variadic/repeatable/last-wins — recorded
+  in Q1 before dedupe logic is finalized). Dedupe against a raw
+  dev-channels flag already present in passthrough.
+- **Two guards, not one narrowed guard (P2)**: (1) *authority* — the
+  wrapper never injects `--dangerously-skip-permissions` (absolute);
+  (2) *initiative* — the dev-channels flag only via `--outpost-mesh-wake`,
+  documented as **"lets mesh peers start turns"**. Initiative is its own
+  authority class: today only the operator can start a turn; with wake, any
+  mesh peer can — including cross-PC peers whose relay traffic is not
+  end-to-end encrypted. The tutorial warns specifically about combining
+  both flags, which is the fleet's real configuration
+  (cmux claude-teams runs skip-permissions).
+- **Fleet delivery path is an open operator decision (P1)**: the fleet's
+  Claude panes launch via `cmux claude-teams` (scripts/cmux-bootstrap-
+  agents.sh:170), not via `outpost-pi claude` — the toggle alone reaches
+  zero fleet sessions. Options: move the bootstrap onto the wrapper (also
+  giving those panes the mesh MCP + skill they currently stage by hand), or
+  accept wrapper-only coverage and record the fleet gap. Decided at
+  qualification review with Q0's launch census in hand.
+- **Notification is edge-triggered and coalesced in the server (P3)**:
+  notify only on the inbox's empty→non-empty transition; re-arm when
+  `get_messages` drains it. A burst or broadcast becomes one wake. Backstop:
+  a global wake rate cap (e.g. notify at most once per N seconds) against
+  two woken peers ping-ponging — the cap does not drop inbox messages, only
+  additional wakes.
+- **Nudge pairs with pre-approval (P4)**: when `--outpost-mesh-wake` is set
+  the wrapper also passes
+  `--allowedTools mcp__outpost-pi-mesh__get_messages` (exact flag/tool-name
+  grammar verified in Q1) so the woken session can drain without an
+  approval dialog — otherwise an unattended wake stalls on the very tool
+  call the nudge requests. `from` and any preview content are treated as
+  untrusted input (escaped/quoted; no raw body in the nudge).
+- **Nudge carries no payload**: `get_messages` stays the single
+  authoritative drain surface; a full-body channel message would let the
+  model reply without draining, leaving a stale inbox duplicate.
+- **No wake-state detection exists (P8)**: an un-opted client silently
+  ignores the custom notification — the `.catch` fires only on transport
+  errors. The server cannot know whether wake is active; the comment and
+  any adaptive behavior must not pretend otherwise.
+- **Skill discipline**: turn-start `get_messages` drain stays mandatory
+  (fallback + authoritative surface); the skill documents wake mode (nudge
+  may arrive before/without a drain) and corrects delivery semantics
+  (received = buffered by the peer's MCP process, not handled; the inbox is
+  in-memory and dies with the process — SKILL.md's "Delivery is reliable"
+  line gains this precision).
 
 ## Implementation Units
 
@@ -172,156 +170,174 @@ strategic decision (qualification-first) and keeps the landing single-repo.
 Qualification evidence`), driven from this repo's session via mesh tools
 **Story**: `feature-claude-host-mesh-idle-wake-qualification`
 
-Protocol (each step records command + observation + timestamp here):
-
-1. **Q1 enablement paths** — against the Claude Code build on this box:
-   `claude --help` flag inventory for development-channels; docs/settings
-   surface check for a settings.json or env equivalent; record version
-   string.
-2. **Q2 wake semantics** — scratch folder with `outpost-pi claude <dir>
-   --dangerously-load-development-channels server:outpost-pi-mesh` in a
-   tmux pane; idle (no prompt); a Pi mesh peer (this session) sends a
-   message; observe: does a turn start? does the channel input reach the
-   model? what does the woken turn do with nudge vs payload? Repeat once
-   while a turn is active (busy-wake behavior — coalescing need?).
-3. **Q3 spawn timing** — same launch, fresh session: is the MCP server
-   process alive before any tool call (ps + mesh peer list)? If not: send a
-   message pre-first-spawn and record sender-side ACK status (peer absent →
-   denied/timeout?) and post-spawn drain result — pins the from-launch gap.
-4. **Q4 conditional** — only if Q2 fails: server-initiated sampling-request
-   probe (one-line server experiment in a scratch copy, not the product
-   tree), recording whether Claude Code surfaces an approval and starts a
-   turn.
+- **Q0 launch-path census** — every session class that needs wake on this
+  box (cmux panes, NextUp nxuC staging, daemons, resume recovery) and the
+  exact command + flags each launches with. Gates the fleet-delivery
+  decision.
+- **Q1 enablement prerequisites** — Claude Code version; auth mode (claude.ai
+  vs API key) and org/channel policy for development channels; startup
+  consent dialog behavior (per launch, per `--resume`, non-TTY); exact argv
+  grammar of the dev-channels flag; `--allowedTools` tool-name grammar for
+  MCP tools.
+- **Q2 wake semantics — scenario matrix** — for each cell, does a turn
+  start, within what latency, and what does the woken turn do:
+  default-permissions vs skip-permissions; get_messages pre-approved or
+  not; burst of N messages (how many turns?); broadcast; two woken Claude
+  peers replying to each other (loop?); wake while operator mid-typing /
+  permission dialog open / plan mode / compaction / after `--resume`;
+  whether `notification()` ever rejects with channels off (P8 check).
+- **Q3 server-alive paths** — spawn timing of `--mcp-config` servers
+  (process alive before first tool call?); lock-contention exit (second
+  session, same cwd → `_failLoud`); no-config never-join path; for each:
+  what the SENDER's ACK reports (received/timeout/denied) so silent
+  wake-death is visible from the other side.
+- **Q4 parallel lane: background-task wake** — does a completed background
+  Bash job re-invoke an idle Claude Code session on this build? Prototype
+  `outpost-pi mesh-wait` (blocking exit-on-message) in a scratch copy; if
+  the re-invoke behavior holds, B is live.
+- **Hooks premise** — does the `Notification` hook (or any hook output)
+  start a turn on an idle session? Check, don't assert.
+- **Cross-PC + cost** — does a relay-forwarded message wake identically
+  (and should it, given the trust model?); tokens per woken turn measured;
+  rough daily-cost estimate at realistic message rates.
+- **Pass criteria**: N/N wakes within T seconds across the Q2 matrix (N, T
+  fixed before running) — this defines "unreliable", the lane-switch
+  trigger.
 
 **Acceptance Criteria**:
-- [ ] Q1–Q3 evidence recorded in this body with Claude Code version
-- [ ] Lane decision recorded: channel-notification lands, or sampling
-      fallback activates, with rationale
-- [ ] Lazy-spawn verdict recorded (gap real / not real) and the docs stance
-      chosen
+- [ ] Q0–Q4 + premise checks recorded with Claude Code version
+- [ ] Lane decision (A / B / both) with rationale against pass criteria
+- [ ] Fleet-delivery decision surfaced to the operator with the census
 
-### Unit 2: Wrapper `--mesh-wake` toggle
+### Unit 2: Wrapper `--outpost-mesh-wake` toggle
 **File**: `pi-extension/src/extension/command_surface/standalone_cli.ts`
 **Story**: `feature-claude-host-mesh-idle-wake-toggle` (depends on Unit 1's
 lane decision)
 
 ```ts
-/** Wrapper-owned wake opt-ins intercepted before verbatim passthrough. */
-export const MESH_WAKE_FLAG = "--mesh-wake" as const;
-export const CLAUDE_DEV_CHANNELS_EXPANSION =
-  "--dangerously-load-development-channels=server:outpost-pi-mesh" as const;
+/** Wrapper-owned wake opt-in, namespaced against future claude flags. */
+export const MESH_WAKE_FLAG = "--outpost-mesh-wake" as const;
 
 export function splitClaudeCliArgs(args: readonly string[]): {
-  targetCwd: string;
-  meshWake: boolean;            // NEW: --mesh-wake seen (deduped vs raw flag)
-  passthroughArgs: string[];    // --mesh-wake filtered out; raw dev-channels
-                                // flag left verbatim (expansion skipped)
+  targetCwd: string;             // detected AFTER MESH_WAKE_FLAG is filtered
+  meshWake: boolean;
+  passthroughArgs: string[];     // MESH_WAKE_FLAG removed; raw dev-channels
+                                 // flag left verbatim (expansion skipped)
 };
 
 export function buildClaudeLaunchArgs(
   mcpConfigPath: string,
   skillPath: string | null,
-  meshWake: boolean,            // NEW: appends CLAUDE_DEV_CHANNELS_EXPANSION
-): string[];
+  meshWake: boolean,             // appends dev-channels expansion +
+): string[];                     // get_messages --allowedTools pre-approval
 ```
 
 **Implementation Notes**:
-- Intercept `--mesh-wake` at any argv position; drop it from passthrough.
-- Dedupe: if passthrough already contains the raw
-  `--dangerously-load-development-channels` form (either `=` or space
-  variant targeting `outpost-pi-mesh`), do not append the expansion.
-- `--dangerously-skip-permissions` remains strictly verbatim-only; the
-  invariant comment on `buildClaudeLaunchArgs` is rewritten to the narrowed
-  authority principle (see Design decisions).
-- JSDoc updates follow documentation-conventions (exported + tested =
-  Always tier).
+- Filter `--outpost-mesh-wake` BEFORE cwd detection (P5 regression test:
+  `["--outpost-mesh-wake", "/tmp/proj"]` → cwd `/tmp/proj`, no prompt
+  positional in passthrough).
+- Two-guard invariant comment + test rewrite (authority absolute;
+  initiative only via the toggle). JSDoc per documentation-conventions.
+- Dedupe logic finalized against Q1's recorded argv grammar.
+- README + site tutorial: toggle docs, initiative framing, explicit warning
+  on combining wake with skip-permissions.
 
 **Acceptance Criteria**:
-- [ ] `--mesh-wake` anywhere in argv → claude argv gains the dev-channels
-      expansion exactly once; flag removed from passthrough
-- [ ] raw dev-channels flag in passthrough → no duplicate expansion
-- [ ] regression guard rewritten: `--dangerously-skip-permissions` NEVER
-      injected by the wrapper (absolute); dev-channels only via `--mesh-wake`
-- [ ] README + site tutorial (`claude-mesh`) document the toggle and the
-      narrowed safe-default statement
+- [ ] flag at any position → exactly one expansion + pre-approval flag;
+      cwd detection unaffected (regression test for the leading-flag case)
+- [ ] raw dev-channels flag present → no duplicate/clobber
+- [ ] `--dangerously-skip-permissions` never injected (absolute guard)
+- [ ] README/tutorial updated with the two-guard framing
 
-### Unit 3: Nudge-style wake notification
+### Unit 3: Edge-triggered coalesced wake notification
 **File**: `pi-extension/src/mcp/mesh_server.ts`
 **Story**: `feature-claude-host-mesh-idle-wake-nudge` (depends on Unit 1's
 lane decision; voids if the channel lane dies)
 
 ```ts
-/** Human/model-readable wake nudge for an inbound mesh message.
- *  Deliberately carries NO message body: get_messages stays the single
- *  authoritative drain surface (a body here would let the model reply
- *  without draining, leaving a stale inbox duplicate). */
-export function wakeNudgeContent(from: string): string {
-  return `📨 mesh message from ${from} arrived — call get_messages to read it and reply (echo its id via re)`;
-}
+/** Human/model-readable wake nudge. Carries NO message body — get_messages
+ *  stays the single authoritative drain surface — and treats `from` as
+ *  untrusted input (escaped). */
+export function wakeNudgeContent(from: string): string;
+
+/** True when the inbox transitioned empty→non-empty (edge trigger). */
+export function shouldWake(inboxLengthBefore: number): boolean;
 ```
 
-Extracted from the inline template so it is unit-testable (the script's
-module-load side effects otherwise resist import); the `onMessage` handler
-calls it. The notification catch stays no-op (fallback comment updated to
-  name the nudge contract).
+**Implementation Notes**:
+- Notify only on empty→non-empty; re-arm when `get_messages` drains to
+  empty. Burst/broadcast → one wake.
+- Global wake rate cap (floor on notification frequency) as the loop
+  backstop; inbox itself never drops messages.
+- Replace the misleading `.catch` comment: no wake-state detection exists
+  (P8) — the catch covers transport errors only.
 
 **Acceptance Criteria**:
-- [ ] `wakeNudgeContent` unit test: contains sender address, names
-      `get_messages`, contains no body payload
-- [ ] handler emits nudge content (asserted via the extracted helper's use —
-      wiring verified live in Unit 1's protocol)
-- [ ] agent-network skill (repo source) documents wake mode: nudge may
-      arrive without a drain; turn-start drain stays mandatory
+- [ ] unit tests: nudge content (sender escaped, names get_messages, no
+      body); edge-trigger logic (burst → one wake; drain re-arms)
+- [ ] rate-cap behavior tested
+- [ ] agent-network skill (repo source): wake-mode note + delivered-
+      semantics precision (received = buffered, in-memory inbox)
+- [ ] typecheck + test + build green
 
 ---
 
 ## Implementation Order
 1. `feature-claude-host-mesh-idle-wake-qualification` (Unit 1)
-2. `feature-claude-host-mesh-idle-wake-toggle` (Unit 2) and
-   `feature-claude-host-mesh-idle-wake-nudge` (Unit 3) — parallelizable
-   after 1
+2. `-toggle` (Unit 2) and `-nudge` (Unit 3) — parallelizable after 1
 
 ## Simplification
-- The tutorial's conflation of the two `--dangerously-*` flags under one
-  warning simplifies to: authority flag stays verbatim opt-in; wake flag
-  gains a first-class toggle — the "safe defaults" section gets sharper, not
-  longer.
-- No deletions identified; the no-op catch and polling fallback are
-  retained deliberately (non-wake consumers remain supported).
+- Tutorial's two-flag conflation simplifies into the two-guard framing
+  (authority vs initiative) — sharper, not longer.
+- No deletions; no-op catch + polling fallback retained deliberately.
 
 ## Testing
-- Wrapper: extend `standalone_cli.test.ts` — toggle interception,
-  expansion, dedupe, and the narrowed regression guard (each protects the
-  launch-contract invariant this repo relies on).
-- Nudge: new focused unit test for `wakeNudgeContent` (protects the
-  single-drain-surface contract).
-- Qualification: evidence recorded in the feature body, not automated —
-  live Claude Code behavior; an e2e lane is out of scope here.
+- Wrapper: interception/expansion/dedupe/cwd-ordering + narrowed-guard
+  regression (launch-contract invariants).
+- Server: nudge content + edge-trigger + rate-cap units (extracted pure
+  helpers; the script's module-load side effects resist direct import).
+- Qualification: evidence in the feature body; automated e2e out of scope.
 
 ## Risks
-- **Riskiest assumption**: a channel notification actually starts a turn in
-  current Claude Code builds rather than only rendering — front-loaded as
-  protocol step Q2; if it fails, Unit 3 voids and the sampling fallback
-  activates.
-- **Dev-channel drift**: no compatibility contract across Claude Code
-  updates — the wake can silently break. Mitigation: cheap toggle,
-  `get_messages` fallback always present, qualification evidence records
-  the Claude Code version so future breakage is diagnosable.
-- **Lazy-spawn gap**: if `--mcp-config` servers spawn lazily, wake coverage
-  begins only after the first tool call. Q3 pins it; the gap is documented,
-  not papered over; rc-nudge (NextUp) is the recorded complement.
-- **Double-wake race** with a future NextUp rc-nudge landing — coordination
-  note already exchanged on-mesh (void/pickup conditions recorded).
-- **Quota/cost**: qualification spawns a real Claude Code session; idle
-  panes cost nothing, woken turns cost one roundtrip — operator already
-  authorized enabling the wake on this box.
+- **Riskiest assumption**: a channel notification starts a turn at all —
+  front-loaded in the Q2 matrix with defined pass criteria; B runs in
+  parallel so a dead A doesn't restart design from zero.
+- **Initiative + skip-permissions (fleet's real config)**: wake lets mesh
+  peers start turns that then run with no approval gate; cross-PC relay
+  traffic is not E2E. Untrusted-input handling + the tutorial warning are
+  designed in; the operator consciously accepts the combination for the
+  fleet (or gates cross-PC wakes — surfaced at qualification review).
+- **Dev-channel drift**: research-preview surface, consent dialog, auth
+  prerequisites — version-stamped evidence keeps future breakage
+  diagnosable; B is the supported-surface exit.
+- **Silent wake-death**: lock contention / no-config paths kill the MCP
+  join without wake-specific signal — Q3 records sender-visible ACK states
+  so the other side sees it.
+- **Double-wake race** with NextUp rc-nudge — coordination on-mesh,
+  conditions recorded.
+- **Quota/cost**: measured per woken turn in qualification; rate cap bounds
+  loop burn.
 
-## Simplification opportunity
+## Grounding (scoping evidence, retained)
 
-If a wake lands as the primary delivery path, the agent-network skill's
-every-turn `get_messages` discipline demotes from primary mechanism to
-fallback (skill-doc simplification; the tool itself stays — it remains the
-drain/replay surface and the no-wake default for consumers who don't opt in).
-The `mesh_server.ts` no-op catch comment ("channels not enabled — get_messages
-polling covers it") would then describe the fallback, not the norm. Nothing
-identified for outright deletion.
+- The server side already fires the wake: `mesh_server.ts` pushes
+  `notifications/claude/channel` on every inbound peer message (presence
+  envelopes filtered), no-op catch when channels aren't enabled. Works only
+  with `--dangerously-load-development-channels server:outpost-pi-mesh` —
+  per current docs the only known enablement path.
+- The 2026-10-04 claude-nextup session staged the mesh MCP as `nxuC` on
+  lazy spawn (NextUp's own staging, not the wrapper) — spawn-timing
+  behavior may differ from `--mcp-config`; Q3 measures ours.
+- Pi-side contrast: `_deliverMeshMessageToAgent` injects and triggers the
+  turn, batching while busy (post-complaint hardening, archived
+  `backlog-mesh-message-wake-interrupts-agent`).
+- Fleet Claude panes launch via `cmux claude-teams` with
+  `--dangerously-skip-permissions` (scripts/cmux-bootstrap-agents.sh:170) —
+  not through the wrapper (verified in review).
+- NextUp-side Claude sessions run with plugin disables (their policy
+  b561e12, expedience — operator: reversible). No current wake lane needs
+  a Claude-side plugin.
+- Code surfaces (all this repo): `pi-extension/src/mcp/mesh_server.ts`,
+  `pi-extension/src/extension/command_surface/standalone_cli.ts` (+test),
+  `pi-extension/skills/agent-network/SKILL.md`, site claude-mesh tutorial,
+  `pi-extension/README.md`, `scripts/cmux-bootstrap-agents.sh`.
