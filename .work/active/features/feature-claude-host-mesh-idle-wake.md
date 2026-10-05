@@ -46,9 +46,14 @@ promoted same day.
   stability risk).
 - **rc-HTTP-nudge lane: out of scope here — handed to NextUp.** The
   remote-control HTTP channel is a NextUp-side surface; the candidate nudge
-  lane was passed to the NextUp resident agent (mesh handoff 2026-10-04) for
-  parking/scoping on that side. This feature stays single-repo
-  (mesh-server + wrapper + skill + docs).
+  lane was handed to the NextUp resident agent (mesh handoff 2026-10-04) and
+  is parked there as `mesh-idle-wake-rc-nudge` (nextup commit 93f4ae2), with
+  pickup conditions (this feature qualifies+lands; rc channel verified able
+  to inject a turn noninteractively) and a void-if-covered condition (voids
+  if the channel-notification path here fully covers idle wake). Their side
+  will coordinate on-mesh before implementing — double-wake race (rc
+  injection + channel notification) is the noted interaction to avoid.
+  This feature stays single-repo (mesh-server + wrapper + skill + docs).
 
 ## Grounding (scoping evidence)
 
