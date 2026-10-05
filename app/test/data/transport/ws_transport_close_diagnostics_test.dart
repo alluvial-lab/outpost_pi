@@ -137,12 +137,11 @@ void main() {
       await relay.sendFramingGarbage();
       await transport.transportClosed.timeout(const Duration(seconds: 1));
 
-      // Strike shape (verdict #9, 5/5 field strikes): dart:io synthesizes
-      // closeCode 1002 when ITS OWN parser flags a framing violation — the
-      // phone's wedged netstack delivers mangled framing, dart closes on its
-      // own protocol error, and the relay only ever sees an RST. A 1002 here
-      // is NOT a received server Close frame; the relay never closes with
-      // 1xxx codes (its closes carry 4xxx codes + reasons, or are empty).
+      // Strike shape: dart:io synthesizes closeCode 1002 when ITS OWN parser
+      // flags a framing violation — a wedged netstack delivers mangled
+      // framing, dart closes on its own protocol error, and the relay only
+      // ever sees an RST. A 1002 here is NOT a received server Close frame;
+      // the relay never closes with 1xxx codes.
       expect(transport.closeDetails?.origin, ChannelCloseOrigin.streamError);
       expect(transport.closeDetails?.closeCode, WebSocketStatus.protocolError);
       expect(
@@ -222,9 +221,9 @@ void main() {
       );
       addTearDown(relay.close);
 
-      // Wedge shape (verdict #9): hello reaches the relay, nothing ever comes
-      // back, and the relay's Close may never arrive either. The transport's
-      // own deadline must fail the attempt with the zero-inbound kind.
+      // Wedge shape: hello reaches the relay, nothing ever comes back, and
+      // the relay's Close may never arrive either. The transport's own
+      // deadline must fail the attempt with the zero-inbound kind.
       await expectLater(
         _connect(relay.url, authHandshakeTimeout: const Duration(milliseconds: 300)),
         throwsA(

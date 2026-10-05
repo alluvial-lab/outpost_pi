@@ -1,7 +1,7 @@
 ---
 id: gate-patterns-inconsistency-settle-sleep
 kind: story
-stage: drafting
+stage: implementing
 tags: [refactor, testing]
 parent: null
 depends_on: []

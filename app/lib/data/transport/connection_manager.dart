@@ -776,9 +776,8 @@ class ConnectionManager extends Service {
     // reason to cancel a healthy in-flight handshake: _performConnect's
     // same-peer branch retains the live room, and _propagateActiveRoom
     // re-points the adopted channel. Cancelling over the tuple difference
-    // multiplied every strike into a _CancelledError chain (verdict #9:
-    // 8× per episode, ~4 min outage). A genuinely different PEER still
-    // invalidates below.
+    // multiplies every strike into a _CancelledError chain. A genuinely
+    // different PEER still invalidates below.
     if (inFlight != null && _connectTarget?.peerEpk == target.peerEpk) {
       return inFlight;
     }

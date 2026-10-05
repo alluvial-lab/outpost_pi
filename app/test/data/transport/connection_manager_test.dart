@@ -1148,10 +1148,16 @@ void main() {
         Completer<IChannel>? pendingFactory;
         var factoryCalls = 0;
         CancelToken? activeToken;
+        // Deterministic start barrier: one completer per factory call,
+        // completed the moment the factory runs. Awaiting it proves
+        // _performConnect has begun (and its target bookkeeping is visible
+        // to a re-entrant connectTo) without a wall-clock settle.
+        final factoryStarts = <Completer<void>>[];
         final conn = ConnectionManager(
           factory: (peer, token) {
             factoryCalls++;
             activeToken = token;
+            factoryStarts.add(Completer<void>()..complete());
             final pending = Completer<IChannel>();
             pendingFactory = pending;
             token.addCancellationListener(() {
@@ -1167,16 +1173,15 @@ void main() {
         addTearDown(conn.dispose);
 
         final first = conn.connectTo(_peer);
-        await _settle();
+        await factoryStarts[0].future;
         expect(factoryCalls, 1);
 
         // Post-strike retarget shape: the live room churns while the same
         // peer's connect is still in flight. The join must hold — cancelling
-        // here multiplied every strike into a _CancelledError chain
-        // (verdict #9).
+        // here multiplied every strike into a _CancelledError chain.
         conn.switchRoom('other-room');
         final second = conn.connectTo(_peer);
-        await _settle();
+        await factoryStarts[0].future;
         expect(
           factoryCalls,
           1,
@@ -1206,9 +1211,13 @@ void main() {
 
     test('a different peer still replaces the in-flight attempt', () async {
       var factoryCalls = 0;
+      // Deterministic start barrier, one completer per factory call (see the
+      // same-peer test above for the rationale).
+      final factoryStarts = <Completer<void>>[];
       final conn = ConnectionManager(
         factory: (peer, token) {
           factoryCalls++;
+          factoryStarts.add(Completer<void>()..complete());
           final pending = Completer<IChannel>();
           token.addCancellationListener(() {
             if (!pending.isCompleted) {
@@ -1223,7 +1232,7 @@ void main() {
       addTearDown(conn.dispose);
 
       unawaited(conn.connectTo(_peer));
-      await _settle();
+      await factoryStarts[0].future;
       expect(factoryCalls, 1);
 
       await conn
@@ -1237,7 +1246,7 @@ void main() {
           )
           .timeout(const Duration(seconds: 2))
           .catchError((Object _) {});
-      await _settle();
+      await factoryStarts[1].future;
       expect(factoryCalls, 2);
     });
   });

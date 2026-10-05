@@ -270,7 +270,7 @@ class WsTransport
 
     // Classify pre-auth failures by whether this socket EVER received a relay
     // frame. Zero inbound frames means the path is wedged (outbound works,
-    // inbound dead — verdict #9): schedule the fast-cycle retry class instead
+    // inbound dead): schedule the fast-cycle retry class instead
     // of the failure kinds that climb the backoff ladder.
     ReachabilityFailureKind preAuthFailureKind(
       ReachabilityFailureKind framesSeenKind,
@@ -753,10 +753,9 @@ class WsTransport
     // in ws_transport_close_diagnostics_test.dart (framing garbage → 1002,
     // silent peer → 1001, mid-frame death → 1006). The relay never closes
     // with 1xxx codes (its closes carry 4xxx codes + reasons, or are empty),
-    // so codes synthesized by dart must not be attributed to the server.
-    // Field evidence: verdict #9 — 5/5 strikes logged serverCloseFrame/1002
-    // while the relay saw only a phone-side RST (see
-    // .work story-fix-metronome-phantom-close-teardown). If the relay ever
+    // so codes synthesized by dart must not be attributed to the server —
+    // a phone-side RST surfaces here as a dart-synthesized close, not a
+    // relay Close frame. If the relay ever
     // starts closing with 1xxx codes, revisit this classification.
     if (code == WebSocketStatus.protocolError ||
         code == WebSocketStatus.goingAway) {

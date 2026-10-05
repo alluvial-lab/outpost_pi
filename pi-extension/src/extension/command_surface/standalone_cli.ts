@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -293,6 +293,31 @@ export function buildClaudeLaunchArgs(
 }
 
 /** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on missing build output. */
+/** Write the ephemeral mesh MCP config into a fresh owner-only temp dir.
+ *
+ * Security contract (gate-security-mcp-tmp-config-path): the config is
+ * execution-bearing (Claude launches the server it names), so it must never
+ * live at a predictable shared-tmp path — a pre-positioned symlink or a
+ * substituted file there would let another local user steer the launch.
+ * `mkdtempSync` yields an unpredictable 0700 directory; the file is created
+ * exclusively (`wx`) inside it. Returns the config path; the caller removes
+ * the whole directory on exit via `removeEphemeralMcpDir`. */
+export function writeEphemeralMcpConfig(meshServerPath: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "outpost-pi-mesh-mcp-"));
+  const configPath = join(dir, "mcp-config.json");
+  writeFileSync(configPath, JSON.stringify({
+    mcpServers: {
+      "outpost-pi-mesh": { command: process.execPath, args: [meshServerPath] },
+    },
+  }), { flag: "wx" });
+  return configPath;
+}
+
+/** Remove the ephemeral config directory created by writeEphemeralMcpConfig. */
+export function removeEphemeralMcpDir(configPath: string): void {
+  rmSync(dirname(configPath), { recursive: true, force: true });
+}
+
 export async function launchClaudeCli(args: string[], entrypointUrl: string): Promise<void> {
   const { targetCwd, meshWake, passthroughArgs } = splitClaudeCliArgs(args);
 
@@ -346,12 +371,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
     cwd: absCwd, stdio: "ignore", shell: false,
   });
 
-  const mcpConfigPath = join(tmpdir(), `outpost-pi-mesh-mcp-${process.pid}.json`);
-  writeFileSync(mcpConfigPath, JSON.stringify({
-    mcpServers: {
-      [SERVER_NAME]: { command: process.execPath, args: [meshServerPath] },
-    },
-  }));
+  const mcpConfigPath = writeEphemeralMcpConfig(meshServerPath);
 
   const skillPath = agentNetworkSkillPath(entrypointUrl);
 
@@ -365,7 +385,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
       shell: false,
     });
   } finally {
-    try { unlinkSync(mcpConfigPath); } catch { /* already removed */ }
+    try { removeEphemeralMcpDir(mcpConfigPath); } catch { /* already removed */ }
   }
 }
 

@@ -20,6 +20,7 @@ import { z } from "zod";
 import { MeshNode } from "../session/mesh_node.js";
 import { loadLocalConfig, defaultAgentName, localConfigExists } from "../session/local_config.js";
 import { WAKE_MIN_INTERVAL_MS, WakeGate, isLocalPeerAddress, wakeNudgeContent } from "./wake.js";
+import { BoundedInbox } from "./inbox.js";
 import { sessionSockPath, sessionAuditPath, LOCAL_SESSION_NAME } from "../session/global_config.js";
 import { resolveRelayUrl } from "../config.js";
 import { acquireCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
@@ -61,7 +62,7 @@ interface IncomingMsg {
   at: string;
 }
 
-const inbox: IncomingMsg[] = [];
+const inbox = new BoundedInbox<IncomingMsg>((m) => JSON.stringify(m).length);
 
 // ── Wake gate (edge-triggered, rate-capped) ──────────────────────────────────
 
@@ -243,17 +244,20 @@ mcp.registerTool("get_messages", {
   description: "Return and clear all pending incoming messages from other agents. Call at the start of each turn.",
   inputSchema: {},
 }, async () => {
-  const msgs = inbox.splice(0);
+  const { items: msgs, dropped } = inbox.drain();
   // A full drain empties the inbox: re-arm the wake edge and cancel any
   // pending deferred re-check (nothing left to wake about).
-  if (msgs.length > 0 && inbox.length === 0) {
+  if (msgs.length > 0) {
     if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
   }
-  if (msgs.length === 0) return { content: [{ type: "text" as const, text: "(no messages)" }] };
+  if (msgs.length === 0 && dropped === 0) {
+    return { content: [{ type: "text" as const, text: "(no messages)" }] };
+  }
+  const dropNote = dropped > 0 ? `⚠ ${dropped} earlier message(s) shed by the inbox bound (count/bytes)\n\n` : "";
   const lines = msgs.map((m) =>
     `[${m.at}] from=${m.from}${m.re ? ` re=${m.re}` : ""}\nid=${m.id}\n${JSON.stringify(m.body, null, 2)}`,
   );
-  return { content: [{ type: "text" as const, text: lines.join("\n\n") }] };
+  return { content: [{ type: "text" as const, text: dropNote + lines.join("\n\n") }] };
 });
 
 // ── Main ──────────────────────────────────────────────────────────────────────

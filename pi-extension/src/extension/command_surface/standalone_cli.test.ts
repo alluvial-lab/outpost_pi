@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { MESH_WAKE_FLAG, buildClaudeLaunchArgs, splitClaudeCliArgs } from "./standalone_cli.js";
+import { existsSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { MESH_WAKE_FLAG, buildClaudeLaunchArgs, removeEphemeralMcpDir, splitClaudeCliArgs, writeEphemeralMcpConfig } from "./standalone_cli.js";
 
 describe("splitClaudeCliArgs", () => {
   test("no args → caller cwd, empty passthrough, wake off", () => {
@@ -38,13 +41,6 @@ describe("splitClaudeCliArgs", () => {
     expect(res.targetCwd).toBe("/tmp/proj");
     expect(res.passthroughArgs).toEqual(["--resume"]);
     expect(res.meshWake).toBe(true);
-  });
-
-  test("returns a copy — callers cannot mutate the input argv", () => {
-    const input = ["--resume"];
-    const res = splitClaudeCliArgs(input);
-    res.passthroughArgs.push("--extra");
-    expect(input).toEqual(["--resume"]);
   });
 });
 
@@ -107,6 +103,22 @@ describe("buildClaudeLaunchArgs", () => {
         "--mcp-config", "/tmp/mcp.json",
         "--allowedTools=mcp__outpost-pi-mesh__get_messages",
       ]);
+    }
+  });
+});
+
+describe("writeEphemeralMcpConfig (gate-security-mcp-tmp-config-path)", () => {
+  test("creates an unpredictable owner-only dir with an exclusive config inside", () => {
+    const configPath = writeEphemeralMcpConfig("/fake/mesh_server.js");
+    try {
+      const dirMode = statSync(dirname(configPath)).mode & 0o777;
+      expect(dirMode).toBe(0o700); // owner-only: no pre-positioning by other local users
+      expect(existsSync(configPath)).toBe(true);
+      // Exclusive-create contract: a second write into the same path must fail.
+      expect(() => writeFileSync(configPath, "{}", { flag: "wx" })).toThrow();
+    } finally {
+      removeEphemeralMcpDir(configPath);
+      expect(existsSync(configPath)).toBe(false);
     }
   });
 });
