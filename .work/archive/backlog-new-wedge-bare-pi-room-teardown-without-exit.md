@@ -1,8 +1,11 @@
 ---
 id: backlog-new-wedge-bare-pi-room-teardown-without-exit
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-10-05
 tags: [pi-extension, bug, lifecycle]
+status: resolved
+resolved_by: story-fix-new-wedge-bare-pi
+resolved: "2026-10-05 groom: premise satisfied by shipped story (self-labeled ABSORBED)"
 ---
 
 # Mobile /new on a bare (unwrapped) pi tears down the room but never exits — half-dead wedge

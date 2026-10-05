@@ -1,7 +1,7 @@
 ---
 id: idea-herdr-symbiosis
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-10-05
 tags: [pi-extension, workflow]
 ---
 
@@ -39,3 +39,16 @@ Explored during the 2026-07-31 hot-reload session. Herdr (v0.7.5) is an agent-aw
 4. Does running the wrapper inside a Herdr pane work cleanly (foreground pi, Herdr's terminal management)?
 5. Can `herdr agent wait --until idle` replace or augment the `agent_settled` boundary for the hot-reload trigger?
 6. AGPL-3.0 license — check compatibility with outpost-pi's shipping model (note: README says Apache-2.0; the GitHub page shows AGPL — verify)
+
+
+## Narrowed (2026-10-05 groom — operator-confirmed)
+
+Satisfied since capture: wrapper-in-pane cold starts (restart wrapper drives
+every project pane); background-work publishing (outpost
+BackgroundActivityTracker → herdr publishes "working"/"background work",
+wrap-agents defers). Remaining residue is this item's live scope:
+
+1. Slash-command injection from herdr panes (feasibility + contract).
+2. Hot-reload state integration with herdr's view of sessions.
+3. Licensing posture: herdr is AGPL-3.0 — what does symbiosis imply for
+   this repo's distribution/notices?

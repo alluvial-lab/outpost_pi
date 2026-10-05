@@ -1,8 +1,11 @@
 ---
 id: backlog-app-phantom-close-ws-reader
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-10-05
 tags: [app, bug]
+status: superseded
+superseded_by: story-fix-metronome-phantom-close-teardown
+resolved: "2026-10-05 groom: hand-rolled-parser root cause contradicted by metronome investigation; close-attribution correction shipped. Overall connection-death investigation continues in story-fix-connection-metronome-death (active)"
 ---
 
 # App WS reader synthesizes phantom server-close(1002) under fragmented large frames

@@ -1,8 +1,11 @@
 ---
 id: backlog-orchestrating-room-tile-dot
 created: 2026-08-29
-updated: 2026-08-29
+updated: 2026-10-05
 tags: [app, ux]
+status: resolved
+resolved_by: story-orchestrating-room-tile-dot
+resolved: "2026-10-05 groom: premise satisfied by shipped story (self-labeled ABSORBED)"
 ---
 
 # Room-list dot should reflect the orchestrating state (not plain green)
