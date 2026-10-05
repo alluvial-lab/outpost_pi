@@ -67,5 +67,11 @@ Late-bound archived stubs (3):
   in-gate (synchronous cancel + post-shutdown scheduling guard). Item:
   gate-refactor-v0.13.0-wake-timer-shutdown (bound, done). All other
   loaded rules clean.
-- **e2e battery** — pairing suite GREEN (18 tests + 20 redaction canaries);
-  live lanes + 600s soak pending.
+- **e2e battery** — pairing suite GREEN (18 tests + 20 redaction canaries).
+  600s chaos soak: FAILED at the maintained-bubble render assert —
+  bisected to v0.12.1 (identical failure, same seed, 16 checkpoints):
+  PRE-EXISTING, not a bundle regression. All chaos oracle invariants,
+  swallow/blank-chat signatures GREEN on both trees. Known-open item
+  parked (backlog-soak-maintained-bubble-render-assert); operator
+  ship/hold call at UAT. Live lanes: batch 1 (golden/failure/state-shapes)
+  + batch 2 (grid/capture-delivery) running.
