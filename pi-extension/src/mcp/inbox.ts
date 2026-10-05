@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 /** Bounded retention policy for the mesh MCP inbox.
  *
  * Security contract (gate-security-mcp-inbox-unbounded): the MCP server
@@ -20,6 +22,33 @@ export const INBOX_LIMITS: InboxLimits = {
   maxMessages: 1_000,
   maxBytes: 4 * 1024 * 1024,
 };
+
+/** UTF-8 byte size of a value's compact JSON serialization. Bytes, not
+ *  string `.length` UTF-16 code units — the inbox ceiling is a memory bound,
+ *  and multi-byte content under-counts ~2–3× with code units (a 6.3 MB
+ *  Unicode message passes a “4 MiB” unit-based ceiling). */
+export function jsonByteSize(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+/** Minimal shape the drain renderer needs (mesh_server's IncomingMsg
+ *  satisfies it structurally). */
+export interface InboxMessageView {
+  readonly from: string;
+  readonly id: string;
+  readonly re: string | null;
+  readonly at: string;
+  readonly body: unknown;
+}
+
+/** Render one drained message as a compact block. COMPACT by contract:
+ *  pretty-printed JSON multiplies deep nesting combinatorially (300
+ *  depth-2000 bodies ≈ 3.6 MB retained render to ~2.4 GB of indented
+ *  text) — the drain response must stay linear in retained bytes. The
+ *  model consumes this output; compact JSON is machine-readable. */
+export function renderInboxMessage(m: InboxMessageView): string {
+  return `[${m.at}] from=${m.from}${m.re ? ` re=${m.re}` : ""}\nid=${m.id}\n${JSON.stringify(m.body)}`;
+}
 
 /** Drop-oldest bounded queue with a surfaced drop count. */
 export class BoundedInbox<T> {

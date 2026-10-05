@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { BoundedInbox, INBOX_LIMITS } from "./inbox.js";
+import { BoundedInbox, INBOX_LIMITS, jsonByteSize, renderInboxMessage } from "./inbox.js";
 
 interface Msg { from: string; body: string }
 
@@ -65,5 +65,51 @@ describe("BoundedInbox (gate-security-mcp-inbox-unbounded)", () => {
   test("default limits match the documented security contract", () => {
     expect(INBOX_LIMITS.maxMessages).toBe(1_000);
     expect(INBOX_LIMITS.maxBytes).toBe(4 * 1024 * 1024);
+  });
+});
+
+describe("byte accounting (final-review regression)", () => {
+  test("jsonByteSize counts UTF-8 bytes, not UTF-16 code units", () => {
+    const s = "é".repeat(1_000); // 1 BMP char = 1 code unit, 2 UTF-8 bytes
+    expect(s.length).toBe(1_000);
+    // JSON serialization quotes the string: 2,000 payload bytes + 2 quotes.
+    expect(jsonByteSize(s)).toBe(2_002);
+  });
+
+  test("a multi-byte message beyond the byte budget is rejected even when its code-unit length fits", () => {
+    // Reproduces the reviewer's shape at miniature scale: unit-based
+    // accounting admitted ~1.5x the ceiling; byte-based must not.
+    const inbox = new BoundedInbox<Msg>(jsonByteSize, { maxMessages: 10, maxBytes: 200 });
+    const body = "é".repeat(120); // ~124 units (fits 200), ~248 bytes (exceeds)
+    inbox.push({ from: "a", body });
+    expect(inbox.length).toBe(0);
+    expect(inbox.drain().dropped).toBe(1);
+  });
+});
+
+describe("drain rendering (final-review regression)", () => {
+  const deepBody = (depth: number): unknown => {
+    let v: unknown = "leaf";
+    for (let i = 0; i < depth; i++) v = [v];
+    return v;
+  };
+
+  test("deep JSON renders compact — output linear in retained bytes, never pretty", () => {
+    const body = deepBody(2_000);
+    const rendered = renderInboxMessage({ from: "/a@b", id: "i", re: null, at: "t", body });
+    const compact = JSON.stringify(body);
+    // No indentation amplification: rendered size ≈ compact body + a bounded
+    // envelope (~100 chars). Pretty-printing this body produces GBs.
+    expect(rendered.length).toBeLessThanOrEqual(compact.length + 120);
+    expect(rendered).not.toContain("\n  "); // no indented lines anywhere
+  });
+
+  test("drain response stays linear across many messages", () => {
+    const inbox = new BoundedInbox<Msg>(jsonByteSize, { maxMessages: 1_000, maxBytes: 4 * 1024 * 1024 });
+    for (let i = 0; i < 300; i++) inbox.push({ from: "p", body: deepBody(40) });
+    const { items } = inbox.drain();
+    const rendered = items.map((m) => renderInboxMessage({ ...m, id: "i", re: null, at: "t" })).join("\n\n");
+    const compactTotal = items.reduce((n, m) => n + jsonByteSize(m), 0);
+    expect(rendered.length).toBeLessThan(compactTotal + items.length * 120 + 1);
   });
 });

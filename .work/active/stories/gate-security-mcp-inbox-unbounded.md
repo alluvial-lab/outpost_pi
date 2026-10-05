@@ -1,7 +1,7 @@
 ---
 id: gate-security-mcp-inbox-unbounded
 kind: story
-stage: implementing
+stage: done
 tags: [security]
 parent: null
 depends_on: []
@@ -44,3 +44,20 @@ bind case-by-case.
   count). mesh_server rewired: wake edge reads eligible state via
   find/some, get_messages prepends the drop warning. 7 unit tests incl.
   wake-edge reads and drop-counter reset.
+
+## Final-review blocker fixed (2026-10-05, autopilot completion review)
+
+Reviewer (cross-model, fresh context) reproduced two acceptance gaps
+against the built artifact and bounced this story; both fixed and
+reverified (68 files / 1188 tests green):
+
+1. Unit-not-byte accounting: `.length` (UTF-16 units) admitted ~1.5–3x
+   the advertised ceiling (6.3 MB Unicode message under a "4 MiB" cap).
+   Fix: `jsonByteSize` (Buffer.byteLength of the compact serialization)
+   is now the single size source in BoundedInbox wiring.
+2. Pretty-print amplification: depth-2000 bodies rendered ~2.4 GB of
+   response text from ~3.6 MB retained (indentation multiplies deep
+   nesting combinatorially). Fix: `renderInboxMessage` renders COMPACT
+   by contract — drain output linear in retained bytes; regression
+   tests pin both (byte rejection of multi-byte oversize; no-indentation
+   + linearity across many messages).

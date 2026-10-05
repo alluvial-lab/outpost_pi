@@ -20,7 +20,7 @@ import { z } from "zod";
 import { MeshNode } from "../session/mesh_node.js";
 import { loadLocalConfig, defaultAgentName, localConfigExists } from "../session/local_config.js";
 import { WAKE_MIN_INTERVAL_MS, WakeGate, isLocalPeerAddress, wakeNudgeContent } from "./wake.js";
-import { BoundedInbox } from "./inbox.js";
+import { BoundedInbox, jsonByteSize, renderInboxMessage } from "./inbox.js";
 import { sessionSockPath, sessionAuditPath, LOCAL_SESSION_NAME } from "../session/global_config.js";
 import { resolveRelayUrl } from "../config.js";
 import { acquireCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
@@ -62,7 +62,7 @@ interface IncomingMsg {
   at: string;
 }
 
-const inbox = new BoundedInbox<IncomingMsg>((m) => JSON.stringify(m).length);
+const inbox = new BoundedInbox<IncomingMsg>(jsonByteSize);
 
 // ── Wake gate (edge-triggered, rate-capped) ──────────────────────────────────
 
@@ -254,9 +254,7 @@ mcp.registerTool("get_messages", {
     return { content: [{ type: "text" as const, text: "(no messages)" }] };
   }
   const dropNote = dropped > 0 ? `⚠ ${dropped} earlier message(s) shed by the inbox bound (count/bytes)\n\n` : "";
-  const lines = msgs.map((m) =>
-    `[${m.at}] from=${m.from}${m.re ? ` re=${m.re}` : ""}\nid=${m.id}\n${JSON.stringify(m.body, null, 2)}`,
-  );
+  const lines = msgs.map((m) => renderInboxMessage(m));
   return { content: [{ type: "text" as const, text: dropNote + lines.join("\n\n") }] };
 });
 
