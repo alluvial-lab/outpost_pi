@@ -62,6 +62,10 @@ Late-bound archived stubs (3):
 - **gate-patterns** (2026-10-05) — 1 pattern extracted
   (diagnostic-schema-and-emission-coverage; 5 candidates rejected with
   reasons). Item: gate-patterns-v0.13.0 (bound, done).
-- **gate-refactor** (2026-10-05) — running (scan-rule libraries loaded).
+- **gate-refactor** (2026-10-05) — 1 finding (scan-lifecycle
+  resource-no-dispose: deferred wake timer survived shutdown); fixed
+  in-gate (synchronous cancel + post-shutdown scheduling guard). Item:
+  gate-refactor-v0.13.0-wake-timer-shutdown (bound, done). All other
+  loaded rules clean.
 - **e2e battery** — pairing suite GREEN (18 tests + 20 redaction canaries);
   live lanes + 600s soak pending.

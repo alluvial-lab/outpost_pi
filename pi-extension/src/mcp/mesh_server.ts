@@ -280,6 +280,10 @@ async function main(): Promise<void> {
     // is pull-based via `list_peers`. (Real broker ACKs and `re` replies are
     // already swallowed upstream by SessionPeer.)
     if (env.from === "broker" || env.from.endsWith(":broker")) return;
+    // Shutdown boundary (scan-lifecycle): no wake scheduling once teardown
+    // begins — a late mesh message during mesh.close() must not arm a
+    // deferred timer that fires into a closing transport.
+    if (_shuttingDown) return;
 
     const msg: IncomingMsg = {
       from: env.from,
@@ -392,6 +396,10 @@ function shutdown(): void {
   if (_shuttingDown) return;
   _shuttingDown = true;
   if (_lockRetryTimer) { clearTimeout(_lockRetryTimer); _lockRetryTimer = null; }
+  // Cancel any pending deferred wake synchronously (scan-lifecycle): its
+  // callback would otherwise fire a notification during/after teardown —
+  // unref() keeps it from holding the process open but never cancels it.
+  if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
   try { _lock?.release(); } catch { /* OS frees the UDS lock on exit anyway */ }
   void Promise.resolve(mesh.close())
     .catch(() => { /* best-effort */ })
