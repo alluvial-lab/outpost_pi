@@ -1,3 +1,56 @@
+## v0.13.0 — 2026-10-05
+
+### Features
+
+- **Claude-host mesh idle wake** — `outpost-pi claude --outpost-mesh-wake`
+  lets local mesh peers start turns on an otherwise-idle Claude Code
+  session: the mesh MCP server emits an edge-triggered, rate-capped channel
+  notification (burst or broadcast wakes once; 5s floor between wakes; a
+  suppressed wake re-checks later so capped messages still surface). The
+  nudge carries no message body — `get_messages` stays the single
+  authoritative drain, pre-approved via `--allowedTools` so an unattended
+  woken turn can read what woke it. Cross-PC messages buffer for the next
+  drain and never wake (remote-initiated turns stay opt-out); the wake
+  predicate derives from the canonical address parser, and relay `_relay`
+  envelopes are accepted only as genuine transport errors. Qualification
+  evidence (3/3 wakes + burst, eager MCP spawn, background-task fallback
+  lane confirmed) lives in the feature item.
+
+### Security
+
+- **Bounded MCP inbox** — the Claude-host mesh inbox retains at most 1,000
+  messages / 4 MiB (UTF-8-byte-accurate accounting; oldest shed beyond the
+  bound, individually oversized messages rejected, drop count surfaced at
+  drain) and renders compact — deep JSON can no longer amplify a drain
+  response.
+- **Ephemeral MCP config hardening** — the launcher's `--mcp-config` file
+  is created exclusively inside an unpredictable owner-only temp directory
+  (mkdtemp 0700), removed on exit; no shared-tmp symlink/substitution
+  window.
+- **Relay `_relay` ingress validation** — envelopes claiming the relay's
+  origin are accepted only as genuine relay transport errors; anything else
+  (e.g. a forged local-looking sender) is dropped and logged.
+
+### Fixes
+
+- **Connect-cancel attribution** — ConnectionManager logs typed
+  `connCancel` diagnostics at every connect-cancellation site (re-entrant
+  connect, supervisor invalidation, performConnect entry) plus a
+  factory-start checkpoint, each carrying the attempt generation: the next
+  field capture names the canceller behind the post-strike recovery drag
+  (~4 min of `_CancelledError` churn after each phone-side RST).
+- **Deferred wake timer teardown** — the wake timer is cancelled
+  synchronously at MCP shutdown; no wake scheduling across the teardown
+  boundary.
+
+### Internal
+
+- Deterministic factory-start barriers replace timed settles in the
+  connect-join tests; incident-narrative comments trimmed to current-state
+  rationale; diagnostic-schema-and-emission-coverage pattern documented;
+  one low-value launcher test removed; late-bound record stubs claimed
+  (relay parse_hello/bounded_mpsc cleanups, join-adoption test).
+
 ## v0.12.1 — 2026-10-04
 
 ### Fixes
