@@ -1,17 +1,19 @@
 import { describe, expect, test } from "vitest";
-import { buildClaudeLaunchArgs, splitClaudeCliArgs } from "./standalone_cli.js";
+import { MESH_WAKE_FLAG, buildClaudeLaunchArgs, splitClaudeCliArgs } from "./standalone_cli.js";
 
 describe("splitClaudeCliArgs", () => {
-  test("no args → caller cwd, empty passthrough", () => {
+  test("no args → caller cwd, empty passthrough, wake off", () => {
     const res = splitClaudeCliArgs([]);
     expect(res.targetCwd).toBe(process.cwd());
     expect(res.passthroughArgs).toEqual([]);
+    expect(res.meshWake).toBe(false);
   });
 
   test("leading positional is the cwd; the rest passes through verbatim", () => {
     const res = splitClaudeCliArgs(["/tmp/project", "--resume"]);
     expect(res.targetCwd).toBe("/tmp/project");
     expect(res.passthroughArgs).toEqual(["--resume"]);
+    expect(res.meshWake).toBe(false);
   });
 
   test("a flag first means no cwd — flag values are not mistaken for one", () => {
@@ -19,6 +21,23 @@ describe("splitClaudeCliArgs", () => {
     const res = splitClaudeCliArgs(["--resume", "abc-123"]);
     expect(res.targetCwd).toBe(process.cwd());
     expect(res.passthroughArgs).toEqual(["--resume", "abc-123"]);
+  });
+
+  test("wake flag before the cwd does not shadow it (cwd-detection regression)", () => {
+    // The wake flag must be filtered BEFORE cwd detection: otherwise the cwd
+    // falls back to the invoking directory and the intended cwd is forwarded
+    // to claude as a prompt positional.
+    const res = splitClaudeCliArgs([MESH_WAKE_FLAG, "/tmp/proj"]);
+    expect(res.targetCwd).toBe("/tmp/proj");
+    expect(res.passthroughArgs).toEqual([]);
+    expect(res.meshWake).toBe(true);
+  });
+
+  test("wake flag after the cwd is intercepted too", () => {
+    const res = splitClaudeCliArgs(["/tmp/proj", MESH_WAKE_FLAG, "--resume"]);
+    expect(res.targetCwd).toBe("/tmp/proj");
+    expect(res.passthroughArgs).toEqual(["--resume"]);
+    expect(res.meshWake).toBe(true);
   });
 
   test("returns a copy — callers cannot mutate the input argv", () => {
@@ -43,16 +62,44 @@ describe("buildClaudeLaunchArgs", () => {
     ]);
   });
 
-  test("never injects a --dangerously-* flag (safe-default regression guard)", () => {
-    // Permission bypass and development channels are operator opt-ins passed
-    // through as trailing claude-flags — the wrapper must not add them itself.
+  test("never injects --dangerously-skip-permissions (authority guard, absolute)", () => {
+    // Auto-approving tool calls is the operator's verbatim-passthrough opt-in
+    // alone — in every configuration, including wake enabled.
     for (const flags of [
       buildClaudeLaunchArgs("/tmp/mcp.json", "/pkg/skills/agent-network/SKILL.md"),
       buildClaudeLaunchArgs("/tmp/mcp.json", null),
+      buildClaudeLaunchArgs("/tmp/mcp.json", null, true, ["--resume", "x"]),
     ]) {
       for (const flag of flags) {
-        expect(flag.startsWith("--dangerously")).toBe(false);
+        expect(flag).not.toContain("--dangerously-skip-permissions");
       }
+    }
+  });
+
+  test("wake off (default) injects no dangerous flags at all", () => {
+    // Initiative stays with the operator: without the explicit wake opt-in
+    // the wrapper adds no --dangerously-* or permission-affecting flag.
+    for (const flag of buildClaudeLaunchArgs("/tmp/mcp.json", null)) {
+      expect(flag.startsWith("--dangerously")).toBe(false);
+      expect(flag.startsWith("--allowedTools")).toBe(false);
+    }
+  });
+
+  test("wake on expands dev-channels (=form) plus the read-only drain pre-approval", () => {
+    expect(buildClaudeLaunchArgs("/tmp/mcp.json", null, true)).toEqual([
+      "--mcp-config", "/tmp/mcp.json",
+      "--dangerously-load-development-channels=server:outpost-pi-mesh",
+      "--allowedTools=mcp__outpost-pi-mesh__get_messages",
+    ]);
+  });
+
+  test("operator-passed dev-channels flag suppresses the expansion (no clobber/duplicate)", () => {
+    for (const passthrough of [
+      ["--dangerously-load-development-channels", "server:outpost-pi-mesh"],  // space form
+      ["--dangerously-load-development-channels=server:outpost-pi-mesh"],     // = form
+    ]) {
+      const flags = buildClaudeLaunchArgs("/tmp/mcp.json", null, true, passthrough);
+      expect(flags).toEqual(["--mcp-config", "/tmp/mcp.json"]);
     }
   });
 });

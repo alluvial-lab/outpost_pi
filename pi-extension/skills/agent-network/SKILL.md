@@ -36,9 +36,12 @@ it.** How a message reaches you depends on your runtime:
   ```
 
   It returns all pending messages and clears the buffer (call once per turn),
-  or `(no messages)` when nothing is waiting — that's normal, keep working. A
-  channel push (`📨 Message from …`) may nudge you mid-session; still call
-  `get_messages` for the full structured payload.
+  or `(no messages)` when nothing is waiting — that's normal, keep working. If
+  your session runs with the mesh wake enabled (launched with
+  `--outpost-mesh-wake`), an idle session may be nudged awake by a channel
+  push (`📨 mesh message from … arrived — call get_messages …`): the nudge
+  carries no payload and no message id — `get_messages` is always the
+  authoritative drain, at turn start, wake or no wake.
 
 - **Pi:** the runtime delivers each incoming message directly as a new turn
   input the moment it arrives — no polling, no `get_messages`. You'll see it
@@ -134,18 +137,21 @@ inspect the status — it dictates what to do next.**
 
 | Status | Means | What you do |
 |---|---|---|
-| `received` | Broker delivered the envelope. Delivery is reliable — even if the peer is mid-turn, its harness enqueues the message for the next turn. | Move on. Any reply arrives later. |
+| `received` | Broker delivered the envelope. On Pi the harness enqueues it into the peer's next turn. On Claude (MCP) it means the peer's MCP process **buffered** it for the next `get_messages` drain — the buffer is in-memory, so an MCP restart or session exit before a drain can drop it. | Move on. Any reply arrives later. |
 | `denied` | Peer explicitly refused (or no such peer). | Do NOT retry. Report to the user. |
 | `timeout` | No ACK (~5s). Transport error — broker down, or peer vanished. | Treat as transient. Retry once after ~10s, then escalate. |
 
 For `to: "broadcast"` (or a name array), there's no single ACK — it's
 fire-and-forget (`status: "sent"`).
 
-**Delivery is reliable — no retry-on-busy.** A message sent to a peer that's
-mid-turn is still delivered: the peer's harness queues it and processes it on
-its upcoming turn. You never need to retry because a peer was busy. `re=<id>`
-is purely **correlation** — set it so the recipient (and you) can thread an
-answer to a question; it carries no special delivery semantics.
+**Delivery is reliable on the wire — no retry-on-busy.** A message sent to
+a peer that's mid-turn is still delivered: the peer's harness (Pi) or MCP
+inbox (Claude) queues it and processes it on its upcoming turn. On Claude,
+`received` means *buffered by the peer's process*, not *handled* — the
+in-memory inbox survives mid-turn waits but not an MCP restart or session
+exit before a drain. You never need to retry because a peer was busy.
+`re=<id>` is purely **correlation** — set it so the recipient (and you) can
+thread an answer to a question; it carries no special delivery semantics.
 
 ---
 

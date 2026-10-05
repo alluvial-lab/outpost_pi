@@ -1,7 +1,7 @@
 ---
 id: feature-claude-host-mesh-idle-wake-nudge
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, workflow]
 parent: feature-claude-host-mesh-idle-wake
 depends_on: [feature-claude-host-mesh-idle-wake-qualification]
@@ -49,3 +49,19 @@ story voids.
   edge-trigger (burst → one wake, drain re-arms); rate-cap suppression
 - `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
 - Skill source updated
+
+## Implementation notes (2026-10-05)
+
+- New module `pi-extension/src/mcp/wake.ts`: `wakeNudgeContent(from)`
+  (JSON-quotes the untrusted sender, names get_messages + re, no body),
+  `WakeGate` (pure edge + cap decisions with caller-supplied `nowMs`),
+  `WAKE_MIN_INTERVAL_MS = 5_000`.
+- mesh_server wiring: edge decision per message (`lenBefore === 0`),
+  deferred re-check timer on cap suppression (liveness — fires if inbox
+  still non-empty after the cap window; nudge names the OLDEST unread
+  sender), drain cancels the pending timer, honest transport-error catch.
+- Tests: `src/mcp/wake.test.ts` (nudge escaping/content, edge-only firing,
+  drain re-arm, cap window, retryAfterMs, deferred liveness re-check).
+- Skill (repo source): wake-mode note under the inbox rule; `received`
+  semantics precision (buffered by peer process, in-memory inbox, not
+  "handled"); "delivery reliable on the wire" scoped honestly.

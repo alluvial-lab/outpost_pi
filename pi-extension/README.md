@@ -395,14 +395,26 @@ forwards any trailing flags to `claude` verbatim.
 
 Launch defaults are safe: Claude keeps its own permission policy (every tool
 call asks), and mesh messages are seen at the next turn boundary through
-`get_messages` polling. `--dangerously-skip-permissions` (auto-approve every
-tool call) and `--dangerously-load-development-channels
-server:outpost-pi-mesh` (wake Claude immediately on incoming messages) are
-operator opt-ins — pass them through yourself for unattended operation:
+`get_messages` polling. Two opt-ins change that, in distinct ways:
+
+- **Authority** — `--dangerously-skip-permissions` auto-approves every tool
+  call. Pass it through yourself for unattended operation; the wrapper never
+  injects it.
+- **Initiative** — `--outpost-mesh-wake` lets mesh peers START turns on the
+  session. The wrapper expands it to the development-channels flag (Claude
+  asks one consent question at launch — answer once and proceed) and
+  pre-approves the read-only `get_messages` drain, so an unattended woken
+  turn can read what woke it. It changes no permission policy, but combined
+  with `--dangerously-skip-permissions` a peer message can drive unattended
+tool execution — combining both is a conscious trust decision.
 
 ```bash
-outpost-pi claude ~/code/api --dangerously-skip-permissions \
-  --dangerously-load-development-channels server:outpost-pi-mesh
+# wake only — woken turns still face the approval gate:
+outpost-pi claude ~/code/api --outpost-mesh-wake
+
+# both — unattended peer-driven turns (you asked for it):
+outpost-pi claude ~/code/api --outpost-mesh-wake \
+  --dangerously-skip-permissions
 ```
 
 ---

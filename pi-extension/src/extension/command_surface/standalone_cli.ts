@@ -207,51 +207,88 @@ function outpostPiCliHelpText(): string {
     "  claude [cwd] [claude-flags]     Start Claude Code on the agent mesh",
     "                                  (safe defaults: Claude permissions stay on,",
     "                                  messages poll at each turn via get_messages;",
-    "                                  pass claude flags through to opt in to more)",
+    "                                  pass claude flags through to opt in to more;",
+    "                                  add --outpost-mesh-wake to let mesh peers",
+    "                                  start turns on the idle session)",
   ].join("\n");
 }
 
-/** Split `outpost-pi claude` argv into the optional leading cwd and the verbatim claude-flag passthrough.
+/** Wrapper-owned opt-in that lets mesh peers start turns on the launched
+ *  Claude session (an authority class of its own — "initiative"). Filtered
+ *  out of the verbatim passthrough before cwd detection and expanded by
+ *  buildClaudeLaunchArgs into the dev-channels flag plus the drain
+ *  pre-approval. */
+export const MESH_WAKE_FLAG = "--outpost-mesh-wake" as const;
+
+/** Split `outpost-pi claude` argv into the optional leading cwd, the
+ *  wrapper-owned wake opt-in, and the verbatim claude-flag passthrough.
  *
- * Contract: `outpost-pi claude [cwd] [claude-flags...]`. The optional cwd is
- * ONLY the leading positional (first token, not a flag); everything after it
- * is forwarded verbatim to the `claude` binary (e.g. `--resume`, `-c`,
- * `-p "prompt"`). Restricting cwd to the leading token avoids mistaking a
- * flag's value (e.g. the id in `--resume <id>`) for the cwd. With no leading
- * positional, the cwd defaults to the invoking process cwd and ALL args pass
- * through.
+ * Contract: `outpost-pi claude [cwd] [--outpost-mesh-wake] [claude-flags...]`.
+ * MESH_WAKE_FLAG is filtered out FIRST so it can never shadow the cwd:
+ * `outpost-pi claude --outpost-mesh-wake ~/code/api` must resolve the cwd to
+ * ~/code/api, not fall back to the invoking cwd and pass ~/code/api through
+ * as a prompt positional. The remaining optional cwd is ONLY the leading
+ * non-flag token; everything after it is forwarded verbatim to the `claude`
+ * binary (e.g. `--resume`, `-c`, `-p "prompt"`) — restricting cwd to the
+ * leading token avoids mistaking a flag's value (e.g. the id in
+ * `--resume <id>`) for the cwd. With no leading positional, the cwd defaults
+ * to the invoking process cwd.
  */
 export function splitClaudeCliArgs(
   args: readonly string[],
-): { targetCwd: string; passthroughArgs: string[] } {
-  const hasCwdArg = args.length > 0 && !args[0]!.startsWith("-");
+): { targetCwd: string; meshWake: boolean; passthroughArgs: string[] } {
+  const meshWake = args.includes(MESH_WAKE_FLAG);
+  const rest = args.filter((arg) => arg !== MESH_WAKE_FLAG);
+  const hasCwdArg = rest.length > 0 && !rest[0]!.startsWith("-");
   return {
-    targetCwd: hasCwdArg ? args[0]! : process.cwd(),
-    passthroughArgs: hasCwdArg ? args.slice(1) : [...args],
+    targetCwd: hasCwdArg ? rest[0]! : process.cwd(),
+    meshWake,
+    passthroughArgs: hasCwdArg ? rest.slice(1) : [...rest],
   };
 }
 
-/** Build the claude launch flags the wrapper owns: the ephemeral mesh MCP config
- *  plus (when packaged) the agent-network skill append.
+/** Build the claude launch flags the wrapper owns: the ephemeral mesh MCP
+ *  config plus (when packaged) the agent-network skill append, and — only
+ *  behind the explicit MESH_WAKE_FLAG opt-in — the wake expansion.
  *
- * Deliberately NO `--dangerously-*` flags. The wrapper must not silently widen
- * Claude's authority: `--dangerously-skip-permissions` (auto-approve every tool
- * call) and `--dangerously-load-development-channels server:outpost-pi-mesh`
- * (immediate wake on incoming mesh messages) are operator opt-ins, passed
- * through verbatim as trailing claude-flags when wanted. Without them Claude
- * keeps its configured permission policy and sees mesh messages at the next
- * turn boundary through `get_messages` polling.
+ * Two guards, deliberately distinct:
+ *
+ * 1. Authority (absolute): the wrapper NEVER injects
+ *    `--dangerously-skip-permissions`. Auto-approving every tool call is the
+ *    operator's verbatim-passthrough opt-in alone.
+ * 2. Initiative (opt-in): `--dangerously-load-development-channels` lets
+ *    mesh peers START turns on the session — it changes no permission
+ *    policy, but it widens who can act. The wrapper adds it only when the
+ *    operator passed MESH_WAKE_FLAG. The expansion also pre-approves the
+ *    read-only `get_messages` drain (`--allowedTools`), so an unattended
+ *    woken session can read the message instead of stalling on an approval
+ *    dialog nobody will answer.
+ *
+ * An operator-provided dev-channels flag in the passthrough (either argv
+ * form) is respected as-is — no duplicate or clobbering expansion.
  */
-export function buildClaudeLaunchArgs(mcpConfigPath: string, skillPath: string | null): string[] {
+export function buildClaudeLaunchArgs(
+  mcpConfigPath: string,
+  skillPath: string | null,
+  meshWake = false,
+  passthroughArgs: readonly string[] = [],
+): string[] {
+  const operatorPassedDevChannels = passthroughArgs.some(
+    (arg) => arg === "--dangerously-load-development-channels" || arg.startsWith("--dangerously-load-development-channels="),
+  );
   return [
     "--mcp-config", mcpConfigPath,
     ...(skillPath ? [`--append-system-prompt-file=${skillPath}`] : []),
+    ...(meshWake && !operatorPassedDevChannels ? [
+      "--dangerously-load-development-channels=server:outpost-pi-mesh",
+      "--allowedTools=mcp__outpost-pi-mesh__get_messages",
+    ] : []),
   ];
 }
 
 /** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on missing build output. */
 export async function launchClaudeCli(args: string[], entrypointUrl: string): Promise<void> {
-  const { targetCwd, passthroughArgs } = splitClaudeCliArgs(args);
+  const { targetCwd, meshWake, passthroughArgs } = splitClaudeCliArgs(args);
 
   // Wizard when no local config exists
   if (!localConfigExists(targetCwd)) {
@@ -314,7 +351,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
 
   try {
     spawnSync("claude", [
-      ...buildClaudeLaunchArgs(mcpConfigPath, skillPath),
+      ...buildClaudeLaunchArgs(mcpConfigPath, skillPath, meshWake, passthroughArgs),
       ...passthroughArgs,
     ], {
       cwd: absCwd,

@@ -1,7 +1,7 @@
 ---
 id: feature-claude-host-mesh-idle-wake-toggle
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, workflow]
 parent: feature-claude-host-mesh-idle-wake
 depends_on: [feature-claude-host-mesh-idle-wake-qualification]
@@ -49,3 +49,20 @@ pre-approval pairing, two-guard invariant.
   authority guard still absolute
 - `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
 - README/tutorial updated
+
+## Implementation notes (2026-10-05)
+
+- `MESH_WAKE_FLAG` filtered in `splitClaudeCliArgs` BEFORE cwd detection;
+  `meshWake` returned alongside cwd + passthrough.
+- Expansion uses the `=` argv forms (`--dangerously-load-development-channels=server:outpost-pi-mesh`,
+  `--allowedTools=mcp__outpost-pi-mesh__get_messages`) — `=` forms cannot
+  swallow a trailing positional prompt the way variadic space forms can
+  (review P9). Dedupe recognizes BOTH operator forms (space token + `=`).
+- Two-guard JSDoc written into `buildClaudeLaunchArgs`; help text mentions
+  the toggle.
+- Tests: 13 in standalone_cli.test.ts — cwd-detection regression with
+  leading wake flag, expansion iff wake, dedupe both forms, authority guard
+  absolute (asserted across wake configurations), wake-off injects neither
+  dangerous nor allowedTools flags.
+- Docs: README two-opt-in section rewritten; site tutorial "Safe defaults"
+  section now authority/initiative with the combination warning.

@@ -19,6 +19,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { MeshNode } from "../session/mesh_node.js";
 import { loadLocalConfig, defaultAgentName, localConfigExists } from "../session/local_config.js";
+import { WAKE_MIN_INTERVAL_MS, WakeGate, wakeNudgeContent } from "./wake.js";
 import { sessionSockPath, sessionAuditPath, LOCAL_SESSION_NAME } from "../session/global_config.js";
 import { resolveRelayUrl } from "../config.js";
 import { acquireCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
@@ -61,6 +62,43 @@ interface IncomingMsg {
 }
 
 const inbox: IncomingMsg[] = [];
+
+// ── Wake gate (edge-triggered, rate-capped) ──────────────────────────────────
+
+// One notification per empty→non-empty transition, re-armed by a get_messages
+// drain, with a minimum gap between wakes so two woken peers ping-ponging (or
+// a broadcast burst) cannot storm the session. Cap-suppressed edges arm a
+// deferred re-check: capped messages still surface (liveness) — the cap never
+// drops inbox messages, only additional wakes.
+const wakeGate = new WakeGate(WAKE_MIN_INTERVAL_MS);
+let _deferredWakeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function emitWake(from: string): void {
+  // Transport errors only: an un-opted client silently ignores custom
+  // notification methods, so this catch can NEVER signal "wake off" — the
+  // server cannot detect whether the session runs the dev channel.
+  void mcp.server.notification({
+    method: "notifications/claude/channel",
+    params: { content: wakeNudgeContent(from) },
+  }).catch((err: unknown) => {
+    logErr(`wake notification transport error: ${String(err)}`);
+  });
+}
+
+function armDeferredWake(nowMs: number): void {
+  if (_deferredWakeTimer) return;
+  const delay = wakeGate.retryAfterMs(nowMs);
+  if (delay === null) return;
+  const t = setTimeout(() => {
+    _deferredWakeTimer = null;
+    // Liveness re-check: the inbox may have drained meanwhile (nothing to
+    // wake about) or still hold capped messages that never woke anyone.
+    const oldest = inbox[0];
+    if (oldest && wakeGate.onDeferredRecheck(Date.now())) emitWake(oldest.from);
+  }, delay);
+  t.unref?.();
+  _deferredWakeTimer = t;
+}
 
 // ── Mesh node ─────────────────────────────────────────────────────────────────
 
@@ -201,6 +239,11 @@ mcp.registerTool("get_messages", {
   inputSchema: {},
 }, async () => {
   const msgs = inbox.splice(0);
+  // A full drain empties the inbox: re-arm the wake edge and cancel any
+  // pending deferred re-check (nothing left to wake about).
+  if (msgs.length > 0 && inbox.length === 0) {
+    if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
+  }
   if (msgs.length === 0) return { content: [{ type: "text" as const, text: "(no messages)" }] };
   const lines = msgs.map((m) =>
     `[${m.at}] from=${m.from}${m.re ? ` re=${m.re}` : ""}\nid=${m.id}\n${JSON.stringify(m.body, null, 2)}`,
@@ -252,13 +295,18 @@ async function main(): Promise<void> {
       re: env.re,
       at: isoNow(),
     };
+    const lenBefore = inbox.length;
     inbox.push(msg);
-    // Push via claude/channel so Claude wakes immediately (when the session
-    // was launched with --dangerously-load-development-channels server:outpost-pi-mesh).
-    void mcp.server.notification({
-      method: "notifications/claude/channel",
-      params: { content: `📨 Message from ${msg.from}:\n${JSON.stringify(msg.body, null, 2)}` },
-    }).catch(() => { /* channels not enabled — get_messages polling covers it */ });
+    // Edge-triggered wake (empty→non-empty only, rate-capped). A burst or
+    // broadcast wakes once; a drain re-arms the edge. Only sessions launched
+    // with the dev-channels flag honor the notification — for everyone else
+    // it is inertly ignored and get_messages polling remains the delivery
+    // path.
+    if (wakeGate.onMessage(lenBefore, Date.now())) {
+      emitWake(msg.from);
+    } else if (lenBefore === 0) {
+      armDeferredWake(Date.now());
+    }
   });
 
   // Connect the stdio transport FIRST and unconditionally, so Claude Code

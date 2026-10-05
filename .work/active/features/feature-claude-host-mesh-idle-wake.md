@@ -412,6 +412,22 @@ export function shouldWake(inboxLengthBefore: number): boolean;
 - **Quota/cost**: measured per woken turn in qualification; rate cap bounds
   loop burn.
 
+## Implementation record (2026-10-05)
+
+- Unit 2 (`-toggle`) and Unit 3 (`-nudge`) implemented and verified:
+  typecheck, 1175 tests green (67 files; 3 pre-existing env skips),
+  build, site lint+build. Stories at done with per-story notes.
+- New module `pi-extension/src/mcp/wake.ts` is the single source of truth
+  for nudge content + wake gating; `mesh_server.ts` wires it (edge on
+  empty→non-empty, 5s cap, deferred liveness re-check, drain re-arm).
+- Wrapper: `--outpost-mesh-wake` filtered before cwd detection, expands to
+  `=`-form dev-channels + `--allowedTools` drain pre-approval, dedupes both
+  operator forms; two-guard invariant in code, tests, README, tutorial.
+- Open follow-ups (non-blocking): exact `mcp__<server>__<tool>` naming
+  confirmed at first live wake use of the toggle; `--channels` approved-
+  registration surface undocumented; consent-Enter per launch for tmux-
+  scripted sessions (send-keys or operator press).
+
 ## Grounding (scoping evidence, retained)
 
 - The server side already fires the wake: `mesh_server.ts` pushes

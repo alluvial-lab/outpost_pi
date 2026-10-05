@@ -186,12 +186,14 @@ Agent name [api]: reviewer`}
               and it needs no special flags.
             </p>
             <p>
-              Immediate wake is an opt-in: with{" "}
-              <InlineCode>--dangerously-load-development-channels server:outpost-pi-mesh</InlineCode>{" "}
-              passed through (see below), the server&apos;s channel
-              notification <strong className="text-fg">wakes Claude</strong>{" "}
-              right away, so it reacts to an incoming message without you
-              prompting it.
+              Immediate wake is an opt-in: launch with{" "}
+              <InlineCode>--outpost-mesh-wake</InlineCode> (see below) and the
+              server&apos;s channel notification{" "}
+              <strong className="text-fg">wakes Claude</strong> right away —
+              no prompt needed. A wake is edge-triggered and rate-capped: a
+              burst or broadcast nudges once, not once per message, and the
+              nudge itself carries no message body — <InlineCode>get_messages</InlineCode>{" "}
+              stays the single authoritative way to read what arrived.
             </p>
           </DocsSubsection>
         </DocsSection>
@@ -200,15 +202,29 @@ Agent name [api]: reviewer`}
           <p>
             The wrapper launches Claude with its normal permission policy —
             Claude asks you before running tools, and mesh messages arrive via{" "}
-            <InlineCode>get_messages</InlineCode> polling. It never passes a{" "}
-            <InlineCode>--dangerously-*</InlineCode> flag for you. For
-            unattended agent-to-agent work you can opt in yourself by appending
-            the flags (they are forwarded to <InlineCode>claude</InlineCode>{" "}
-            verbatim):
+            <InlineCode>get_messages</InlineCode> polling. Two distinct opt-ins
+            change that, and the wrapper only ever manages the second for you:
           </p>
+          <ul className="list-disc pl-6 space-y-1">
+            <li>
+              <strong className="text-fg">Authority</strong> —{" "}
+              <InlineCode>--dangerously-skip-permissions</InlineCode>{" "}
+              auto-approves every tool call. Pass it through yourself; the
+              wrapper never injects it.
+            </li>
+            <li>
+              <strong className="text-fg">Initiative</strong> —{" "}
+              <InlineCode>--outpost-mesh-wake</InlineCode> lets mesh peers
+              START turns on the session. The wrapper expands it to the
+              development-channels flag (Claude asks one consent question at
+              launch) and pre-approves the read-only{" "}
+              <InlineCode>get_messages</InlineCode> drain so an unattended
+              woken turn can read what woke it.
+            </li>
+          </ul>
           <CodeBlock
-            code="outpost-pi claude ~/code/api --dangerously-skip-permissions --dangerously-load-development-channels server:outpost-pi-mesh"
-            label="Opt in to both (you type this)"
+            code={"# wake only — woken turns still face the approval gate:\noutpost-pi claude ~/code/api --outpost-mesh-wake\n\n# both — unattended peer-driven turns:\noutpost-pi claude ~/code/api --outpost-mesh-wake --dangerously-skip-permissions"}
+            label="Opt in (you type this)"
             language="bash"
           />
           <Callout variant="warning" title="Know what these flags do">
@@ -216,10 +232,12 @@ Agent name [api]: reviewer`}
             <strong className="text-fg">auto-approves every tool call</strong>{" "}
             — Claude runs Bash, edits, and writes without prompting you, which is
             what makes unattended agent-to-agent work possible but also removes
-            your approval gate. <InlineCode>--dangerously-load-development-channels</InlineCode>{" "}
-            opens a development channel for the local MCP server (it shows a
-            one-time confirmation dialog at startup). Only point this at folders
-            and peers you trust — same posture as promoting a folder to a{" "}
+            your approval gate. <InlineCode>--outpost-mesh-wake</InlineCode>{" "}
+            changes <em className="text-fg">who can start a turn</em>: any
+            mesh peer, not just you. It keeps the permission policy intact —
+            but combined with skip-permissions, a peer message can drive
+            unattended tool execution. Only point this at folders and peers
+            you trust — same posture as promoting a folder to a{" "}
             <Link href="/tutorials/daemon" className="text-accent underline">
               daemon
             </Link>
