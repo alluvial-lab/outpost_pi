@@ -73,5 +73,16 @@ Late-bound archived stubs (3):
   PRE-EXISTING, not a bundle regression. All chaos oracle invariants,
   swallow/blank-chat signatures GREEN on both trees. Known-open item
   parked (backlog-soak-maintained-bubble-render-assert); operator
-  ship/hold call at UAT. Live lanes: batch 1 (golden/failure/state-shapes)
-  + batch 2 (grid/capture-delivery) running.
+  ship/hold call at UAT. Live lanes: ALL GREEN — golden, failure,
+  state-shapes, grid, capture-delivery (5/5).
+
+## Status: AT UAT CHECKPOINT (2026-10-05)
+
+All six gates closed (17 findings: 12 fixed in-gate, 1 pattern extracted,
+4 rejected/stale with reasons); 16 bound items done; changelog drafted.
+Battery: pairing GREEN, live lanes 5/5 GREEN, soak known-open pre-existing
+(bisected, oracles green). Full suites green with honest exits (ext 1197,
+app 1078, site lint+build). Per release_uat: manual-checkpoint — the
+operator runs the docs/release-uat.md smoke runbook and records an ack;
+tag v0.13.0 (local) + rc flow follow the ack; publish/push remains
+operator-external.
