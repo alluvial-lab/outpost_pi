@@ -35,6 +35,15 @@ archived cruft stubs at `stage: drafting` (parked unimplemented findings —
 not done work; binding would pend readiness; stay unbound per two-lane
 selective binding).
 
+## UAT
+
+### Round 1 — rc.1 (2026-10-04, captures 23:00:57 + 23:16:46, relay paired)
+- Attribution ✓ (streamError/dartProtocolError both strikes).
+- Recovery ✗ — fast-cycle never engaged; wedge shape pre-upgrade/full-dead-path;
+  factory `_CancelledError`/`TimeoutException` (transport kind) beat the 9s
+  classification; ladder climbed, 11× _CancelledError, recovery ≈ wedge
+  (11min/4min). Fix: `story-fix-recovery-factory-seam` (rc.2 delta).
+
 ## Gate runs
 - **gate-security** (2026-10-04) — 0 critical / 0 high; 2 medium (MCP inbox unbounded [release-relevant, unbound per routing — operator may bind]; tmp-config symlink path [ambient]) → backlog; 1 low (auth-deadline unhandled error after cancellation — reproduced in new code, marked blocking-by-judgment, FIXED: timer disarmed at cleanup start).
 - **gate-docs** (2026-10-04) — 13 findings (6 foundation-doc assertions + 7 pattern-skill staleness), ALL fixed in-pass: VISION/DECISIONS/PROTOCOL Claude-wrapper present tense, reachability stall exception qualified in DECISIONS/ARCHITECTURE/schema companion, 7 pattern file:line refs refreshed.
