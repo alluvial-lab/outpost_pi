@@ -59,6 +59,9 @@ Late-bound archived stubs (3):
   to launchClaudeCli; unused test imports removed), 1 stale on arrival
   (wx assertion already replaced by the contents-based test in the
   tests-gate bundle).
-- **gate-patterns / gate-refactor** (2026-10-05) — pending wave 3.
+- **gate-patterns** (2026-10-05) — 1 pattern extracted
+  (diagnostic-schema-and-emission-coverage; 5 candidates rejected with
+  reasons). Item: gate-patterns-v0.13.0 (bound, done).
+- **gate-refactor** (2026-10-05) — running (scan-rule libraries loaded).
 - **e2e battery** — pairing suite GREEN (18 tests + 20 redaction canaries);
   live lanes + 600s soak pending.
