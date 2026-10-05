@@ -1,7 +1,7 @@
 ---
 id: release-v0.12.1
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
@@ -52,3 +52,38 @@ selective binding).
 - **gate-patterns** (2026-10-04) — 2 patterns codified (evidence-local-failure-classification, join-in-flight-operations); 1 inconsistency (new join tests' `_settle()` sleep vs deterministic-completion-barriers → unbound drafting story). Tracking item bound.
 - **gate-refactor** (2026-10-04) — 0 findings; 3 libraries (boundaries, lifecycle, protocol-contract) loaded, all 13 reference rules applied to the 11 bundle files. Adjacent note: scanner independently confirmed the production factory-timeout ordering issue now tracked by gate-tests.
 (populated during Phase 4)
+
+## Shipped items
+
+Bodies retained on disk under `.work/releases/v0.12.1/` (retain-bodies).
+
+| id | kind | git ref |
+|----|------|---------|
+| story-claude-launcher-safe-local-qualification | story | 0f71e21ba |
+| story-fix-metronome-phantom-close-teardown | story | 0f71e21ba |
+| story-fix-post-strike-recovery-ladder | story | 0f71e21ba |
+| story-fix-recovery-factory-seam | story | 0f71e21ba |
+| gate-patterns-v0.12.1 | story | 0f71e21ba |
+| gate-cruft-ping-miss-threshold-comment | story | 0f71e21ba |
+| gate-tests-production-timeout-composition | story | 0f71e21ba |
+| gate-docs-vision-claude-wrapper | story | 0f71e21ba |
+| gate-docs-decisions-claude-future | story | 0f71e21ba |
+| gate-docs-protocol-claude-future | story | 0f71e21ba |
+| gate-docs-reachability-stall-docs | story | 0f71e21ba |
+| gate-docs-pattern-line-refresh | story | 0f71e21ba |
+| gate-security-auth-deadline-unhandled-error | story | 0f71e21ba |
+
+## Ship record
+
+- Date shipped: 2026-10-04 (local) / 2026-10-05T04:2xZ
+- Mapping: tag-based (v0.12.1 pushed; release published from the rc.2 draft
+  with fat + slim-arm64 +29 artifacts)
+- Total items shipped: 13 (4 fix stories, 9 gate items — gate findings
+  fixed in-pass; 5 medium/low findings parked unbound in backlog)
+- Gate totals: 6 gates; 0 critical/0 high shipped; the 1 critical tests
+  finding + 1 blocking-by-judgment low were fixed pre-ship; UAT rounds:
+  rc.1 (attribution verified; recovery fix gap found), rc.2 (single-strike
+  recovery 11s verified; sustained-wedge cycling covered by tests, field
+  confirmation open)
+- Battery: pairing suite + live failure + state-shapes lanes green; full
+  app suite 1,076 green
