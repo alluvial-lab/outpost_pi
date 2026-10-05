@@ -9,7 +9,7 @@ release_binding: null
 gate_origin: cruft
 created: 2026-07-20
 updated: 2026-10-04
-resolved: 2026-10-04 (hygiene pass: verified removed — bounded_mpsc no longer exists in relay/src)
+resolved: "2026-10-04 hygiene pass: verified removed — bounded_mpsc no longer exists in relay/src"
 ---
 
 # Remove the misnamed unbounded-channel compatibility shim from relay tests
