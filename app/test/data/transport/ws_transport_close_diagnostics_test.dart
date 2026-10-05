@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app/data/transport/channel.dart';
+import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/value_objects/reachability.dart';
@@ -151,6 +152,39 @@ void main() {
       expect(
         transport.closeDetails?.origin,
         isNot(ChannelCloseOrigin.serverCloseFrame),
+      );
+    },
+  );
+
+
+  test(
+    'cancelled pre-upgrade hang classifies as a handshake stall',
+    () async {
+      final relay = await _NeverUpgradesRelay.start();
+      addTearDown(relay.close);
+
+      // Wedge shape (UAT round 1): TCP accepted, the WebSocket upgrade never
+      // answered — hello is queued locally, zero frames ever arrive. A cancel
+      // on this candidate must carry the zero-inbound classification out.
+      final token = CancelToken();
+      final connect = WsTransport.connect(
+        relayUrl: relay.url,
+        peerPubkey: 'cGVlcg==',
+        ed25519Key: await Ed25519().newKeyPair(),
+        deviceId: 'close-diagnostics-device',
+        cancellation: token,
+      );
+      await relay.connected;
+      token.cancel();
+      await expectLater(
+        connect,
+        throwsA(
+          isA<WsTransportError>().having(
+            (error) => error.kind,
+            'kind',
+            ReachabilityFailureKind.handshakeStall,
+          ),
+        ),
       );
     },
   );
@@ -324,6 +358,47 @@ void main() {
     expect(events.last.lengthClass, WsPayloadLengthClass.inline7);
     expect(events.last.closePath, ChannelLocalClosePath.hedgeLoser.name);
   });
+}
+
+
+/// Raw TCP server that accepts the connection and never answers the HTTP
+/// upgrade — the pre-upgrade wedge shape seen in the field (UAT round 1).
+final class _NeverUpgradesRelay {
+  _NeverUpgradesRelay._(this._server);
+
+  final ServerSocket _server;
+  final _connected = Completer<void>();
+  final _connections = <Socket>[];
+  final _subscriptions = <StreamSubscription<Uint8List>>[];
+  StreamSubscription<Socket>? _serverSubscription;
+
+  String get url => 'ws://${_server.address.host}:${_server.port}';
+  Future<void> get connected => _connected.future;
+
+  static Future<_NeverUpgradesRelay> start() async {
+    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final relay = _NeverUpgradesRelay._(server);
+    relay._serverSubscription = server.listen((socket) {
+      relay._connections.add(socket);
+      // Drain the request bytes; never respond.
+      relay._subscriptions.add(
+        socket.listen((_) {}, onDone: () {}),
+      );
+      if (!relay._connected.isCompleted) relay._connected.complete();
+    });
+    return relay;
+  }
+
+  Future<void> close() async {
+    await _serverSubscription?.cancel();
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
+    for (final connection in _connections) {
+      connection.destroy();
+    }
+    await _server.close();
+  }
 }
 
 final class _RecordingDebugLog implements DebugLog {

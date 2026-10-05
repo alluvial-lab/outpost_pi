@@ -250,6 +250,12 @@ class WsTransport
       Uri.parse(toWsRelayUrl(relayUrl)),
       pingInterval: const Duration(seconds: 45),
     );
+    // The channel's internal ready future can reject after we have already
+    // torn down (e.g. a withheld HTTP upgrade destroyed at close time). It
+    // is not part of this transport's completion contract — the stream and
+    // sink carry it — so ignore it to keep the rejection from surfacing as
+    // an unhandled zone error in a dead connect attempt.
+    ws.ready.ignore();
     final transport = WsTransport._(
       ws,
       debugLog: debugLog,
@@ -510,7 +516,12 @@ class WsTransport
       transport._logCloseInitiated(path);
       return connectCleanup = settleWsCleanupForTesting([
         () => sub.cancel(),
-        () => ws.sink.close(),
+        // A never-upgraded socket's graceful close can hang forever (the
+        // close handshake waits on a connection that never opened — the
+        // withheld-upgrade wedge). Bound it: unblock this dying connect
+        // attempt and let the OS / ping watchdog reclaim the orphan socket.
+        () =>
+            ws.sink.close().timeout(const Duration(seconds: 2), onTimeout: () {}),
       ]);
     }
 
@@ -519,12 +530,21 @@ class WsTransport
       cancelled = true;
       if (!authDone && !challengeCompleter.isCompleted) {
         challengeCompleter.completeError(
-          const WsTransportError('WS connect cancelled'),
+          WsTransportError(
+            'WS connect cancelled',
+            // Zero inbound frames at cancel time = the wedged-path signal
+            // (hedge-cancelled candidates on dead paths must carry it out;
+            // frames-seen cancels stay unclassified supersessions).
+            kind: preAuthFailureKind(ReachabilityFailureKind.unknown),
+          ),
         );
       }
       if (authDone && !authenticatedFrameCompleter.isCompleted) {
         authenticatedFrameCompleter.completeError(
-          const WsTransportError('WS connect cancelled'),
+          WsTransportError(
+            'WS connect cancelled',
+            kind: preAuthFailureKind(ReachabilityFailureKind.unknown),
+          ),
         );
       }
       if (handedOff) {

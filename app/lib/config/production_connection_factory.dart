@@ -8,6 +8,7 @@ import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/domain/value_objects/reachability.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
@@ -46,6 +47,7 @@ class ProductionConnectionFactory {
   final DeviceId _deviceId;
   final DebugLog? _debugLog;
   final ProductionTransportConnector _connectTransport;
+  final Duration _candidateTimeout;
 
   /// Create the production reconnect factory.
   ///
@@ -59,12 +61,14 @@ class ProductionConnectionFactory {
     required DeviceId deviceId,
     required DebugLog? debugLog,
     ProductionTransportConnector? connectTransport,
+    Duration candidateTimeout = productionWsConnectTimeout,
   }) : _relayResolution = relayResolution,
        _storage = storage,
        _ownerIdentity = ownerIdentity,
        _deviceId = deviceId,
        _debugLog = debugLog,
-       _connectTransport = connectTransport ?? _connectWsTransport;
+       _connectTransport = connectTransport ?? _connectWsTransport,
+       _candidateTimeout = candidateTimeout;
 
   /// Establish an owner-channel-protected connection for [peer].
   ///
@@ -95,12 +99,23 @@ class ProductionConnectionFactory {
     // Defensive timeout: without this the WebSocket connect + Ed25519
     // challenge round-trip can hang indefinitely if the relay is unreachable.
     // Each candidate owns a child cancellation token so a timed-out path is
-    // closed before the next endpoint is attempted.
-    const wsConnectTimeout = productionWsConnectTimeout;
+    // closed before the next endpoint is attempted. A candidate that times
+    // out never delivered a frame — the wedged-path signal — so the timeout
+    // itself carries the handshake-stall classification (UAT round 1: a bare
+    // TimeoutException classified as transport and climbed the backoff
+    // ladder instead of fast-cycling).
+    final wsConnectTimeout = _candidateTimeout;
     Object? lastError;
     StackTrace? lastStack;
     for (final relayUrl in relayUrls) {
-      if (cancel.isCancelled) throw const _CancelledError();
+      if (cancel.isCancelled) {
+        // A classified failure recorded under cancellation outranks the
+        // generic cancel: hedged reconnects cancel their primaries exactly
+        // on wedged paths, and the zero-inbound classification must survive
+        // to the retry policy.
+        if (lastError is WsTransportError) break;
+        throw const _CancelledError();
+      }
       final attemptCancel = CancelToken();
       Future<void> parentCancellation() => attemptCancel.cancelAndWait();
       cancel.addCancellationListener(parentCancellation);
@@ -119,9 +134,10 @@ class ProductionConnectionFactory {
               cancellation: attemptCancel,
             ).timeout(
               wsConnectTimeout,
-              onTimeout: () => throw TimeoutException(
+              onTimeout: () => throw WsTransportError(
                 'WS connect to $relayUrl timed out after '
                 '${wsConnectTimeout.inSeconds}s',
+                kind: ReachabilityFailureKind.handshakeStall,
               ),
             );
 
@@ -137,10 +153,17 @@ class ProductionConnectionFactory {
           debugLog: _debugLog,
         );
       } catch (error, stack) {
-        if (cancel.isCancelled) throw const _CancelledError();
+        // Keep the candidate's own classified failure (a zero-inbound
+        // handshakeStall from the transport's cancel path) even when the
+        // parent token is cancelled — hedged reconnects cancel their primary
+        // exactly on wedged paths, and masking the classification with a
+        // generic cancellation sent recovery up the ordinary ladder.
         lastError = error;
         lastStack = stack;
         await attemptCancel.cancelAndWait();
+        if (cancel.isCancelled && error is! WsTransportError) {
+          throw const _CancelledError();
+        }
       } finally {
         cancel.removeCancellationListener(parentCancellation);
       }

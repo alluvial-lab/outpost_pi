@@ -7,6 +7,7 @@ import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/data/identity/device_id.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/domain/value_objects/reachability.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/pair_request_flow.dart';
@@ -19,6 +20,91 @@ const _configuredRelay = 'https://configured.example';
 const _pairedRelay = 'http://paired.example';
 
 void main() {
+
+  test(
+    'factory candidate timeout classifies as a handshake stall',
+    () async {
+      final composition = await _buildComposition(
+        connectTransport:
+            ({
+              required relayUrl,
+              required peerPubkey,
+              required ed25519Key,
+              required deviceId,
+              required activeRoom,
+              required debugLog,
+              required cancellation,
+            }) => Completer<PeerTransport>().future,
+        candidateTimeout: const Duration(milliseconds: 200),
+      );
+      addTearDown(composition.dispose);
+
+      // A candidate that never settles produced zero delivered frames by
+      // definition — the wedged-path signal must survive the factory's own
+      // timeout instead of surfacing as a bare transport TimeoutException
+      // (UAT round 1: that classification loss sent recovery up the ladder).
+      await expectLater(
+        composition.factory.call(composition.peer, CancelToken()),
+        throwsA(
+          isA<WsTransportError>().having(
+            (error) => error.kind,
+            'kind',
+            ReachabilityFailureKind.handshakeStall,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'a classified candidate error survives parent cancellation',
+    () async {
+      final connectorStarted = Completer<void>();
+      final composition = await _buildComposition(
+        connectTransport:
+            ({
+              required relayUrl,
+              required peerPubkey,
+              required ed25519Key,
+              required deviceId,
+              required activeRoom,
+              required debugLog,
+              required cancellation,
+            }) {
+              final pending = Completer<PeerTransport>();
+              connectorStarted.complete();
+              cancellation.addCancellationListener(() {
+                // Zero-inbound cancel: the transport classifies its own
+                // rejection before the factory sees the parent cancel.
+                pending.completeError(
+                  const WsTransportError(
+                    'WS connect cancelled',
+                    kind: ReachabilityFailureKind.handshakeStall,
+                  ),
+                );
+              });
+              return pending.future;
+            },
+      );
+      addTearDown(composition.dispose);
+
+      final token = CancelToken();
+      final connect = composition.factory.call(composition.peer, token);
+      await connectorStarted.future;
+      token.cancel();
+      await expectLater(
+        connect,
+        throwsA(
+          isA<WsTransportError>().having(
+            (error) => error.kind,
+            'kind',
+            ReachabilityFailureKind.handshakeStall,
+          ),
+        ),
+      );
+    },
+  );
+
   test(
     'timeout composition preserves the handshake-stall classification ordering',
     () {
@@ -144,6 +230,7 @@ void main() {
 
 Future<_Composition> _buildComposition({
   required ProductionTransportConnector connectTransport,
+  Duration candidateTimeout = productionWsConnectTimeout,
 }) async {
   final peer = PeerRecord(
     remoteEpk: 'peer-for-production-seam',
@@ -181,8 +268,10 @@ Future<_Composition> _buildComposition({
     deviceId: _FakeDeviceId(),
     debugLog: null,
     connectTransport: connectTransport,
+    candidateTimeout: candidateTimeout,
   );
   return _Composition(
+    factory: factory,
     peer: peer,
     manager: ConnectionManager(
       factory: factory.call,
@@ -196,11 +285,13 @@ Future<_Composition> _buildComposition({
 
 class _Composition {
   final PeerRecord peer;
+  final ProductionConnectionFactory factory;
   final ConnectionManager manager;
   final OwnerIdentityBridge ownerIdentity;
 
   _Composition({
     required this.peer,
+    required this.factory,
     required this.manager,
     required this.ownerIdentity,
   });

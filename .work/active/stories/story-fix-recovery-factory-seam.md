@@ -57,3 +57,25 @@ FACTORY, whatever ends it:
 ## Verification evidence
 
 (accumulates)
+
+## Verification evidence (2026-10-04)
+
+Red-first repro (all three failed against pre-fix code, pass after):
+- (a) pre-upgrade hang (TCP accepted, upgrade never answered) + transport
+  cancel ⇒ `handshakeStall` — surfaced a REAL second bug: `ws.sink.close()`
+  on a never-upgraded socket never settles; connect-phase cleanup now bounds
+  it (2s) and the channel's internal `ready` future is ignored (late
+  rejection surfaced as an unhandled zone error).
+- (b) factory candidate timeout ⇒ error carries `handshakeStall`
+  (timeout = zero frames delivered by definition).
+- (c) classified candidate error survives parent cancellation — including
+  the multi-candidate loop-top path (a recorded `WsTransportError` breaks
+  out instead of being masked by the generic cancel).
+
+Fix set: `production_connection_factory.dart` (candidate-timeout
+classification + catch/loop-top precedence; `candidateTimeout` injectable),
+`ws_transport.dart` (cancel-path zero-inbound classification, bounded
+connect-phase sink close, `ws.ready.ignore()`).
+
+Targeted suites: 51 tests green (factory, close-diagnostics, manager,
+adapter); analyze clean.
