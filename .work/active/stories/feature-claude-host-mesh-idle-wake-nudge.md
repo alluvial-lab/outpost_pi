@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, workflow]
 parent: feature-claude-host-mesh-idle-wake
 depends_on: [feature-claude-host-mesh-idle-wake-qualification]
-release_binding: null
+release_binding: v0.13.0
 gate_origin: null
 created: 2026-10-04
 updated: 2026-10-04
