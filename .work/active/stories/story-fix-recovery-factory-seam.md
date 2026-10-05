@@ -1,7 +1,7 @@
 ---
 id: story-fix-recovery-factory-seam
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
@@ -79,3 +79,10 @@ connect-phase sink close, `ws.ready.ignore()`).
 
 Targeted suites: 51 tests green (factory, close-diagnostics, manager,
 adapter); analyze clean.
+
+## Review
+Bounded inline pass over `3b2e5a814`: timeout classification and cancel
+precedence verified against the catch/loop-top paths (classified error wins
+via break → throwWithStackTrace); bounded close leaves only a dead
+pre-auth socket orphan (documented); ready.ignore is contract-neutral (the
+stream/sink own completion). Full suite 1,076 green. Verdict: pass.
