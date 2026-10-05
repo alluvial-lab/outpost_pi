@@ -129,13 +129,26 @@ fallback.
   end-to-end encrypted. The tutorial warns specifically about combining
   both flags, which is the fleet's real configuration
   (cmux claude-teams runs skip-permissions).
-- **Fleet delivery path is an open operator decision (P1)**: the fleet's
-  Claude panes launch via `cmux claude-teams` (scripts/cmux-bootstrap-
-  agents.sh:170), not via `outpost-pi claude` — the toggle alone reaches
-  zero fleet sessions. Options: move the bootstrap onto the wrapper (also
-  giving those panes the mesh MCP + skill they currently stage by hand), or
-  accept wrapper-only coverage and record the fleet gap. Decided at
-  qualification review with Q0's launch census in hand.
+- **Fleet delivery path — per-surface flag, not wrapper migration (P1,
+  corrected 2026-10-04 after ground-truthing the live launches)**: three
+  launch surfaces exist. (a) The bespoke claude-nextup launch
+  (`claude-rc --remote-control` + hand-written ephemeral `--mcp-config` +
+  skill append, `nxuC` via env) — gains the wake flag by editing its tmux
+  launch line, zero code. (b) `scripts/cmux-bootstrap-agents.sh` →
+  `cmux claude-teams` dispatch panes — the script appends the flag when
+  wake is wanted; migrating these onto `outpost-pi claude` was considered
+  and REJECTED: the wrapper invokes plain `claude`, which would drop the
+  `claude-teams` hooks the cmux orchestrator's `agent.hook.*` events depend
+  on. (c) The product wrapper gets the `--outpost-mesh-wake` toggle for
+  everyone else. Q0's census records each surface's exact command.
+- **Local-only wake by default (trust simplification 2026-10-04)**: the
+  live mesh has zero cross-PC peers — every peer is a local session this
+  operator runs, so peer-initiated turns among them are the feature, not a
+  threat. Designed default: local peers wake; a cross-PC message (`<pc>:`
+  prefix on `from`) lands in the inbox WITHOUT waking — visible at the next
+  turn drain. The relay's cross-PC traffic is not E2E, so remote-initiated
+  unattended turns stay opt-in forever rather than becoming an ambush the
+  day a second PC peers.
 - **Notification is edge-triggered and coalesced in the server (P3)**:
   notify only on the inbox's empty→non-empty transition; re-arm when
   `get_messages` drains it. A burst or broadcast becomes one wake. Backstop:
@@ -302,11 +315,12 @@ export function shouldWake(inboxLengthBefore: number): boolean;
 - **Riskiest assumption**: a channel notification starts a turn at all —
   front-loaded in the Q2 matrix with defined pass criteria; B runs in
   parallel so a dead A doesn't restart design from zero.
-- **Initiative + skip-permissions (fleet's real config)**: wake lets mesh
-  peers start turns that then run with no approval gate; cross-PC relay
-  traffic is not E2E. Untrusted-input handling + the tutorial warning are
-  designed in; the operator consciously accepts the combination for the
-  fleet (or gates cross-PC wakes — surfaced at qualification review).
+- **Initiative + skip-permissions (cmux dispatch panes' config)**: wake
+  lets mesh peers start turns that then run with no approval gate in panes
+  launched with skip-permissions. Untrusted-input handling + the tutorial
+  warning are designed in; the piloted claude-nextup session does NOT run
+  skip-permissions (woken turns there still face the approval gate), and
+  local-only wake bounds the exposure to this box's own sessions.
 - **Dev-channel drift**: research-preview surface, consent dialog, auth
   prerequisites — version-stamped evidence keeps future breakage
   diagnosable; B is the supported-surface exit.
@@ -331,9 +345,12 @@ export function shouldWake(inboxLengthBefore: number): boolean;
 - Pi-side contrast: `_deliverMeshMessageToAgent` injects and triggers the
   turn, batching while busy (post-complaint hardening, archived
   `backlog-mesh-message-wake-interrupts-agent`).
-- Fleet Claude panes launch via `cmux claude-teams` with
-  `--dangerously-skip-permissions` (scripts/cmux-bootstrap-agents.sh:170) —
-  not through the wrapper (verified in review).
+- Launch surfaces ground-truthed 2026-10-04 (ps + tmux): the live
+  claude-nextup session is a bespoke `claude-rc --remote-control` launch
+  (hand-written ephemeral --mcp-config + skill append, nxuC via env, no
+  skip-permissions); the cmux 4-pane dispatch fleet (claude-teams,
+  skip-permissions, hooks for orchestrator events) is not currently
+  running; the product wrapper has no live sessions on this box.
 - NextUp-side Claude sessions run with plugin disables (their policy
   b561e12, expedience — operator: reversible). No current wake lane needs
   a Claude-side plugin.
