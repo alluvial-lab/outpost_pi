@@ -47,7 +47,12 @@ Late-bound archived stubs (3):
   bounded-retention precision in skill + PROTOCOL received-row; DECISIONS
   wording (flag-expanding toggle, not generated flag). Site lint+build green.
 - **gate-security** (2026-10-05) — running (scanner dispatched).
-- **gate-cruft** (2026-10-05) — running.
+- **gate-cruft** (2026-10-05) — 5 findings (all low); 4 fixed in-gate
+  (WakeGate reduced to its single rate-cap concern — edge semantics live in
+  the coordinator; unused dropped getter removed; displaced JSDoc restored
+  to launchClaudeCli; unused test imports removed), 1 stale on arrival
+  (wx assertion already replaced by the contents-based test in the
+  tests-gate bundle).
 - **gate-patterns / gate-refactor** (2026-10-05) — pending wave 3.
 - **e2e battery** — pairing suite GREEN (18 tests + 20 redaction canaries);
   live lanes + 600s soak pending.

@@ -292,7 +292,6 @@ export function buildClaudeLaunchArgs(
   ];
 }
 
-/** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on missing build output. */
 /** Write the ephemeral mesh MCP config into a fresh owner-only temp dir.
  *
  * Security contract (gate-security-mcp-tmp-config-path): the config is
@@ -318,6 +317,7 @@ export function removeEphemeralMcpDir(configPath: string): void {
   rmSync(dirname(configPath), { recursive: true, force: true });
 }
 
+/** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on missing build output. */
 export async function launchClaudeCli(args: string[], entrypointUrl: string): Promise<void> {
   const { targetCwd, meshWake, passthroughArgs } = splitClaudeCliArgs(args);
 

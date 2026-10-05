@@ -61,11 +61,6 @@ export class BoundedInbox<T> {
     private readonly limits: InboxLimits = INBOX_LIMITS,
   ) {}
 
-  /** Messages shed since the last drain (surfaced in drain output). */
-  get dropped(): number {
-    return this._dropped;
-  }
-
   /** Number of retained messages (wake-edge and drain checks read this). */
   get length(): number {
     return this.entries.length;

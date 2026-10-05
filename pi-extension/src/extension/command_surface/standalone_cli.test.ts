@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
+import { dirname } from "node:path";
 import { MESH_WAKE_FLAG, buildClaudeLaunchArgs, removeEphemeralMcpDir, splitClaudeCliArgs, writeEphemeralMcpConfig } from "./standalone_cli.js";
 
 describe("splitClaudeCliArgs", () => {

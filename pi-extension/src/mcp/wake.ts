@@ -51,10 +51,11 @@ export class WakeGate {
 
   constructor(private readonly minIntervalMs: number) {}
 
-  /** Decide whether one inbound message wakes the session: true only on the
-   *  empty→non-empty edge while the rate cap allows it. */
-  onMessage(inboxLengthBefore: number, nowMs: number): boolean {
-    if (inboxLengthBefore !== 0) return false;
+  /** Decide whether one wake-eligible inbound message may wake now: the
+   *  rate cap is the gate's ONLY concern — edge semantics (local-only,
+   *  wake-eligible unread) live in the coordinator, which calls this only
+   *  on a genuine edge. */
+  onMessage(nowMs: number): boolean {
     return this.release(nowMs);
   }
 
@@ -149,7 +150,7 @@ export function createWakeCoordinator(
       inbox.push(msg);
       if (!isLocalPeerAddress(msg.from)) return; // remote: buffer only
       if (hadLocalUnread) return; // not a wake-eligible edge
-      if (gate.onMessage(0, now())) emit(msg.from);
+      if (gate.onMessage(now())) emit(msg.from);
       else armDeferred();
     },
     onDrain(): void {
