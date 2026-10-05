@@ -77,6 +77,12 @@ enum DebugTag {
   replayDedup,
   lifecycleFailure,
   layoutMode,
+  // Connect-lifecycle attribution: which site cancelled the in-flight
+  // connect attempt (and the factory checkpoint with the attempt's
+  // generation). Pairs a cancel row with the retryConnect
+  // `_CancelledError` it produced, so one field capture names the
+  // canceller behind the post-strike recovery drag.
+  connCancel,
 }
 
 /// Name owner-local async operations without accepting free-form site labels.
@@ -89,6 +95,15 @@ enum LifecycleOperation {
   runtimeWrite,
   sessionRebind,
   meshPublish,
+}
+
+/// Name the connect-lifecycle sites that can cancel the in-flight attempt
+/// (or checkpoint the factory start). No free-form site labels.
+enum ConnectCancelSite {
+  factoryStart,
+  reentrantConnect,
+  supervisorInvalidate,
+  performConnectEntry,
 }
 
 /// Typed diagnostic event. Each variant owns its allowed fields and its scrub.
@@ -591,6 +606,25 @@ final class LifecycleFailureEvent extends DebugEvent {
     if (room != null) 'room': _cap(room!),
     if (sessionIdTail != null) 'sessionIdTail': _cap(sessionIdTail!),
     'retryScheduled': retryScheduled,
+  };
+}
+
+final class ConnCancelEvent extends DebugEvent {
+  const ConnCancelEvent({
+    required super.ts,
+    required this.site,
+    required this.generation,
+  }) : super(tag: DebugTag.connCancel);
+
+  final ConnectCancelSite site;
+  final int generation;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'tag': tag.name,
+    'ts': ts.toUtc().toIso8601String(),
+    'site': site.name,
+    'generation': generation,
   };
 }
 

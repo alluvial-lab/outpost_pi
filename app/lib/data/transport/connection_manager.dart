@@ -784,6 +784,7 @@ class ConnectionManager extends Service {
 
     final generation = ++_connectGeneration;
     _connectCancel?.cancel();
+    _logConnCancel(ConnectCancelSite.reentrantConnect, generation);
     late final Future<void> operation;
     operation = () async {
       if (inFlight != null) await inFlight;
@@ -826,6 +827,7 @@ class ConnectionManager extends Service {
   void _invalidateConnectSupervisor() {
     _connectGeneration++;
     _connectCancel?.cancel();
+    _logConnCancel(ConnectCancelSite.supervisorInvalidate, _connectGeneration);
     _raceNextConnect = false;
   }
 
@@ -833,6 +835,7 @@ class ConnectionManager extends Service {
     _cancelRetry();
     _cancelPing();
     _connectCancel?.cancel();
+    _logConnCancel(ConnectCancelSite.performConnectEntry, _connectGeneration);
     _channelSub?.cancel();
     _channelSub = null;
     _controlSub?.cancel();
@@ -866,6 +869,7 @@ class ConnectionManager extends Service {
 
     var supervisorSettled = false;
     try {
+      _logConnCancel(ConnectCancelSite.factoryStart, _connectGeneration);
       final raceFallback = _raceNextConnect;
       final attempt = raceFallback
           ? _connectWithFreshFallback(peer, token)
@@ -2353,6 +2357,9 @@ class ConnectionManager extends Service {
   }
 
   void _logDebug(DebugEvent event) => _debugLog?.log(event);
+
+  void _logConnCancel(ConnectCancelSite site, int generation) =>
+      _logDebug(ConnCancelEvent(site: site, generation: generation, ts: _clock()));
 
   void _logLifecycleFailure(
     LifecycleOperation operation,

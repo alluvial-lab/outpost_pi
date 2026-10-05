@@ -63,6 +63,7 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
     'sessionIdTail',
     'retryScheduled',
   },
+  DebugTag.connCancel: {'site', 'generation'},
   DebugTag.layoutMode: {
     'twoPane',
     'widthDp',
@@ -107,6 +108,7 @@ DebugTag tagOf(DebugEvent event) {
     WorkingConvEvent() => DebugTag.workingConv,
     ReplayDedupEvent() => DebugTag.replayDedup,
     LifecycleFailureEvent() => DebugTag.lifecycleFailure,
+    ConnCancelEvent() => DebugTag.connCancel,
     LayoutModeEvent() => DebugTag.layoutMode,
   };
 }

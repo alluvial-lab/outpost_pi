@@ -715,6 +715,65 @@ void main() {
   );
 
   test(
+    'ConnectionManager routes connect-cancel attribution through diagnostics',
+    () async {
+      final log = _FakeDebugLog();
+      Completer<IChannel>? pendingFactory;
+      final conn = ConnectionManager(
+        factory: (peer, token) {
+          final pending = Completer<IChannel>();
+          pendingFactory = pending;
+          token.addCancellationListener(() {
+            if (!pending.isCompleted) {
+              pending.completeError(Exception('factory cancelled'));
+            }
+          });
+          return pending.future;
+        },
+        storage: _FakeStorage(),
+        debugLog: log,
+      );
+      addTearDown(conn.dispose);
+
+      unawaited(conn.connectTo(_peer));
+      await _settle();
+      // A different peer supersedes the in-flight attempt: the generation
+      // bump must be attributed at the re-entrant connect site.
+      unawaited(
+        conn.connectTo(const PeerRecord(
+          remoteEpk: 'other-epk',
+          sessionName: 'Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+        )),
+      );
+      await _settle();
+      pendingFactory?.completeError(Exception('factory cancelled'));
+      await _settle();
+
+      final entry = _assertEvent<ConnCancelEvent>(
+        log.events,
+        DebugTag.connCancel,
+        where: (event) => event.site == ConnectCancelSite.performConnectEntry,
+      );
+      final checkpoint = _assertEvent<ConnCancelEvent>(
+        log.events,
+        DebugTag.connCancel,
+        where: (event) => event.site == ConnectCancelSite.factoryStart,
+      );
+      final reentrant = _assertEvent<ConnCancelEvent>(
+        log.events,
+        DebugTag.connCancel,
+        where: (event) => event.site == ConnectCancelSite.reentrantConnect,
+      );
+      // Generations pair the checkpoint with the attempt it started and the
+      // cancellation that superseded it.
+      expect(checkpoint.generation, entry.generation);
+      expect(reentrant.generation, greaterThan(entry.generation));
+    },
+  );
+
+  test(
     'ConnectionManager distinguishes stale takeover close from real channel loss',
     () async {
       final s = await _connectedManager();
