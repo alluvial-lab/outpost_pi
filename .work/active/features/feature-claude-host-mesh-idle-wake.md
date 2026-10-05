@@ -198,8 +198,12 @@ criteria N=3/T=15s), launched with
   stalls** on MCP tool calls. Strict default-perms cell NOT run (public-
   consumer concern only; the --allowedTools pairing is designed anyway).
   P4 stall remains unconfirmed-but-plausible for gated modes.
-- Woken-session self-report: full message text arrives inline but without
-  the message id (nudge redesign notes the id must come from the drain).
+- Woken-session self-report (delivered to the sender's inbox, observed
+  2026-10-05): the notification renders to the model as a
+  `<channel source="outpost-pi-mesh">` block containing the content string;
+  full message text inline but WITHOUT the message id (nudge redesign: the
+  id must come from the drain). First wake pays one ToolSearch call to load
+  the deferred mesh tools; no approval stalls in auto mode.
 
 **Q1 enablement paths:**
 
