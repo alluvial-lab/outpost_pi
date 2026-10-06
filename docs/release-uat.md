@@ -163,3 +163,13 @@ The operator records the ack (a checked item / a recorded `--accept` on the
 - [`.work/CONVENTIONS.md`](../.work/CONVENTIONS.md) — `release_uat` convention.
 - [`e2e/run-pairing.sh`](../e2e/run-pairing.sh) — the checked-in automated form of this smoke.
 - [AGENTS.md — Paired wire changes (deploy together)](../AGENTS.md#paired-wire-changes-deploy-together) — component locations and the paired wire-change deploy order.
+
+## gh repo resolution note
+
+The checkout carries a fetch-only upstream reference remote named
+`remote_pi-upstream` (jacobaraujo7/remote_pi, push neutered). It is
+deliberately NOT named `upstream`: gh prefers a remote literally named
+`upstream` over `origin` when resolving the repo, which would target
+releases/PRs at the upstream project. If that remote is ever re-added
+under the `upstream` name, pass `-R alluvial-lab/outpost_pi` (or run
+`gh repo set-default alluvial-lab/outpost_pi`) to every gh command.
