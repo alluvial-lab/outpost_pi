@@ -1,0 +1,12 @@
+{
+  "comment": "Audit advisories with NO patched release available — the gate cannot go green on them until upstream ships a fix. Each entry needs a reason and a review date; prune on every dependency pass. Adding an entry that HAS a patched version available is a gate violation.",
+  "exceptions": [
+    {
+      "module": "braces",
+      "advisory": "GHSA-vfj7-8cjw-p6xm",
+      "reason": "Stack-exhaustion DoS in template compilation; advisory lists NO patched version (<0.0.0) — every published release is vulnerable. Dev-time transitive via bundlers; not reachable in shipped site runtime. Revisit when a patched braces ships.",
+      "added": "2026-10-06",
+      "review_by": "2026-11-06"
+    }
+  ]
+}

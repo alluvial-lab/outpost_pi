@@ -39,7 +39,9 @@ jobs:
           node-version: "24"
       - name: Audit ${{ matrix.dir }}
         working-directory: ${{ matrix.dir }}
-        run: pnpm audit --audit-level=high
+        run: |
+          pnpm audit --audit-level=high --json > audit.json || true
+          node ../scripts/filter-pnpm-audit.js audit.json
 
   cargo-audit:
     name: cargo audit (${{ matrix.crate }})
