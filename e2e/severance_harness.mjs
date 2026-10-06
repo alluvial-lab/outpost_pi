@@ -49,7 +49,7 @@
 //
 // Usage examples:
 //   node e2e/severance_harness.mjs --label A-localhost --url ws://127.0.0.1:3300
-//   node e2e/severance_harness.mjs --label B-laptop --url ws://<redacted relay tailnet addr>:3300 \
+//   node e2e/severance_harness.mjs --label B-laptop --url ws://100.106.7.<relay>:3300 \
 //       --read-ms 500 --pause-ms 2000
 //   node e2e/severance_harness.mjs --fast            # unthrottled control
 //

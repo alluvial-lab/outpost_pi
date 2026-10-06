@@ -200,7 +200,7 @@ once-per-attach behavior.
 ## Network context (operator, 2026-09-05)
 
 Phone runs Tailscale with split tunneling (5G); currently home Wi-Fi.
-Either way the tailscale interface is in the path (relay is <redacted relay tailnet addr>,
+Either way the tailscale interface is in the path (relay is 100.106.7.<relay>,
 CGNAT range — routed through tailscale on every underlay). Implications:
 underlay varies while tunnel is constant — underlay likely cleared given
 the endpoint-generated 1002 close frame (a tunnel cannot fabricate WS
@@ -295,7 +295,7 @@ relay 0.5.4 logs, cross-aligned:
   schedulers suspected). This extends the outage ~2.5 min after every
   strike it follows.
 - **Phone is ALWAYS tailnet-sourced**: 23/23 post-reboot phone auths from
-  <redacted phone tailnet addr> (CGNAT). The at-home differential has therefore been
+  100.121.111.<phone-tailnet> (CGNAT). The at-home differential has therefore been
   running de facto — and strikes persist INSIDE the WireGuard tunnel.
 - **Mechanism consequence**: WG's poly1305 auth makes underlay byte
   corruption (router or radio) unable to surface as corrupt/truncated TCP
@@ -457,7 +457,7 @@ settles.
   line and unknowingly moved the relay from HOST-NETWORKED (incident-era
   posture, real source IPs) to docker-NAT (strikes showed addr=172.17.0.1).
   Restored `--network host` + OUTPOSTPI_RELAY_PORT=3300 within ~15 min;
-  phone re-authed from <redacted phone tailnet addr>; runbook line corrected. Diagnostic
+  phone re-authed from 100.121.111.<phone-tailnet>; runbook line corrected. Diagnostic
   value: 1002 strikes occurred in BOTH network modes within the hour —
   docker-proxy adds no new exoneration, and the mechanism remains
   VM-internal-or-dart (the paired hashes decide).
@@ -555,7 +555,7 @@ rows + VM tailscaled link-change events into one timeline.
    (offline 13d), pixel-11-pro-fold. NO laptop exists on the tailnet; a
    real tunnel leg needs a second node (operator: join a laptop, or
    approve a login for a userspace container node).
-2. Self-tailnet leg is a NO-OP: `ip route get <redacted relay tailnet addr>` → local table,
+2. Self-tailnet leg is a NO-OP: `ip route get 100.106.7.<relay>` → local table,
    dev lo. Connecting to the VM's own tailnet IP never traverses tailscaled.
 3. VM tailscaled DOES rebind, but only on docker-bridge churn
    (`rebind-reason=[ips-changed]`, br-* up/down from compose lanes);
@@ -563,7 +563,7 @@ rows + VM tailscaled link-change events into one timeline.
    strike cluster (14:51–15:48+, 7+ strikes). VM-rebind theory weakened
    for observed strikes (default log verbosity caveat: peer-path events
    may not log without -v — the sampler + status polling covers that).
-4. Phone's tunnel path FLIPPED mid-session: direct <redacted phone wifi addr>:45886
+4. Phone's tunnel path FLIPPED mid-session: direct 192.168.40.<phone-wifi>:45886
    (15:44) → DERP relay=den with empty CurAddr and a ~5min-stale handshake
    (15:52 sample). Path instability is observable from the VM; correlate
    flips against strike timestamps via the sampler timeline.
@@ -583,7 +583,7 @@ rows + VM tailscaled link-change events into one timeline.
 
 ## VERDICT #8 (2026-09-08, 16:4x): THE TUNNEL NEVER DIES — phone-side RST on a healthy tunnel; "severance" is falsified at the wire
 
-Wire capture (wgwatch docker: tcpdump `udp host <redacted phone wifi addr>` on ens18,
+Wire capture (wgwatch docker: tcpdump `udp host 192.168.40.<phone-wifi>` on ens18,
 e2e/.run-state/severance/wire/) covering direct episodes 16:26–16:33 and
 16:34–16:36 with strikes #5 (16:30:47, fo=749), #6 (16:32:09, fo=15), #7
 (16:35:00, fo=10 — only 7s after connect, 6s after a 309KB burst):
