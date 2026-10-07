@@ -300,3 +300,40 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.remotepi.supervisord.p
 launchctl unload ~/Library/LaunchAgents/dev.remotepi.supervisord.plist 2>/dev/null
 rm -f ~/Library/LaunchAgents/dev.remotepi.supervisord.plist
 ```
+
+## The restart wrapper (`pi-restart-loop.sh`)
+
+`scripts/pi-restart-loop.sh` runs interactive pi in the foreground under an
+explicit restart handshake, so hot reloads and mobile `/new` can relaunch a
+TUI session that nothing else can resurrect:
+
+- **Hot reload** — pi writes `.restart-marker-<PID>` before its graceful
+  shutdown; the wrapper consumes the marker (only its own child's,
+  mode-600, owner-matched) and relaunches with `--continue`.
+- **Mobile `/new`** — exit code 42 (`EXIT_FRESH_SESSION`) authorizes exactly
+  one relaunch WITHOUT `--continue`; later hot reloads resume the normal
+  `--continue` cadence.
+- **Everything else stops the loop** (crash safety): non-zero exits and
+  graceful exits without a marker never auto-retry.
+
+**Fresh start (`--fresh-first` / `PI_RESTART_FRESH=1`).** pi's `--continue`
+resumes the STORED system message, so skill/package wiring changes only reach
+a session on a fresh start — a resumed session keeps replaying the wiring it
+was started with (pi-core behavior; upstream report candidate). The flag
+drops `--continue` on the FIRST iteration only:
+
+```bash
+scripts/pi-restart-loop.sh ~/code/api --fresh-first
+# or, for tmux/systemd launch lines:
+PI_RESTART_FRESH=1 scripts/pi-restart-loop.sh ~/code/api
+```
+
+**Lifecycle log.** Every wrapper event (start line, each pi exit with code
+and elapsed time, relaunch decisions, stop reason) is appended to
+`~/.pi/remote/logs/pi-restart-loop-<roomId>.log` — one log per folder,
+keyed by the same room id as the cwd lock — in addition to stdout. This
+survives a dying PTY: if a marker-authorized relaunch dies within
+`OUTPOST_PI_RELAUNCH_FAST_WINDOW` seconds (default 5), the log carries a
+`RELAUNCH-FAILED-FAST` record with the exit code, elapsed time, and pi
+path — the evidence that was missing when relaunches failed silently in
+the field (2026-10 fleet sweep).

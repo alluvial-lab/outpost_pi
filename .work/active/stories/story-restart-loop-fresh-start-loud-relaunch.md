@@ -1,7 +1,7 @@
 ---
 id: story-restart-loop-fresh-start-loud-relaunch
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, workflow, bug]
 parent: null
 depends_on: []
@@ -74,12 +74,37 @@ None identified — additive wrapper surface; the field workarounds (manual
 
 ## Acceptance criteria
 
-- [ ] `--fresh-first` / `PI_RESTART_FRESH=1` launches the first iteration
+- [x] `--fresh-first` / `PI_RESTART_FRESH=1` launches the first iteration
       without `--continue`, subsequent iterations with it (harness test)
-- [ ] Lifecycle log persists across the loop's lifetime under
+- [x] Lifecycle log persists across the loop's lifetime under
       `$OUTPOST_PI_HOME/logs/`, mode 0700, with per-exit and stop-reason
       records (harness test)
-- [ ] A fast-dying marker-authorized relaunch produces a
-      `RELUNCH-FAILED-FAST` record with exit code + elapsed (harness test)
-- [ ] Wrapper docs updated; typecheck + full vitest suite green (script
+- [x] A fast-dying marker-authorized relaunch produces a
+      `RELAUNCH-FAILED-FAST` record with exit code + elapsed (harness test)
+- [x] Wrapper docs updated; typecheck + full vitest suite green (script
       change has no TS build surface beyond tests)
+
+## Implementation notes (2026-10-06)
+
+- Execution capability: inline (session; single wrapper script + tests).
+  Review weight: standard (bounded inline pass, standalone-story lane).
+- Files changed: `scripts/pi-restart-loop.sh` (fresh-first interception
+  argv+env, persistent per-folder lifecycle log keyed by the cwd-lock room
+  id, per-run elapsed + stop-reason records, RELAUNCH-FAILED-FAST detection
+  on loop-stopping exits within `OUTPOST_PI_RELAUNCH_FAST_WINDOW` (default
+  5s, env-tunable), 1 MiB single-generation rotation, best-effort logging
+  that can never take the wrapper down),
+  `pi-extension/src/pi_restart_loop.test.ts` (harness extended with
+  wrapperArgs/envExtra; 4 new tests), `pi-extension/docs/daemon.md`
+  (restart-wrapper mechanics section: handshake contract, fresh-first
+  rationale incl. the pi-core `--continue` skills-replay caveat, log
+  location + failed-fast semantics).
+- Tests added: fresh-first argv form, fresh-first env form, lifecycle-log
+  persistence + timestamp shape, RELAUNCH-FAILED-FAST on a fast-dying
+  marker-authorized relaunch. 9/9 in the file.
+- Simplification: none identified (additive surface, as scoped).
+- Discrepancies from design: none. Crash safety unchanged — no auto-retry;
+  the failed-fast record is observability only (the Sep-26 incident's
+  diagnosis lane).
+- Adjacent issues parked: `idea-pi-upstream-continue-skills-replay`
+  (operator-gated upstream report for the pi-core replay behavior).

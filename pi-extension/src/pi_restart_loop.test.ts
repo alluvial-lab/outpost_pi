@@ -26,6 +26,8 @@ function runRestartHarness(
   behavior: string,
   verify: (harness: RestartHarness) => void,
   setup: (harness: RestartHarness) => void = () => undefined,
+  wrapperArgs: string[] = [],
+  envExtra: Record<string, string> = {},
 ): void {
   const home = mkdtempSync(join(tmpdir(), "outpost-pi-restart-loop-"));
   try {
@@ -51,9 +53,10 @@ ${behavior}
 `);
     chmodSync(fakePi, 0o755);
 
-    execFileSync("bash", [restartLoop, cwd, "--model", "test-model"], {
+    execFileSync("bash", [restartLoop, cwd, ...wrapperArgs, "--model", "test-model"], {
       env: {
         ...process.env,
+        ...envExtra,
         HOME: home,
         PATH: `${binDir}:${process.env.PATH ?? ""}`,
         OUTPOST_PI_HOME: remoteDir,
@@ -72,6 +75,19 @@ ${behavior}
 
 function launches(capture: string): string[] {
   return readFileSync(capture, "utf8").trim().split("\n");
+}
+
+/** The single persistent per-folder lifecycle log the wrapper must leave
+ *  behind (roomId-keyed, matching the cwd lock identity). */
+function lifecycleLog(remoteDir: string): string {
+  const logsDir = join(remoteDir, "logs");
+  const candidates = readdirSync(logsDir).filter(
+    (name) => /^pi-restart-loop-[A-Za-z0-9_-]{12}\.log$/.test(name),
+  );
+  if (candidates.length !== 1) {
+    throw new Error(`expected exactly one lifecycle log, found: ${candidates.join(", ")}`);
+  }
+  return readFileSync(join(logsDir, candidates[0]!), "utf8");
 }
 
 function writeMarker(path: string): void {
@@ -146,4 +162,74 @@ exit 0`,
       },
     );
   });
+
+  test("--fresh-first launches the first iteration without --continue, then resumes it", () => {
+    runRestartHarness(
+      `if [ "$count" -eq 1 ]; then
+  (umask 077; : > "$OUTPOST_PI_HOME/.restart-marker-$$"); exit 0
+fi
+exit 0`,
+      ({ capture }) => {
+        expect(launches(capture)).toEqual([
+          "1|--model test-model",
+          "1|--continue --model test-model",
+        ]);
+      },
+      () => undefined,
+      ["--fresh-first"],
+    );
+  }, 15_000);
+
+  test("PI_RESTART_FRESH=1 (env form) drops --continue on the first iteration only", () => {
+    runRestartHarness(
+      `if [ "$count" -eq 1 ]; then
+  (umask 077; : > "$OUTPOST_PI_HOME/.restart-marker-$$"); exit 0
+fi
+exit 0`,
+      ({ capture }) => {
+        expect(launches(capture)).toEqual([
+          "1|--model test-model",
+          "1|--continue --model test-model",
+        ]);
+      },
+      () => undefined,
+      [],
+      { PI_RESTART_FRESH: "1" },
+    );
+  }, 15_000);
+
+  test("lifecycle events persist to the per-folder log with a stop reason", () => {
+    runRestartHarness("exit 0", ({ capture, remoteDir }) => {
+      expect(launches(capture)).toEqual(["1|--continue --model test-model"]);
+      const logText = lifecycleLog(remoteDir);
+      expect(logText).toContain("cwd=");
+      expect(logText).toContain("fresh-first=0");
+      expect(logText).toContain("pi pid=");
+      expect(logText).toContain("exited with code 0");
+      expect(logText).toContain("stopping loop");
+      // Every line is timestamped (UTC ISO).
+      for (const line of logText.trim().split("\n")) {
+        expect(line).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z /);
+      }
+    });
+  });
+
+  test("a fast-dying marker-authorized relaunch records RELAUNCH-FAILED-FAST", () => {
+    runRestartHarness(
+      `if [ "$count" -eq 1 ]; then
+  (umask 077; : > "$OUTPOST_PI_HOME/.restart-marker-$$"); exit 0
+fi
+exit 7`,
+      ({ capture, remoteDir }) => {
+        expect(launches(capture)).toEqual([
+          "1|--continue --model test-model",
+          "1|--continue --model test-model",
+        ]);
+        const logText = lifecycleLog(remoteDir);
+        expect(logText).toContain("RELAUNCH-FAILED-FAST");
+        expect(logText).toContain("exit 7");
+        expect(logText).toContain("crash safety");
+      },
+    );
+  }, 15_000);
 });
