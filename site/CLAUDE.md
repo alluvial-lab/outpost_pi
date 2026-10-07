@@ -12,7 +12,7 @@ and MVP documentation. **Presentation only — it has no product logic.**
 - TypeScript 5
 - Tailwind 4 (via `@tailwindcss/postcss`)
 - ESLint 9
-- Package manager: **pnpm** (with `allowBuilds` for `sharp` and `unrs-resolver` in `pnpm-workspace.yaml`)
+- Package manager: **pnpm 11.9.0** (pinned via `packageManager`; with `allowBuilds` for `unrs-resolver` in `pnpm-workspace.yaml`)
 
 ## Commands
 
@@ -21,6 +21,20 @@ and MVP documentation. **Presentation only — it has no product logic.**
 - `pnpm build` — production build
 - `pnpm start` — serves build
 - `pnpm lint` — ESLint
+
+**Supply-chain policy window.** pnpm 11 verifies every lockfile entry
+against a default `minimumReleaseAge`: dependencies published more
+recently than the window refuse to install (and the dep-status check runs
+before every `pnpm <script>`). This bites right after bumping to a
+same-day-published release — it is the policy working, not a broken
+install. Sanctioned responses: wait for the entries to age past the window,
+or verify lint/build through the direct binaries
+(`./node_modules/.bin/eslint .`, `./node_modules/.bin/next build`) — same
+binaries and config as the scripts, without the wrapper's install gate.
+Do not globally disable the policy; configure `minimumReleaseAge`
+explicitly in `pnpm-workspace.yaml` only as a deliberate posture change.
+CI installs pnpm 10 (see `.github/workflows/ci.yml` `version:` inputs),
+which has no such default — local refusals with green CI are this window.
 
 ## Conventions
 

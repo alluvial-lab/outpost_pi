@@ -28,7 +28,11 @@ For protocol, identities, ACKs, cross-PC routing, and the trust model, see
 In the sandbox (`dev-vm`), `/home/agent/.cache` is read-only and pnpm 11.x fails
 with `[ERR_SQLITE_ERROR] unable to open database file` unless its store/caches are
 redirected. `/home/agent/.npmrc` is a broken character device (the harmless
-`EACCES` warning can be ignored). Always prefix commands with repository-local
+`EACCES` warning can be ignored). pnpm is pinned to 11.9.0 via `packageManager`.
+Note: pnpm 11's default `minimumReleaseAge` supply-chain check can refuse
+installs right after bumping to a same-day-published dependency — wait out
+the window rather than disabling the policy (details and workarounds in
+`../site/CLAUDE.md`). Always prefix commands with repository-local
 environment variables:
 
 ```bash
