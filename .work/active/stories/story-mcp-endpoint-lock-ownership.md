@@ -127,3 +127,21 @@ folder" narrative simplifies into the name-scoped coexistence story.
   identity.
 - Adjacent issues parked: none (the ORPHANED lock hazard itself is closed
   by the bounded shutdown + kill -9 test).
+
+## Review record (2026-10-06, standard, bounded inline — standalone-story lane)
+
+- Verdict: **pass**. Diff + edge-case trace over the lock walk, lazy
+  MeshNode identity, retry/fail-loud paths, shutdown bound, and the two
+  tool-handler null-guards; suites re-run by the receiver directly
+  (typecheck, 12/12 lock tests, full 1206-test suite, build, site
+  lint+build).
+- Verified behavior-preservation: `extension.test.ts` "Backoffice#2"
+  case green (Pi-side walk semantics unchanged through the shared helper);
+  default-name agents keep the legacy lock id (roomIdFor default-preserving).
+- Residual (accepted): the mesh_server wiring itself (grace timer / walk /
+  wake / shutdown interleave) is not unit-importable — module-load side
+  effects — the same accepted limitation as the wake wiring; coverage is
+  helper-level (walk, kill-9 re-acquisition) plus this trace. A live e2e
+  coexistence lane at next release would close the gap (same follow-up
+  noted for wake in v0.13.0).
+- Fresh-first note (cross-story): none — separate story.
