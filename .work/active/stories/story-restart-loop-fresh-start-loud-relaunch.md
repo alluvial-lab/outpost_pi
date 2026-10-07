@@ -1,7 +1,7 @@
 ---
 id: story-restart-loop-fresh-start-loud-relaunch
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, workflow, bug]
 parent: null
 depends_on: []
@@ -108,3 +108,24 @@ None identified — additive wrapper surface; the field workarounds (manual
   diagnosis lane).
 - Adjacent issues parked: `idea-pi-upstream-continue-skills-replay`
   (operator-gated upstream report for the pi-core replay behavior).
+
+## Review record (2026-10-06, standard, bounded inline — standalone-story lane)
+
+- Verdict: **pass**. bash -n + 9/9 harness tests + full suite re-run by the
+  receiver directly; handshake contract (marker validation, EXIT_FRESH_SESSION,
+  crash-safety stops) verified unchanged against the pre-change tests, all
+  still green unmodified.
+- Rewriting the script under RUNNING wrappers assessed: bash parses the
+  whole `while` loop block before executing it, and every durable wrapper
+  sits inside that loop — no mid-file read hazard in practice; new launches
+  pick up the new behavior automatically (no redeploy step).
+- Minor accepted imprecision: a fast-dying `--fresh-first` FIRST run is
+  recorded as FAILED-FAST "after a relaunch" — the record's exit code /
+  elapsed / cwd are accurate; the wrapper start is itself an authorized
+  (re)start path.
+- Env friction (out of scope, reported): pnpm 11.9's default
+  `minimumReleaseAge` supply-chain check blocks `pnpm lint/build` in site/
+  until the just-published next@16.4.0 ages out (or the policy is
+  configured); this session verified via the direct eslint/next binaries
+  and completed the pnpm-written `allowBuilds` entry (separate chore
+  commit).
