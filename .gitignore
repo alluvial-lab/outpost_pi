@@ -107,10 +107,11 @@ pnpm-debug.log*
 # but never committed; reproduce by re-running the instrumented scenario.
 debug/
 
-# pnpm approve-builds state (allowBuilds: esbuild) — machine-local pnpm
-# config written when pnpm prompts to approve native build scripts. Not repo
-# content; regenerated per-machine.
-pnpm-workspace.yaml
+# pnpm-workspace.yaml is repo content in pnpm 11 projects (tracked in
+# site/, pi-extension/, protocol/): it carries the lockfile-coupled overrides
+# and native build-script approvals that CI's frozen installs must see
+# (LOCKFILE_CONFIG_MISMATCH / IGNORED_BUILDS otherwise). Only
+# node_modules-local pnpm state stays untracked.
 
 # Test artifacts — pi-extension model-persist test writes a real settings.json
 pi-extension/test/.pi/

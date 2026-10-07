@@ -33,8 +33,10 @@ or verify lint/build through the direct binaries
 binaries and config as the scripts, without the wrapper's install gate.
 Do not globally disable the policy; configure `minimumReleaseAge`
 explicitly in `pnpm-workspace.yaml` only as a deliberate posture change.
-CI installs pnpm 10 (see `.github/workflows/ci.yml` `version:` inputs),
-which has no such default — local refusals with green CI are this window.
+CI runs the same pnpm (11.9.0, read from each subproject's `packageManager`
+pin) with `pnpm_config_minimum_release_age=0` set per job — frozen-lockfile
+installs of reviewed pins don't need the resolution-time guard (see
+`.github/workflows/ci.yml`).
 
 ## Conventions
 
