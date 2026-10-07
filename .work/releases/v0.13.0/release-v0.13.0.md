@@ -1,7 +1,7 @@
 ---
 id: release-v0.13.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
@@ -86,3 +86,42 @@ app 1078, site lint+build). Per release_uat: manual-checkpoint — the
 operator runs the docs/release-uat.md smoke runbook and records an ack;
 tag v0.13.0 (local) + rc flow follow the ack; publish/push remains
 operator-external.
+
+
+## Shipped items
+
+Bodies kept on disk (retain-bodies): directly-bound items under
+`.work/releases/v0.13.0/` (recoverable at the tag:
+`git show v0.13.0:.work/active/<kind>s/<id>.md`), late-bound archived
+stubs in place under `.work/archive/`.
+
+| id | title | kind | archived_atop | git ref |
+|----|-------|------|---------------|---------|
+| feature-claude-host-mesh-idle-wake | Claude-host mesh idle wake — reliable inbound-message delivery to idle Claude sessions | feature | v0.13.0 |
+| feature-claude-host-mesh-idle-wake-nudge | Edge-triggered coalesced wake notification | story | v0.13.0 |
+| feature-claude-host-mesh-idle-wake-qualification | Live qualification: which wake lane actually starts an idle Claude turn? | story | v0.13.0 |
+| feature-claude-host-mesh-idle-wake-toggle | Wrapper `--outpost-mesh-wake` toggle | story | v0.13.0 |
+| gate-cruft-launcher-copy-semantics-test | Array-aliasing test is implementation-bound and unused by the CLI contract | story | v0.13.0 |
+| gate-cruft-verdict-archaeology-comments | Transport comments retain transient verdict and .work archaeology | story | v0.13.0 |
+| gate-patterns-inconsistency-settle-sleep | New manager join tests infer progress from a fixed sleep | story | v0.13.0 |
+| gate-patterns-v0.13.0 | gate-patterns v0.13.0: diagnostic-schema-and-emission-coverage | story | v0.13.0 |
+| gate-refactor-v0.13.0-wake-timer-shutdown | gate-refactor v0.13.0: deferred wake timer survives shutdown | story | v0.13.0 |
+| gate-security-mcp-inbox-unbounded | Polling-only Claude sessions retain an unbounded mesh inbox | story | v0.13.0 |
+| gate-security-mcp-tmp-config-path | Predictable MCP temporary file permits symlink following / config substitution | story | v0.13.0 |
+| gate-security-v0.13.0-wake-spoofing | gate-security v0.13.0: relay-impersonation wake bypass + slash-leading PC labels | story | v0.13.0 |
+| gate-tests-v0.13.0-hardening | gate-tests v0.13.0: diagnostic-integration and wake-wiring test hardening | story | v0.13.0 |
+| gate-cruft-misnamed-bounded-test-mailbox-shim | Remove the misnamed unbounded-channel compatibility shim from relay tests | story | prior |
+| gate-cruft-unused-parse-hello-wrapper | Remove the test-only parse_hello passthrough wrapper | story | prior |
+| gate-tests-join-adoption-room-binding | Room-churn join regression never verifies adoption or the new room | story | prior |
+
+## Shipped record
+
+- Date shipped: 2026-10-07
+- Mapping: tag-based (v0.13.0; operator push completed in-flow)
+- Artifacts: outpost-0.13.0-30.apk (fat) + outpost-0.13.0-30-arm64.apk
+  (signed slim), built from the tag worktree via scripts/release-apk.sh
+- UAT: operator-acked 2026-10-07 (smoke runbook pass; soak known-open
+  accepted with bisect evidence)
+- Gate finding totals: 17 (12 fixed in-gate, 1 pattern extracted,
+  4 rejected/stale); battery: pairing + 5/5 live lanes green, soak
+  known-open pre-existing (v0.12.1 bisect)
