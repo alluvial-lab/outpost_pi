@@ -57,7 +57,7 @@ dropped. No `pair_ok` → app times out.
 ### Relay log evidence
 
 ```
-14:39:35  authenticated peer=/uV6O0I= room=main  addr=<redacted phone wifi addr>   ← app
+14:39:35  authenticated peer=/uV6O0I= room=main  addr=192.168.40.<redacted>   ← app
 14:40:05  disconnected  peer=/uV6O0I= room=main                       ← 30s timeout
 ```
 

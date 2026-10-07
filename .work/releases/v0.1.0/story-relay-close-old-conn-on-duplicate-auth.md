@@ -18,7 +18,7 @@ superseded_by: story-relay-close-same-device-duplicate-auth
 >
 > The proposed source-IP discriminator (step 3, option (a)) is backwards: a
 > mobile network switch *changes* the source IP by definition (the story's
-> own evidence records `<redacted phone wifi addr>` → `192.168.11.2`), so "same source IP"
+> own evidence records `192.168.40.<redacted>` → `192.168.11.2`), so "same source IP"
 > would not fire in exactly the case being fixed, while two genuine devices
 > on the same wifi would share a NAT egress IP and be wrongly treated as one
 > device. No sound in-scope discriminator exists at auth time (the hello frame
@@ -53,7 +53,7 @@ closing the prior `tx`(s).
 
 ## Observed (live drop test, 2026-07-02)
 
-Between the local reconnect (`18:03:50Z`, `<redacted phone wifi addr>:57586`) and the
+Between the local reconnect (`18:03:50Z`, `192.168.40.<redacted>:57586`) and the
 wireguard reconnect (`18:07:17Z`, `192.168.11.2:54008`) there was **no
 `disconnected` log on the relay** for the first connection. The phone left
 wifi (so the local TCP went half-open — no FIN/RST reached the relay), and

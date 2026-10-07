@@ -49,7 +49,7 @@ and was bounced before implementation:
 
 - **Source-IP is backwards as a discriminator.** A mobile network switch
   (wifi→cellular, local→wireguard) *changes* the source IP by definition — the
-  story's own evidence records the reconnect as `<redacted phone wifi addr>` →
+  story's own evidence records the reconnect as `192.168.40.<redacted>` →
   `192.168.11.2` (different IPs). So "same source IP" would **not fire** in
   exactly the case being fixed, while two genuine devices on the same wifi
   would share a NAT egress IP and be wrongly treated as one device.

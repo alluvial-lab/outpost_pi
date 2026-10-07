@@ -20,8 +20,8 @@ peer-handler timeline (all same app peer id `/uV6O0I=`):
 
 | Time (Z) | Event | Source addr |
 |---|---|---|
-| 18:02:01 | `disconnected` (local wifi drop) | `<redacted phone wifi addr>:46622` |
-| 18:03:50 | `authenticated` (reconnect, still local) | `<redacted phone wifi addr>:57586` |
+| 18:02:01 | `disconnected` (local wifi drop) | `192.168.40.<redacted>:46622` |
+| 18:03:50 | `authenticated` (reconnect, still local) | `192.168.40.<redacted>:57586` |
 | 18:07:17 | `authenticated` (5g via wireguard) | `192.168.11.2:54008` |
 
 End-to-end recovery (drop → wireguard auth) = ~5 min 16 s. The local reconnect

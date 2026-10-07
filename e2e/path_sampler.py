@@ -15,7 +15,7 @@ Runs entirely on the VM. Three streams into one JSONL:
      (VM-side tunnel events — the docker-bridge-churn rebind class).
 
 Correlate offline by timestamp. Usage:
-  python3 e2e/path_sampler.py [--phone-ip <redacted phone tailnet addr>] [--out FILE] \
+  python3 e2e/path_sampler.py [--phone-ip 100.121.111.<redacted>] [--out FILE] \
       [--poll-s 10] [--duration-min 0]
 """
 
@@ -114,7 +114,7 @@ def main() -> int:
     import re
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--phone-ip", default="<redacted phone tailnet addr>")
+    ap.add_argument("--phone-ip", default="100.121.111.<redacted>")
     ap.add_argument("--out", default=None)
     ap.add_argument("--poll-s", type=float, default=10.0)
     ap.add_argument("--duration-min", type=float, default=0.0)

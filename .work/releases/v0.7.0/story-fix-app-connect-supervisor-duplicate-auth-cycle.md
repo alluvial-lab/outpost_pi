@@ -23,7 +23,7 @@ Relay log `/data/logs/relay.log.2026-08-23` (correlated timestamps
 `duplicate auth from same device; closed prior conn(s)` — the app opened a
 NEW authenticated socket while its prior socket was still established on
 the relay, every 2–11 seconds (13:16:08→:10→:14→:15→:26→:27). Phone addr
-<redacted phone wifi addr> → relay (cross-subnet WiFi path).
+192.168.40.<redacted> → relay (cross-subnet WiFi path).
 
 ## Root cause
 
