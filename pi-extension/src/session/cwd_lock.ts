@@ -144,6 +144,46 @@ export async function acquireCwdLock(cwd: string, name?: string): Promise<CwdLoc
   return { ok: false, lockPath };
 }
 
+/** Default cap of same-named agents per folder before the walk gives up
+ *  (mirrors the broker's `_uniqueIdentity` bound). */
+export const MAX_NAMED_LOCKS_PER_CWD = 1000;
+
+/** A (cwd, name) lock plus the name it was actually acquired under. */
+export interface UniqueNamedLock {
+  ok: true;
+  lock: AcquiredLock;
+  /** The locked identity: `requestedName`, or `requestedName#N` when the
+   *  base name was already held by a live agent. */
+  name: string;
+}
+
+/**
+ * THE single suffix walk for same-folder coexistence: acquire the
+ * `(cwd, name)` lock for `requestedName`, and when a live holder refuses
+ * it, retry as `requestedName#2`, `#3`, … — the exact scheme the broker's
+ * `_uniqueIdentity` applies to registrations, so the lock identity and the
+ * mesh address line up on the same suffixed name.
+ *
+ * Returns `null` when every candidate up to `maxNames` is held (pathological
+ * unless something is spamming agents into one folder). The walk performs
+ * one `acquireCwdLock` per candidate with no waiting: a refused lock means
+ * a LIVE holder, which will not vanish in a retry gap — riding out a
+ * restart race of a specific name is the caller's business (the MCP server
+ * keeps its own grace on the requested name before walking).
+ */
+export async function acquireUniqueNamedCwdLock(
+  cwd: string,
+  requestedName: string,
+  maxNames: number = MAX_NAMED_LOCKS_PER_CWD,
+): Promise<UniqueNamedLock | null> {
+  for (let n = 1; n <= maxNames; n++) {
+    const candidate = n === 1 ? requestedName : `${requestedName}#${n}`;
+    const result = await acquireCwdLock(cwd, candidate);
+    if (result.ok) return { ok: true, lock: result, name: candidate };
+  }
+  return null;
+}
+
 function _acquired(server: Server, _lockPath: string): AcquiredLock {
   let released = false;
   // Don't keep the event loop alive just to hold the socket — the Pi

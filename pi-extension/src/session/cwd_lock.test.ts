@@ -1,8 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acquireCwdLock, lockPathForCwd, lockPathFor } from "./cwd_lock.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { spawn, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
+import {
+  acquireCwdLock,
+  acquireUniqueNamedCwdLock,
+  lockPathForCwd,
+  lockPathFor,
+} from "./cwd_lock.js";
 
 /** A fresh tmp cwd per test — each gets a unique room hash, so tests in
  *  parallel don't fight over the same lock socket. */
@@ -135,4 +143,127 @@ describe("acquireCwdLock", () => {
 
     if (held.ok) held.release();
   });
+});
+
+describe("acquireUniqueNamedCwdLock (coexistence suffix walk)", () => {
+  test("free requested name locks under it directly", async () => {
+    const cwd = tmpCwd();
+    const unique = await acquireUniqueNamedCwdLock(cwd, "backend");
+    expect(unique?.ok).toBe(true);
+    expect(unique?.name).toBe("backend");
+    unique?.lock.release();
+  });
+
+  test("held base name coexists under #2; freed #2 is reused before #3", async () => {
+    const cwd = tmpCwd();
+    const base = await acquireCwdLock(cwd, "Backoffice");
+    expect(base.ok).toBe(true);
+
+    const second = await acquireUniqueNamedCwdLock(cwd, "Backoffice");
+    expect(second?.ok).toBe(true);
+    expect(second?.name).toBe("Backoffice#2");
+
+    second?.lock.release();
+    // The walk always starts at the base: with #2 freed it takes #2 again,
+    // never skipping straight to #3 (matches the broker's identity walk).
+    const third = await acquireUniqueNamedCwdLock(cwd, "Backoffice");
+    expect(third?.name).toBe("Backoffice#2");
+
+    third?.lock.release();
+    if (base.ok) base.release();
+  });
+
+  test("walks past every held suffix", async () => {
+    const cwd = tmpCwd();
+    const locks = [
+      await acquireCwdLock(cwd, "api"),
+      await acquireCwdLock(cwd, "api#2"),
+      await acquireCwdLock(cwd, "api#3"),
+    ];
+    expect(locks.every((l) => l.ok)).toBe(true);
+
+    const unique = await acquireUniqueNamedCwdLock(cwd, "api");
+    expect(unique?.name).toBe("api#4");
+
+    unique?.lock.release();
+    for (const l of locks) if (l.ok) l.release();
+  });
+
+  test("returns null when the walk is exhausted", async () => {
+    const cwd = tmpCwd();
+    const held = await acquireCwdLock(cwd, "solo");
+    expect(held.ok).toBe(true);
+
+    const unique = await acquireUniqueNamedCwdLock(cwd, "solo", 1);
+    expect(unique).toBeNull();
+
+    if (held.ok) held.release();
+  });
+});
+
+// Abrupt host death (kill -9) must not orphan the lock: the OS tears the
+// socket listener down with the process, and the next acquirer self-heals
+// through the ECONNREFUSED → unlink → rebind path. The old comment here
+// punted this to manual repro; a real subprocess makes it a regression
+// test (story-mcp-endpoint-lock-ownership, folded from
+// idea-mesh-server-orphan-lock-shutdown).
+describe.skipIf(process.platform === "win32")("cwd lock survives holder kill -9", () => {
+  test("SIGKILLed holder leaves a re-acquirable lock", async () => {
+    const cwd = tmpCwd();
+    const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
+    // Run the holder via tsx's loader entry points DIRECTLY (what `tsx <file>`
+    // spawns under the hood). Going through the tsx CLI adds a supervisor
+    // parent, and SIGKILL on the supervisor can orphan the real holder —
+    // exactly the leak this test exists to catch.
+    const tsxPreflight = createRequire(import.meta.url).resolve("tsx/preflight");
+    const tsxLoader = pathToFileURL(
+      tsxPreflight.replace(/preflight\.cjs$/, "loader.mjs"),
+    ).href;
+    // Child script: hold the (cwd, name) lock, print ready, never exit.
+    const script = join(testHome, "hold-lock.mts");
+    writeFileSync(script, [
+      `import { acquireCwdLock } from ${JSON.stringify(join(projectRoot, "src", "session", "cwd_lock.ts"))};`,
+      `const lock = await acquireCwdLock(process.env["LOCK_CWD"]!, process.env["LOCK_NAME"]);`,
+      `if (!lock.ok) { console.error("child: lock refused"); process.exit(1); }`,
+      `console.log("ready");`,
+      `setInterval(() => {}, 1 << 30);`,
+      ``,
+    ].join("\n"));
+
+    const child: ChildProcess = spawn(
+      process.execPath,
+      ["--require", tsxPreflight, "--import", tsxLoader, script],
+      {
+        env: { ...process.env, LOCK_CWD: cwd, LOCK_NAME: "victim" },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let out = "";
+    child.stdout!.setEncoding("utf8");
+    child.stdout!.on("data", (chunk: string) => { out += chunk; });
+    let err = "";
+    child.stderr!.setEncoding("utf8");
+    child.stderr!.on("data", (chunk: string) => { err += chunk; });
+
+    // Wait for the child to actually hold the lock (bounded).
+    const deadline = Date.now() + 15_000;
+    while (!out.includes("ready") && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+      if (child.exitCode !== null) throw new Error(`holder child exited early (${child.exitCode}): ${err}`);
+    }
+    expect(out).toContain("ready");
+    // A refused second acquire PROVES the live child holds it (not just that
+    // a socket file exists).
+    const liveRefusal = await acquireCwdLock(cwd, "victim");
+    expect(liveRefusal.ok).toBe(false);
+
+    child.kill("SIGKILL");
+    const exited = new Promise<void>((resolve) => child.once("exit", resolve));
+    await exited;
+
+    // After the hard kill, the same (cwd, name) lock re-acquires cleanly.
+    const reacquired = await acquireCwdLock(cwd, "victim");
+    expect(reacquired.ok).toBe(true);
+    if (reacquired.ok) reacquired.release();
+  }, 25_000);
 });

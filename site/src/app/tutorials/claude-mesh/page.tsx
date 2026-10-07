@@ -60,10 +60,9 @@ export default function ClaudeMeshTutorial() {
               <InlineCode>claude</InlineCode>.
             </li>
             <li>
-              A folder that <strong className="text-fg">isn&apos;t</strong>{" "}
-              already running a Pi agent (see{" "}
+              Any folder — even one already running a Pi agent (see{" "}
               <a href="#cwd-lock" className="text-accent underline">
-                one agent per folder
+                folder locks and coexistence
               </a>
               ).
             </li>
@@ -246,16 +245,21 @@ Agent name [api]: reviewer`}
           </Callout>
         </DocsSection>
 
-        <DocsSection id="cwd-lock" title="One agent per folder">
+        <DocsSection id="cwd-lock" title="Folder locks and coexistence">
           <p>
             A kernel-enforced lock (the same one{" "}
-            <InlineCode>/outpost-pi</InlineCode> takes) allows{" "}
-            <strong className="text-fg">one outpost-pi agent per folder</strong> —
-            Pi <em className="text-fg">or</em> Claude, never both in the same
-            directory. If a folder already has a Pi agent, start Claude in a
-            different folder; both still meet in the same local mesh. A second
-            agent in a locked folder is refused before it connects, so it never
-            becomes a ghost peer.
+            <InlineCode>/outpost-pi</InlineCode> takes) is scoped to the
+            folder <em className="text-fg">and</em> the agent name: several
+            outpost-pi agents — Pi and/or Claude — can share one directory
+            under distinct names, and folder <InlineCode>broadcast</InlineCode>{" "}
+            reaches all of them. A folder&apos;s configured name is held by a
+            live agent (for example a resident Pi under the default name)? The
+            Claude endpoint briefly retries, then coexists under a{" "}
+            <InlineCode>#N</InlineCode>-suffixed name (its address shows up in{" "}
+            <InlineCode>list_peers</InlineCode>). Two endpoints never run under
+            the exact same name, so a duplicate never becomes a ghost peer —
+            give the Claude endpoint its own name during setup if you want a
+            stable, predictable address.
           </p>
         </DocsSection>
 

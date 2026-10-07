@@ -12,6 +12,12 @@
  * Launched by `outpost-pi claude` (registers this in Claude's local MCP
  * scope). Args: [--cwd <path>] [--name <agentName>] [--no-bridge]
  * Env: OUTPOST_PI_MCP_CWD, OUTPOST_PI_MCP_NAME
+ *
+ * Lock ownership: this endpoint takes the (cwd, name)-scoped lock — several
+ * agents (Pi and/or Claude) may share a folder under distinct names; when
+ * the folder's default name is already held, this endpoint coexists under a
+ * `#N`-suffixed name instead of failing. No OUTPOST_PI_MCP_CWD pointing at
+ * a sibling directory is needed to run a Claude agent beside a resident Pi.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -23,7 +29,7 @@ import { BoundedInbox, jsonByteSize, renderInboxMessage } from "./inbox.js";
 import { WAKE_MIN_INTERVAL_MS, WakeGate, createWakeCoordinator, wakeNudgeContent } from "./wake.js";
 import { sessionSockPath, sessionAuditPath, LOCAL_SESSION_NAME } from "../session/global_config.js";
 import { resolveRelayUrl } from "../config.js";
-import { acquireCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
+import { acquireCwdLock, acquireUniqueNamedCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
 import { realpathSync } from "node:fs";
 
 // ── Args / config ─────────────────────────────────────────────────────────────
@@ -131,19 +137,15 @@ process.on("uncaughtException", (err) => {
 let _canonCwd = _cwd;
 try { _canonCwd = realpathSync(_cwd); } catch { /* cwd missing — use raw path */ }
 
-const mesh = new MeshNode({
-  sockPath: BROKER_SOCK,
-  name: AGENT_NAME,
-  cwd: _canonCwd,  // plan/38: register with (cwd, name) → address `<cwd>@<name>`
-  auditPath: AUDIT_PATH,
-  // Own Pi-key cross-PC bridge — active only when this node leads (no Pi /
-  // daemon already hosting the broker for this cwd). As a follower the
-  // bridge stays dormant and cross-PC rides the existing leader.
-  ...(relayBridgeEnabled ? { bridge: { relayUrl: relayResolution.url, cwd: _cwd } } : {}),
-  // Silent: stdout is the MCP JSON-RPC channel and stderr noise isn't wanted.
-  // Real failures still surface via the global handlers / fail-loud below.
-  log: () => { /* no-op */ },
-});
+// The MeshNode is constructed LAZILY, after the lock walk decides this
+// endpoint's actual identity: the cwd lock is (cwd, name)-scoped and may
+// resolve to a suffixed name (`agent#2`) when the requested name is held by
+// a live peer (e.g. a resident Pi agent under the folder's default name).
+// Registering under the LOCKED name keeps the lock identity and the broker
+// address in lockstep — the same invariant the Pi extension's `/outpost-pi`
+// maintains through its `lockedName`.
+let mesh: MeshNode | null = null;
+let _meshName: string | null = null;
 
 let meshReady = false;
 // When the mesh isn't joined, this explains why (folder busy / connecting), so
@@ -157,7 +159,7 @@ const mcp = new McpServer(
   {
     capabilities: { experimental: { "claude/channel": {} } },
     instructions: [
-      `You are connected to the outpost-pi agent mesh as "${AGENT_NAME}".`,
+      `You are connected to the outpost-pi agent mesh (requested name "${AGENT_NAME}"; when the folder already hosts a same-named agent, your live name carries a #N coexistence suffix — confirm your exact address via list_peers).`,
       "At the start of each turn call get_messages to check for incoming messages from other agents.",
       "Use list_peers to discover available agents.",
       "Use agent_send to send messages — pass the exact address returned by list_peers (form `<cwd>@<name>`, `<pc>:` prefix cross-PC) VERBATIM; never build one by hand.",
@@ -174,11 +176,24 @@ function notReady() {
   };
 }
 
+/** Best-effort in-channel warning (MCP `logging/message`): clients that
+ *  surface server log notifications see contention and identity decisions
+ *  WITHOUT a tool call. Claude Code does not record an MCP server's stderr,
+ *  so stderr alone left lock-contention failures invisible — the client saw
+ *  a healthy handshake and then "not connected" with no diagnostic. Un-opted
+ *  clients silently ignore the notification and transport errors land on
+ *  stderr; the degraded tool results remain the always-available floor. */
+function warnChannel(data: string): void {
+  void mcp.server.sendLoggingMessage({ level: "warning", data }).catch((err: unknown) => {
+    logErr(`logging notification transport error: ${String(err)}`);
+  });
+}
+
 mcp.registerTool("list_peers", {
   description: "List all agents currently in the mesh (local + remote PCs).",
   inputSchema: {},
 }, async () => {
-  if (!meshReady) return notReady();
+  if (!meshReady || mesh === null) return notReady();
   try {
     const peers = await mesh.listPeers();
     return { content: [{ type: "text" as const, text: peers.length > 0 ? peers.join("\n") : "(no peers)" }] };
@@ -195,7 +210,7 @@ mcp.registerTool("agent_send", {
     re: z.string().optional().describe("Optional: id of the message you are replying to"),
   },
 }, async ({ to, body, re }) => {
-  if (!meshReady) return notReady();
+  if (!meshReady || mesh === null) return notReady();
   if (to === mesh.address() || to === mesh.name()) {
     return { content: [{ type: "text" as const, text: "Cannot send to yourself" }], isError: true };
   }
@@ -250,54 +265,38 @@ function isoNow(): string {
   return new Date().toISOString();
 }
 
-// Background lock+join state. The cwd lock enforces the per-folder singleton
-// (at most one outpost-pi agent — Pi OR Claude — per folder; a second peer with
-// the same cwd-derived name would be a ghost).
+// Background lock+join state. The cwd lock is (cwd, name)-scoped (plan/41):
+// several outpost-pi agents — Pi OR Claude — may share one folder under
+// distinct names; a same-named pair would be a ghost (the broker keys
+// addresses by (cwd, name)), so the lock refuses the exact name and we
+// coexist under a `#N` suffix — the same scheme the broker applies to
+// registrations and the Pi extension's `/outpost-pi` applies to its lock.
 //
-// We retry only briefly — just enough to ride out a restart RACE (the previous
-// MCP for this folder is still tearing down when Claude respawns us). After a
-// short grace we FAIL LOUD (exit non-zero) rather than degrade forever: a
-// silent connected-but-idle MCP hides the real problem (you launched claude in
-// the wrong folder, or this folder already has a live agent — a duplicate
-// session). Failing makes Claude show the MCP as errored so you actually see it.
+// We retry the REQUESTED name briefly — just enough to ride out a restart
+// RACE (the previous endpoint for this name is still tearing down when
+// Claude respawns us). After that grace, a live holder means genuine
+// cohabitation (e.g. a resident Pi agent under the folder's default name),
+// and we take the next free suffixed name instead of failing. Only exhausting
+// the whole walk (or repeated join failures) FAILS LOUD (exit non-zero):
+// that state is pathological, and Claude surfacing the MCP as errored is the
+// desired visibility.
 const JOIN_RETRY_MS = 2_000;
-const MAX_JOIN_ATTEMPTS = 4;  // ~6–8s grace for a restart race, then fail loud
+const MAX_JOIN_ATTEMPTS = 4;  // ~6–8s grace for a restart race, then coexist/fail loud
 let _lock: AcquiredLock | null = null;
+let _lockedName: string | null = null;
+// Set once the requested name is proven held by a live cohabitant (grace
+// exhausted) — later re-walks (e.g. after a failed join released the lock)
+// go straight to the suffix walk instead of re-waiting the grace.
+let _graceExhausted = false;
+let _contentionWarned = false;
 let _lockRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let _lockAttempt = 0;
 let _joined = false;
 let _shuttingDown = false;
 
 async function main(): Promise<void> {
-  // Subscribe BEFORE connecting so we don't miss early envelopes. The
-  // SessionPeer swallows broker ACKs / system events itself, so handlers
-  // only see real peer messages (and replies, which carry `re`).
-  mesh.onMessage((env) => {
-    // plan/34 (passive presence): broker control/system envelopes
-    // (`peer_joined` / `peer_left` / `list_peers_reply`) are presence signals,
-    // NOT agent messages. Never push them to the inbox or the claude/channel —
-    // otherwise a peer joining/leaving would wake this agent's turn. Discovery
-    // is pull-based via `list_peers`. (Real broker ACKs and `re` replies are
-    // already swallowed upstream by SessionPeer.)
-    if (env.from === "broker" || env.from.endsWith(":broker")) return;
-    // Shutdown boundary (scan-lifecycle): no wake scheduling once teardown
-    // begins — a late mesh message during mesh.close() must not arm a
-    // deferred timer that fires into a closing transport.
-    if (_shuttingDown) return;
-
-    const msg: IncomingMsg = {
-      from: env.from,
-      body: env.body,
-      id: env.id,
-      re: env.re,
-      at: isoNow(),
-    };
-    // Local-only, edge-triggered, rate-capped wake decision (see
-    // createWakeCoordinator). Only sessions launched with the dev-channels
-    // flag honor the notification — for everyone else it is inertly ignored
-    // and get_messages polling remains the delivery path.
-    wakeCoordinator.onMessage(msg);
-  });
+  // Subscribe-BEFORE-connect happens inside tryJoinMesh at MeshNode creation
+  // (the node is built post-lock-walk so it carries the locked identity).
 
   // Connect the stdio transport FIRST and unconditionally, so Claude Code
   // always sees this server as connected and the tools stay reachable — even
@@ -327,26 +326,108 @@ async function main(): Promise<void> {
   }
 }
 
-/** Acquire the per-cwd lock, then join the mesh. Retries briefly to absorb a
- *  restart race; if the lock or join still fails after MAX_JOIN_ATTEMPTS, FAIL
- *  LOUD (exit) so the failure is visible instead of silently degrading. */
+/** Acquire the (cwd, name)-scoped lock, then join the mesh under the LOCKED
+ *  identity. The requested name gets a brief grace to ride out a restart
+ *  race; after that a live holder means coexistence and we suffix. Join
+ *  failures still retry then fail loud. */
 async function tryJoinMesh(): Promise<void> {
   if (_joined || _shuttingDown) return;
 
-  const res = await acquireCwdLock(_cwd);
-  if (!res.ok) {
-    _lockAttempt++;
-    if (_lockAttempt >= MAX_JOIN_ATTEMPTS) {
-      _failLoud(`folder already served by another outpost-pi agent (lock: ${res.lockPath})`);
+  if (_lock === null) {
+    const res = await acquireCwdLock(_cwd, AGENT_NAME);
+    if (!res.ok) {
+      _lockAttempt++;
+      if (_lockAttempt < MAX_JOIN_ATTEMPTS && !_graceExhausted) {
+        if (!_contentionWarned) {
+          _contentionWarned = true;
+          warnChannel(
+            `outpost-pi-mesh: the mesh name "${AGENT_NAME}" is currently held by a live agent ` +
+            `(lock ${res.lockPath}). Retrying briefly in case that is a restart in flight; ` +
+            `if it persists, this endpoint will coexist under a #N-suffixed name.`,
+          );
+        }
+        degradedReason =
+          `folder busy: mesh name "${AGENT_NAME}" held by a live agent (lock ${res.lockPath}); ` +
+          `attempt ${_lockAttempt}/${MAX_JOIN_ATTEMPTS}`;
+        _scheduleJoinRetry(JOIN_RETRY_MS);
+        return;
+      }
+      // Grace exhausted → the holder is a live cohabitant, not a restart
+      // race. Walk the shared `#N` suffix scheme (same as the broker's
+      // registration walk) until a name binds; register under that name.
+      const unique = await acquireUniqueNamedCwdLock(_cwd, AGENT_NAME);
+      if (unique === null) {
+        _failLoud(
+          `name space exhausted: every lock from "${AGENT_NAME}" through ` +
+          `"${AGENT_NAME}#999" is held (first refusal: ${res.lockPath})`,
+        );
+      }
+      _graceExhausted = true;
+      _lock = unique.lock;
+      _lockedName = unique.name;
+      _lockAttempt = 0;
+      warnChannel(
+        `outpost-pi-mesh: requested name "${AGENT_NAME}" is taken by a live same-folder agent — ` +
+        `coexisting as "${unique.name}". Confirm your exact address via list_peers.`,
+      );
+    } else {
+      _lock = res;
+      _lockedName = AGENT_NAME;
+      _lockAttempt = 0;
     }
-    degradedReason = `folder busy (lock ${res.lockPath}); attempt ${_lockAttempt}/${MAX_JOIN_ATTEMPTS}`;
-    _scheduleJoinRetry(JOIN_RETRY_MS);
-    return;
   }
-  _lock = res;
+
+  // Build (or rebuild, if a failed join released the lock and the re-walk
+  // landed on a different name) the node under the locked identity, and
+  // subscribe BEFORE connecting so we don't miss early envelopes. The
+  // SessionPeer swallows broker ACKs / system events itself, so handlers
+  // only see real peer messages (and replies, which carry `re`).
+  if (mesh === null || _meshName !== _lockedName) {
+    const lockedName = _lockedName!;
+    mesh = new MeshNode({
+      sockPath: BROKER_SOCK,
+      name: lockedName, // plan/38: register with (cwd, name) → address `<cwd>@<name>`
+      cwd: _canonCwd,
+      auditPath: AUDIT_PATH,
+      // Own Pi-key cross-PC bridge — active only when this node leads (no Pi /
+      // daemon already hosting the broker for this cwd). As a follower the
+      // bridge stays dormant and cross-PC rides the existing leader.
+      ...(relayBridgeEnabled ? { bridge: { relayUrl: relayResolution.url, cwd: _cwd } } : {}),
+      // Silent: stdout is the MCP JSON-RPC channel and stderr noise isn't wanted.
+      // Real failures still surface via the global handlers / fail-loud below.
+      log: () => { /* no-op */ },
+    });
+    _meshName = lockedName;
+    mesh.onMessage((env) => {
+      // plan/34 (passive presence): broker control/system envelopes
+      // (`peer_joined` / `peer_left` / `list_peers_reply`) are presence signals,
+      // NOT agent messages. Never push them to the inbox or the claude/channel —
+      // otherwise a peer joining/leaving would wake this agent's turn. Discovery
+      // is pull-based via `list_peers`. (Real broker ACKs and `re` replies are
+      // already swallowed upstream by SessionPeer.)
+      if (env.from === "broker" || env.from.endsWith(":broker")) return;
+      // Shutdown boundary (scan-lifecycle): no wake scheduling once teardown
+      // begins — a late mesh message during mesh.close() must not arm a
+      // deferred timer that fires into a closing transport.
+      if (_shuttingDown) return;
+
+      const msg: IncomingMsg = {
+        from: env.from,
+        body: env.body,
+        id: env.id,
+        re: env.re,
+        at: isoNow(),
+      };
+      // Local-only, edge-triggered, rate-capped wake decision (see
+      // createWakeCoordinator). Only sessions launched with the dev-channels
+      // flag honor the notification — for everyone else it is inertly ignored
+      // and get_messages polling remains the delivery path.
+      wakeCoordinator.onMessage(msg);
+    });
+  }
 
   try {
-    await mesh.connect();
+    await mesh!.connect();
     meshReady = true;
     _joined = true;
     _lockAttempt = 0;
@@ -354,8 +435,9 @@ async function tryJoinMesh(): Promise<void> {
     // Got the lock but the broker join failed (e.g. socket churn). Release the
     // lock so another contender isn't starved, then retry / fail loud.
     _lockAttempt++;
-    try { _lock.release(); } catch { /* best-effort */ }
+    try { _lock?.release(); } catch { /* best-effort */ }
     _lock = null;
+    _lockedName = null;
     if (_lockAttempt >= MAX_JOIN_ATTEMPTS) {
       _failLoud(`mesh join failed: ${String(e)}`);
     }
@@ -376,16 +458,24 @@ function _scheduleJoinRetry(delayMs: number): void {
 }
 
 /** Exit non-zero with a loud, specific reason so Claude surfaces the MCP as
- *  errored (visible) instead of a silent connected-but-idle peer. */
+ *  errored (visible) instead of a silent connected-but-idle peer. The reason
+ *  also goes out on the MCP logging channel — Claude Code does not record an
+ *  MCP server's stderr, so stderr alone was invisible to the client. */
 function _failLoud(reason: string): never {
+  warnChannel(`FATAL: ${reason} — the outpost-pi-mesh MCP will exit so the failure is visible.`);
   logErr(
-    `FATAL: ${reason}. Exiting so the failure is visible. cwd=${_cwd}. ` +
-    `Most likely you launched claude in the WRONG FOLDER, or this folder ` +
-    `already has a running outpost-pi agent (a duplicate session). ` +
-    `Launch one agent per folder via "outpost-pi claude" from the project dir.`,
+    `FATAL: ${reason}. Exiting so the failure is visible. cwd=${_cwd}, requested name "${AGENT_NAME}". ` +
+    `Either close the duplicate/wedged agents holding this folder's names, or give this ` +
+    `endpoint a distinct name ("outpost-pi claude" setup, --name, or OUTPOST_PI_MCP_NAME).`,
   );
   process.exit(1);
 }
+
+// Hard-exit bound for the graceful shutdown sequence: a wedged mesh.close()
+// (e.g. broker socket stuck half-closed) must not hang this process forever
+// holding the (cwd, name) lock — the orphaned-lock hazard. Process exit is
+// what actually releases a UDS lock, so force it.
+const SHUTDOWN_TIMEOUT_MS = 3_000;
 
 // Exit cleanly when Claude Code disconnects. The MeshNode keeps a UDS socket
 // (and, when leader, a relay WS) open, so without this the process would linger
@@ -400,8 +490,13 @@ function shutdown(): void {
   // callback would otherwise fire a notification during/after teardown —
   // unref() keeps it from holding the process open but never cancels it.
   if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
+  const hardExit = setTimeout(() => {
+    logErr(`shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms — hard exit; the OS releases the cwd lock with the process`);
+    process.exit(0);
+  }, SHUTDOWN_TIMEOUT_MS);
+  hardExit.unref?.();
   try { _lock?.release(); } catch { /* OS frees the UDS lock on exit anyway */ }
-  void Promise.resolve(mesh.close())
+  void Promise.resolve(mesh === null ? undefined : mesh.close())
     .catch(() => { /* best-effort */ })
     .finally(() => process.exit(0));
 }

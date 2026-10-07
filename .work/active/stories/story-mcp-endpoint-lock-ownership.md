@@ -84,13 +84,46 @@ folder" narrative simplifies into the name-scoped coexistence story.
 
 ## Acceptance criteria
 
-- [ ] MCP acquires the (cwd, name)-scoped lock; a Claude MCP in a folder
+- [x] MCP acquires the (cwd, name)-scoped lock; a Claude MCP in a folder
       with a resident default-named Pi agent comes up as `<name>#2` after
       grace — retiring the `OUTPOST_PI_MCP_CWD` workaround
-- [ ] Lock suffix walk lives in ONE place shared by the Pi command surface
+- [x] Lock suffix walk lives in ONE place shared by the Pi command surface
       and the MCP server
-- [ ] Contention produces in-channel logging notifications + an actionable
+- [x] Contention produces in-channel logging notifications + an actionable
       degraded tool reason naming the lock path
-- [ ] Shutdown is bounded: a wedged `mesh.close()` cannot pin the lock
-- [ ] kill -9 re-acquisition test green; typecheck + full vitest suite +
+- [x] Shutdown is bounded: a wedged `mesh.close()` cannot pin the lock
+- [x] kill -9 re-acquisition test green; typecheck + full vitest suite +
       build green
+
+## Implementation notes (2026-10-06)
+
+- Execution capability: inline (session; cohesive single-file wiring over
+  pre-existing primitives). Review weight: standard (bounded inline pass,
+  standalone-story lane).
+- Files changed: `pi-extension/src/session/cwd_lock.ts` (new
+  `acquireUniqueNamedCwdLock` walk + `MAX_NAMED_LOCKS_PER_CWD`),
+  `pi-extension/src/session/cwd_lock.test.ts` (walk suite + kill -9
+  subprocess test),
+  `pi-extension/src/extension/command_surface/local_mesh_commands.ts`
+  (inline walk → shared helper),
+  `pi-extension/src/mcp/mesh_server.ts` (name-scoped grace-then-suffix
+  acquisition, lazy MeshNode under the locked identity, `warnChannel`
+  logging notifications, bounded shutdown), `pi-extension/README.md`,
+  `site/src/app/tutorials/claude-mesh/page.tsx` (coexistence semantics;
+  "one agent per folder" claims removed).
+- Tests added: walk helper (direct/suffix-reuse/walk-past-held/exhaustion
+  via `maxNames`), SIGKILL holder re-acquisition (spawns the holder through
+  tsx's loader entry points directly — the tsx CLI's supervisor parent can
+  orphan the real holder under kill, which is itself the leak class under
+  test). 12/12 in the file; full suite 1202 passed | 3 env skips; build green.
+- Simplification: Pi-side inline suffix loop deleted (helper is the single
+  source, mirroring the broker's `_uniqueIdentity` scheme); stale
+  "one agent per folder / wrong folder" `_failLoud` narrative replaced.
+- Discrepancies from design: none material. MeshNode construction moved
+  inside `tryJoinMesh` (design said "after the lock walk"); the MCP
+  instructions embed the REQUESTED name with a verify-via-list_peers note
+  because the McpServer (and its instructions) must exist before the async
+  lock walk resolves — the suffix-adoption `warnChannel` names the final
+  identity.
+- Adjacent issues parked: none (the ORPHANED lock hazard itself is closed
+  by the bounded shutdown + kill -9 test).

@@ -393,6 +393,17 @@ server (`list_peers`, `agent_send`, `get_messages`) for that one process only,
 appends the packaged agent-network skill via `--append-system-prompt-file`, and
 forwards any trailing flags to `claude` verbatim.
 
+**Same-folder coexistence.** The mesh MCP takes the same `(cwd, name)`-scoped
+lock Pi agents take: a Claude session and a resident Pi agent can share a
+folder. When the folder's configured name is already held (e.g. by the Pi
+resident), the Claude endpoint briefly retries and then coexists under a
+`#N`-suffixed name (`agent#2`) — its address is `<cwd>@agent#2`, visible via
+`list_peers`; folder `broadcast` reaches every same-folder endpoint. Give the
+Claude endpoint its own name (`outpost-pi claude` setup, `--name`, or
+`OUTPOST_PI_MCP_NAME`) if you want a stable, predictable address instead of a
+suffix. There is no need to point `OUTPOST_PI_MCP_CWD` at a sibling directory
+to dodge the folder's lock.
+
 Launch defaults are safe: Claude keeps its own permission policy (every tool
 call asks), and mesh messages are seen at the next turn boundary through
 `get_messages` polling. Two opt-ins change that, in distinct ways:

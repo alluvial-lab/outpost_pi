@@ -9,7 +9,7 @@ import {
   isFleetArmRestartRequest,
   localPeerAddresses,
 } from "../fleet_update.js";
-import { acquireCwdLock, type AcquiredLock } from "../../session/cwd_lock.js";
+import { acquireUniqueNamedCwdLock, type AcquiredLock } from "../../session/cwd_lock.js";
 import {
   ensureGlobalDirs,
   LOCAL_SESSION_NAME,
@@ -120,27 +120,27 @@ export class LocalMeshCommands {
     // `join` does so the lock and the mesh registration agree on identity.
     const requestedName = loadLocalConfig(cwd).agent_name || defaultAgentName(cwd);
 
-    // Per-(cwd,name) lock, but COLLISION DOESN'T REFUSE — it auto-suffixes. If
-    // `(cwd, "Backoffice")` is already held by a live agent, try
-    // `(cwd, "Backoffice#2")`, `#3`, … until one binds. So a second agent with the
-    // same name in the same folder comes up as `Backoffice#2` (matching the
-    // broker's `_uniqueName` suffix scheme) instead of being turned away. The
-    // suffix N matches the broker's (`#2`-based) so lock + mesh name line up. The
-    // lock is a UDS socket (kernel auto-releases on exit/crash) bound for THIS
-    // process's lifetime; repeat `/outpost-pi` calls are idempotent.
+    // Per-(cwd,name) lock, but COLLISION DOESN'T REFUSE — it auto-suffixes via
+    // the shared walk (`acquireUniqueNamedCwdLock`, the same `#N` scheme the
+    // broker's `_uniqueIdentity` uses). If `(cwd, "Backoffice")` is already
+    // held by a live agent, the walk reserves `(cwd, "Backoffice#2")`, `#3`, …
+    // until one binds. So a second agent with the same name in the same folder
+    // comes up as `Backoffice#2` (matching the broker's suffix scheme) instead
+    // of being turned away. The suffix N matches the broker's (`#2`-based) so
+    // lock + mesh name line up. The lock is a UDS socket (kernel
+    // auto-releases on exit/crash) bound for THIS process's lifetime; repeat
+    // `/outpost-pi` calls are idempotent.
     if (this.cwdLock === null) {
-      for (let n = 1; n <= 1000; n++) {
-        const candidate = n === 1 ? requestedName : `${requestedName}#${n}`;
-        const result = await acquireCwdLock(cwd, candidate);
-        if (result.ok) { this.cwdLock = result; this.lockedName = candidate; break; }
-      }
-      if (this.cwdLock === null) {
+      const unique = await acquireUniqueNamedCwdLock(cwd, requestedName);
+      if (unique === null) {
         ctx.ui.notify(
           `[outpost-pi] Could not start: too many agents named "${requestedName}" already running in this folder.`,
           "warning",
         );
         return;
       }
+      this.cwdLock = unique.lock;
+      this.lockedName = unique.name;
     }
 
     // First-time wizard: no local config in this cwd → run interactive setup.
