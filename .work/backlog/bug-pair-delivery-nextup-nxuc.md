@@ -83,3 +83,30 @@ sender idle vs mid-turn × receiver idle vs mid-turn — triggered by nxuC
 starting a long adjudication turn, with outpost/fleet-root controls. Not
 yet commissioned (operator decision); fleet-root relays pair traffic as
 workaround in the meantime.
+
+## Refinement (18:26–18:28Z): size × turn-state interaction
+
+Resident's follow-up: at ~18:26Z a ~80-byte agent_send to nxuC DELIVERED;
+~90 s later a ~1.8 KB send to the same address TIMED OUT, with no inbound
+from nxuC in between. Sequencing matters: the first (small) delivery would
+itself WAKE nxuC into a turn — so the large follow-up landed while the
+receiver was mid-turn and not draining.
+
+**Refined H2 (leading): bounded-inbox budget exhaustion during non-draining
+turns, size-gated.** The MCP's `BoundedInbox` has a byte budget; `get_messages`
+drains only at turn start. While claude is mid-turn the inbox doesn't drain,
+and messages that don't fit the remaining budget are refused → agent_send
+timeout. Small messages pass until the budget is nearly gone; large ones
+fail first. This unifies: (a) the all-afternoon failure window (nxuC deep
+in long turns → budget exhausted → even modest sends time out), (b) the
+healing moment (freshly idle → drained inbox), (c) the 80B-passes/1.8KB-fails
+pair 90 s apart, and (d) why sparse control sends from fleet-root/outpost
+succeeded around failing windows (landed near turn boundaries / fit residual
+budget). The "pair-specific" topology would then be a traffic-pattern
+artifact — that pair was the only message-heavy mutually-mid-turn pair.
+
+**Sharpest discriminator now (resident offered):** same-moment small-vs-large
+sends during a known mid-turn window. Small delivers + large times out at
+the same instant → size gate confirmed (H2-refined). Both fail → full
+exhaustion. Both deliver → size irrelevant, revisit H1/H3. Cheaper and more
+decisive than the original 2×2; still operator-gated.
