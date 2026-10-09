@@ -78,11 +78,64 @@ control pings).
   after the child has been alive a while. Weaker: current child (924883,
   up since ~17:0xZ) delivered fine at 18:26Z.
 
-**Discriminating experiment (offered by the resident):** timed 2×2 probe —
-sender idle vs mid-turn × receiver idle vs mid-turn — triggered by nxuC
-starting a long adjudication turn, with outpost/fleet-root controls. Not
-yet commissioned (operator decision); fleet-root relays pair traffic as
-workaround in the meantime.
+## RESOLVED (root cause, 2026-10-09 ~18:50Z)
+
+**The wire protocol requires `re` to be null or a UUID; non-UUID `re`
+values are silently dropped by the broker's envelope parser.**
+
+Chain (`pi-extension/src/session/envelope.ts` parse(), identical in
+v0.13.0 and trunk):
+
+1. `parse()` throws `EnvelopeError("re must be null or UUID")` for any
+   non-UUID `re` (UUID_RE test).
+2. The broker's receive path catches `EnvelopeError` and `return`s —
+   **silent drop: no NACK, no ACK, no audit line**. (This is why the
+   failing sends never appeared in `audit.jsonl` — that absence was the
+   key evidence.)
+3. Sender's `sendWithAck` 5000ms timer fires → `status: "timeout"` →
+   tool text "No ACK … transport error" — indistinguishable from
+   peer-offline.
+
+**Verified by corrected control (outpost):** `agent_send` with actual
+   `re="nonexistent-repro-token-002"` → timeout with the identical
+   signature. (Correction on record: outpost's two earlier "delivered"
+   controls were INVALID — the token was written into the body text and
+   the `re` parameter was never set; those were re=None sends. The
+   resident's discriminator result was correct as reported.)
+
+**Two compounding defects:**
+
+- **D1 (API contract):** the `agent_send` tool schema advertises
+  `re: string` with no UUID constraint, while the wire rejects non-UUID.
+  The nextup two-lane convention (`re=<item-id>` for thread correlation)
+  follows the tool's apparent contract and hits the hidden constraint.
+- **D2 (observability):** `EnvelopeError` drops are silent — no log, no
+  audit, no sender-visible reason. Sender cannot distinguish bad-re from
+  peer-offline.
+
+**All earlier observations reconcile:** both-direction failures (both
+lanes used the item-id convention), controls passing (everyone else used
+envelope-id or no re), the "healing" at 18:14:58Z (probes switched to
+no-re per the repro protocol), and the afternoon's persistence (the
+convention predates and postdates the wedge — the wedge was real but
+separate, per fleet-root). H1/H1′/H2/H2′/H3 are all falsified as causes.
+
+**Fix directions (for the fix story):**
+
+1. Fail fast at the tool layer: validate `re` (null-or-UUID) in
+   `agent_send`/MCP send and return an immediate parameter error naming
+   the constraint ("put thread tokens in the body").
+2. Make broker-side `EnvelopeError` drops loud: audit line + sender NACK
+   (new ack status `invalid_envelope`) instead of silent return.
+3. Docs: agent-network skill — state the envelope-id-only rule for `re`
+   explicitly.
+4. Workaround until fixed: never put non-UUID tokens in `re`; thread
+   correlation lives in the body (resident has adopted this).
+
+**Recommendation: promote to a fix story** — small, well-bounded, with a
+deterministic repro and a regression test shape already implied
+(unit: parse() rejects non-UUID re; integration: agent_send with non-UUID
+re returns a fail-fast error, not a 5s timeout).
 
 ## Refinement (18:26–18:28Z): size × turn-state interaction
 
