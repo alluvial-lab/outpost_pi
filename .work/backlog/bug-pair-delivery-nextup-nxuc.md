@@ -110,3 +110,19 @@ sends during a known mid-turn window. Small delivers + large times out at
 the same instant → size gate confirmed (H2-refined). Both fail → full
 exhaustion. Both deliver → size irrelevant, revisit H1/H3. Cheaper and more
 decisive than the original 2×2; still operator-gated.
+
+## Peer input (fleet-root, 2026-10-09)
+
+- **Keep the version-mix axis alive (H1′):** the 0.87.1 root was the one
+  genuinely odd broker client until 18:12:55Z; if its registration
+  participated in either room's routing table, pair-specific corruption is
+  not impossible. H2′ explains the pair-specificity more naturally, but the
+  busy-state probe does NOT discriminate version mix. Opportunistic watch:
+  if any 0.87.x client ever rejoins the broker, does the pair degrade
+  again? (No 0.87 clients should exist anymore — any reappearance is itself
+  an incident.)
+- **Fix-scope implication:** if busy-drops are confirmed as the mechanism,
+  senders need retry policy (agent_send timeouts on a healthy route are a
+  caller-visible contract change). Scope any fix story accordingly.
+- Fleet-root supports commissioning the probe (defect pinned two lanes for
+  an afternoon; mechanism determines whether retry policy is needed).
