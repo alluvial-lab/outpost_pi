@@ -1,7 +1,7 @@
 ---
 id: story-re-uuid-contract
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: null
 depends_on: []
@@ -133,3 +133,13 @@ day was real but separate (fleet-root observation).
 Full delivery matrix and hypothesis history in git history of this file
 (commits ea00940ca, a62439bed, ba7c23613). Workaround already fleet-adopted:
 `re` only ever null or an envelope id; thread tokens in body.
+
+## Review (2026-10-09, standard, bounded standalone-story lane)
+
+Approved → done. Inline lens pass over commit eb60307a9: validation sits before
+every send path (unicast + broadcast); one regex (`UUID_RE`) feeds parser, pi
+tool, and MCP schema (single source); NACK/audit path is best-effort and never
+throws; audit writes chain on the existing `auditWrite` promise preserving
+ordering; `invalid_envelope` degrades safely through v0.13.0 peers (string-typed
+ACK path + default `_formatAck` case); integration test covers the real UDS
+handshake both ways. No blockers, no bounce findings.
