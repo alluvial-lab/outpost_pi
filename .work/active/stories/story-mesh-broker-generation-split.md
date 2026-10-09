@@ -157,6 +157,39 @@ constant (order: election backoff tail, seconds).
       rollout — older clients must not wedge, per the re-UUID story's
       paired-deployal lesson
 
+## Postscript: second + third live manifestations (2026-10-09 20:33–20:35Z)
+
+The parked story predicted recurrence on every fleet-wide sweep; it recurred
+twice more within the hour, with one mechanism-sharpening surprise:
+
+- At the old nextup broker host's death (scheduled fresh bounce, 20:33Z),
+  its 7 island clients re-ran `joinOrLead` concurrently; the first finisher
+  (proving-grounds) false-deathed the then-path broker (voxel's, LIVE and
+  idle) and rebound → two generations again.
+- A race-free sequential remediation (single-client marker hot-reloads,
+  one connector at a time) ALSO lost the first coin flip: ARD's fresh
+  process alone false-deathed the healthy idle path broker (proving-
+  grounds') and bound its own generation → three generations (ARD:1 owning
+  the path; proving-grounds:8+nxuC; voxel:7).
+
+**F1 is therefore not load-dependent**: even a single freshly-started
+connector can false-death an idle healthy broker. Plausible micro-mechanism
+for the design pass to verify: in `_tryConnect` the 500ms settle timer can
+fire before the queued `connect` success callback when the fresh process's
+event loop is still busy initializing — a timer-vs-callback race in which
+the kernel-level connect may have SUCCEEDED yet still be treated as death,
+followed by unlink (F2) of a listener that just accepted that very probe.
+Empirical cluster pattern tonight: in every rejoin cluster, the FIRST
+`joinOrLead` finisher rebound over a live broker; later finishers followed
+the new path successfully. Consequence: bounce-based reunification is a
+per-restart coin flip — convergence should ride the story fix (D1–D4),
+then one final sweep.
+
+Fleet state at park time: all sessions on the fixed dist; roster split
+three ways (islands internally healthy, cross-island sends silently drop);
+active coordination quad (fleet-root, outpost_pi, nextup, nxuC) shares one
+island.
+
 ## Provenance
 
 Fleet incident 2026-10-09 19:15Z (13-session sweep) → 19:26Z fleet-root
