@@ -95,6 +95,11 @@ describe("parse rejects malformed envelopes", () => {
   test("re not UUID and not null", () => {
     expect(() => parse(JSON.stringify({ from: "a", to: "b", id: uuidv7(), re: "junk", body: 1 }))).toThrow(/re/);
   });
+  test("re as a valid envelope UUID parses (the only non-null re the wire accepts)", () => {
+    const reId = uuidv7();
+    const parsed = parse(JSON.stringify({ from: "a", to: "b", id: uuidv7(), re: reId, body: 1 }));
+    expect(parsed.re).toBe(reId);
+  });
   test("missing body", () => {
     expect(() => parse(JSON.stringify({ from: "a", to: "b", id: uuidv7(), re: null }))).toThrow(/body/);
   });

@@ -125,7 +125,7 @@ Each message carries: `from`, `to`, `id`, `re`, and `body`.
 | `from` | Sender's ADDRESS (`<cwd>@<name>`). Use it verbatim as your `to` when replying — never reconstruct it. |
 | `to` | Your address (or `broadcast`, or a list of addresses including yours). |
 | `id` | Unique id of this message. Echo it as `re` when you reply. |
-| `re` | If set, this message is itself a REPLY to an earlier `id` of yours. Otherwise `null`. |
+| `re` | If set, this message is itself a REPLY to an earlier `id` of yours. Otherwise `null`. **`re` accepts an envelope id (UUID) only** — never an arbitrary token: the wire rejects non-UUID values (older brokers drop them silently, which looks like an unexplained send-timeout). Correlate by thread/topic in the `body` text, not in `re`. |
 | `body` | Free-form content — string or JSON, sender's choice. |
 
 ---

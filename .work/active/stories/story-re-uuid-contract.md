@@ -1,7 +1,7 @@
 ---
 id: story-re-uuid-contract
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, bug]
 parent: null
 depends_on: []
@@ -60,16 +60,48 @@ path already sends `re=null` and needs no change.
 
 ## Scope / acceptance
 
-- [ ] `agent_send` (pi tool + MCP tool) with non-UUID `re` returns an
+- [x] `agent_send` (pi tool + MCP tool) with non-UUID `re` returns an
       immediate parameter error naming the constraint (no 5s wait, no wire
       traffic) — unit tests on both surfaces
-- [ ] Envelope-UUID and absent `re` pass through unchanged (regression:
+- [x] Envelope-UUID and absent `re` pass through unchanged (regression:
       today's delivered matrix stays green)
-- [ ] Broker receiving a non-UUID `re` envelope appends an audit line and
+- [x] Broker receiving a non-UUID `re` envelope appends an audit line and
       NACKs the sender with `invalid_envelope` (integration test; the
       silent-drop path is gone)
-- [ ] Agent-network skill + both tool descriptions carry the envelope-id-only
+- [x] Agent-network skill + both tool descriptions carry the envelope-id-only
       rule
+
+## Implementation notes (2026-10-09)
+
+- Execution capability: inline (session; single bounded defect fix, the
+  diagnosis context from tonight's investigation carried over).
+- Review weight: standard (default; bounded standalone-story lane).
+- Files changed: `src/session/envelope.ts` (export `UUID_RE` as the single
+  id/re gate), `src/session/peer.ts` (`AckStatus` + `invalid_envelope`),
+  `src/session/broker.ts` (`_handleLine` EnvelopeError branch →
+  `_handleInvalidEnvelope`: NACK keyed by raw `id` when extractable +
+  audit line with `error` reason through the existing audit chain;
+  `AckStatus`/`AckBody` union extended), `src/session/tools.ts`
+  (`isEnvelopeRe` fail-fast before any send; `SendStatus` +
+  `_formatAck` case with guidance; param + tool descriptions),
+  `src/mcp/mesh_server.ts` (zod `.regex(ENVELOPE_ID_RE)` schema-level
+  validation + ack-note case + description),
+  `skills/agent-network/SKILL.md` (envelope table row states the rule).
+- Tests added: `session/broker_invalid_envelope.test.ts` (new — real UDS
+  broker, register handshake, non-UUID `re` → `invalid_envelope` NACK keyed
+  by sent id + audit trace with reason; UUID `re` control still routes +
+  ACKs received), `session/tools.test.ts` (+3: non-UUID refused pre-wire,
+  UUID passes through to `sendWithAck`, `invalid_envelope` ACK framed as
+  NOT-delivered with guidance), `session/envelope.test.ts` (+1: explicit
+  UUID-`re`-parses positive pinning the contract's accepted side).
+- Simplification: none beyond unifying the id/re regex behind the exported
+  `UUID_RE` (one source: envelope parser, pi tool, MCP zod schema).
+- Discrepancies from design: the MCP-surface validation is zod-schema-level
+  (immediate, pre-handler) rather than a handler guard — same fail-fast
+  contract, one line. `mesh_server.ts` is not unit-importable (`main()` runs
+  at import), so its surface has no direct unit test; the shared regex is
+  covered via envelope/tools tests and the schema is typechecked.
+- Adjacent issues parked: none.
 
 ## Provenance (diagnosis record, 2026-10-09)
 

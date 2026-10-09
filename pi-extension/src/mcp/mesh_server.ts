@@ -30,6 +30,7 @@ import { WAKE_MIN_INTERVAL_MS, WakeGate, createWakeCoordinator, wakeNudgeContent
 import { sessionSockPath, sessionAuditPath, LOCAL_SESSION_NAME } from "../session/global_config.js";
 import { resolveRelayUrl } from "../config.js";
 import { acquireCwdLock, acquireUniqueNamedCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
+import { UUID_RE as ENVELOPE_ID_RE } from "../session/envelope.js";
 import { realpathSync } from "node:fs";
 
 // ── Args / config ─────────────────────────────────────────────────────────────
@@ -203,11 +204,13 @@ mcp.registerTool("list_peers", {
 });
 
 mcp.registerTool("agent_send", {
-  description: 'Send a message to another agent. Use "broadcast" to send to all peers.',
+  description: 'Send a message to another agent. Use "broadcast" to send to all peers. `re` (optional) must be an incoming envelope id — a UUID; never an arbitrary token (the wire rejects it).',
   inputSchema: {
     to: z.string().describe('Peer address from list_peers (form "<cwd>@<name>", or "<pc>:<cwd>@<name>" cross-PC) echoed verbatim, or "broadcast"'),
     body: z.unknown().describe("Message body — any JSON value"),
-    re: z.string().optional().describe("Optional: id of the message you are replying to"),
+    re: z.string().regex(ENVELOPE_ID_RE,
+      "re must be an incoming envelope id (UUID) — put thread/correlation tokens in the body text",
+    ).optional().describe("Optional: id of the message you are replying to (UUID only)"),
   },
 }, async ({ to, body, re }) => {
   if (!meshReady || mesh === null) return notReady();
@@ -233,6 +236,9 @@ mcp.registerTool("agent_send", {
         `current version). Restart the agent that leads the local broker (the ` +
         `oldest Pi/outpost-pi process) so it picks up the new build, then resend.` :
       ack.status === "denied" ? `${to} denied the message` :
+      ack.status === "invalid_envelope" ?
+        `NOT delivered — the broker rejected the envelope as malformed (e.g. a non-UUID re; ` +
+        `a pre-fix broker drops such envelopes silently). Fix the envelope fields and resend.` :
       `No ACK from ${to} (timeout) — peer may be offline`;
     return {
       content: [{ type: "text" as const, text: note }],

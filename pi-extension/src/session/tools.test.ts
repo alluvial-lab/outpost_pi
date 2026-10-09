@@ -375,3 +375,66 @@ describe("agent_request tool (deprecated, still functional)", () => {
     });
   });
 });
+
+describe("agent_send tool re contract (fail fast on non-UUID re)", () => {
+  test("non-UUID re → refused before any wire traffic", async () => {
+    const { pi, tools } = makeMockPi();
+    const peer = makeMockPeer();
+    registerAgentTools(pi, () => peer);
+    const tool = tools.get("agent_send")!;
+
+    const result = await tool.execute(
+      TOOL_CALL_ID,
+      { to: "backend", body: { task: "ping" }, re: "item-model-primitives" },
+      undefined, undefined, {} as never,
+    );
+
+    expect(peer.sendWithAck).not.toHaveBeenCalled();
+    expect(peer.send).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({ status: "refused", ok: false });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("must be the id of an incoming envelope"),
+    });
+  });
+
+  test("UUID re passes through to sendWithAck unchanged", async () => {
+    const { pi, tools } = makeMockPi();
+    const peer = makeMockPeer();
+    registerAgentTools(pi, () => peer);
+    const tool = tools.get("agent_send")!;
+
+    const reId = "018f3333-3333-7333-8333-333333333333";
+    const result = await tool.execute(
+      TOOL_CALL_ID,
+      { to: "backend", body: { task: "ping" }, re: reId },
+      undefined, undefined, {} as never,
+    );
+
+    expect(peer.sendWithAck).toHaveBeenCalledWith("backend", { task: "ping" }, reId, 5_000);
+    expect(result.details).toMatchObject({ status: "received", ok: true });
+  });
+
+  test("broker invalid_envelope ACK is framed as NOT delivered with guidance", async () => {
+    const { pi, tools } = makeMockPi();
+    const peer = makeMockPeer({
+      sendWithAck: vi.fn().mockResolvedValue(
+        { status: "invalid_envelope", id: "uuid-out", target: "backend" } satisfies AckResult,
+      ),
+    });
+    registerAgentTools(pi, () => peer);
+    const tool = tools.get("agent_send")!;
+
+    const result = await tool.execute(
+      TOOL_CALL_ID,
+      { to: "backend", body: { task: "ping" } },
+      undefined, undefined, {} as never,
+    );
+
+    expect(result.details).toMatchObject({ status: "invalid_envelope", ok: false });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("NOT delivered"),
+    });
+  });
+});

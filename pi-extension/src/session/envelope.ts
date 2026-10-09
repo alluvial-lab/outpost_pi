@@ -12,7 +12,9 @@ export interface Envelope {
   body: unknown;
 }
 
-const UUID_RE =
+/** UUID format shared by every `re`/`id` gate — the envelope parser AND the
+ *  tool layers that fail-fast before a send (single source: no second regex). */
+export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

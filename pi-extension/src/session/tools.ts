@@ -1,6 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { UUID_RE } from "./envelope.js";
 import type { SessionPeer } from "./peer.js";
+
+/** A `re` the wire will accept: absent, or an incoming envelope's UUID id.
+ *  Correlation tokens that aren't envelope ids belong in the body text. */
+function isEnvelopeRe(re: unknown): re is string | null | undefined {
+  return re === undefined || re === null || (typeof re === "string" && UUID_RE.test(re));
+}
 
 const NOT_IN_SESSION = "Not in a session. Run /outpost-pi join first";
 const ACK_TIMEOUT_MS = 5_000;
@@ -19,7 +26,7 @@ interface RequestInput {
   timeout_ms?: number;
 }
 
-type SendStatus = "received" | "busy" | "denied" | "timeout" | "sent" | "refused";
+type SendStatus = "received" | "busy" | "denied" | "timeout" | "sent" | "refused" | "invalid_envelope";
 
 interface SendDetails {
   status: SendStatus;
@@ -62,7 +69,9 @@ export function registerAgentTools(
     body: Type.Unknown({ description: "Free-form JSON payload. String or object — your choice." }),
     re: Type.Optional(Type.String({
       description:
-        "Set this to the `id` of an incoming message when you are REPLYING to it. " +
+        "Set this to the `id` of an incoming message when you are REPLYING to it — " +
+        "UUID envelope ids ONLY (the wire rejects anything else; a pre-fix broker " +
+        "drops non-UUID re silently). Thread/correlation tokens belong in the body. " +
         "The peer correlates your answer with their original send via this field.",
     })),
   });
@@ -100,6 +109,17 @@ export function registerAgentTools(
         };
       }
       const { to, body, re } = params as SendInput;
+      if (!isEnvelopeRe(re)) {
+        // Fail fast at the contract boundary: the wire rejects non-UUID `re`
+        // (envelope.ts parse) and a pre-fix broker drops such envelopes
+        // silently — surfacing later as an opaque 5s timeout. Teach the rule
+        // at the point of use.
+        const msg =
+          `Refused: \`re\` must be the id of an incoming envelope (a UUID). ` +
+          `Put thread/correlation tokens in the body text instead.`;
+        const details: SendDetails = { status: "refused", ok: false, error: msg };
+        return { content: [{ type: "text", text: msg }], details };
+      }
       if (to === peer.address() || to === peer.name()) {
         const msg = `Refused: cannot agent_send to yourself ("${to}"). Just do the work directly.`;
         const details: SendDetails = { status: "refused", ok: false, error: msg };
@@ -277,6 +297,10 @@ function _formatAck(to: string, status: SendStatus, re: string | null | undefine
       return `"${to}" denied the message${reSuffix}. Do not retry; report to user.`;
     case "timeout":
       return `No ACK from "${to}" within ${ACK_TIMEOUT_MS}ms${reSuffix} — transport error. Investigate or retry later.`;
+    case "invalid_envelope":
+      return `NOT delivered — the broker rejected the envelope as malformed${reSuffix} ` +
+        `(e.g. a non-UUID \`re\`; note a pre-fix broker drops such envelopes ` +
+        `silently instead). Fix the envelope fields and resend.`;
     default:
       return `Sent to "${to}"${reSuffix} — status: ${status}.`;
   }

@@ -39,7 +39,7 @@ const ACK_TIMEOUT_MS = 5_000;
 const FAILOVER_RETRY_MS = 100;
 
 /** Classify the broker acknowledgement for a unicast delivery attempt. */
-export type AckStatus = "received" | "busy" | "denied" | "timeout";
+export type AckStatus = "received" | "busy" | "denied" | "timeout" | "invalid_envelope";
 
 /** Report the terminal acknowledgement result; timeout means no broker confirmation arrived. */
 export interface AckResult {

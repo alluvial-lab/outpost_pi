@@ -149,11 +149,11 @@ function auditRecipients(value: unknown): string[] {
     .map((recipient) => recipient.slice(0, BROKER_AUDIT_MAX_FIELD_LENGTH));
 }
 
-type AckStatus = "received" | "denied";
+type AckStatus = "received" | "denied" | "invalid_envelope";
 
 interface AckBody {
   type: "ack";
-  status: "received" | "denied";
+  status: "received" | "denied" | "invalid_envelope";
   target: string;
 }
 
@@ -289,13 +289,66 @@ export class Broker {
     try {
       env = parse(line);
     } catch (e) {
-      if (e instanceof EnvelopeError) return;  // malformed; drop silently
+      if (e instanceof EnvelopeError) {
+        // Malformed envelope — fail LOUD, never silently: a silent drop
+        // surfaces at the sender as an opaque send-timeout with no trace to
+        // diagnose (the 2026-10-09 pair-delivery incident: non-UUID `re`
+        // vanished here for an afternoon). NACK the sender and audit it.
+        this._handleInvalidEnvelope(conn, line, e.message);
+        return;
+      }
       throw e;
     }
     // Force `from` to the registered ADDRESS (security: peer can't spoof; and
     // replies/ACKs address back by the same canonical key the Map is keyed on).
     env.from = conn.address;
     await this._route(env);
+  }
+
+  /** Malformed client envelope: NACK `invalid_envelope` (keyed by the raw
+   *  `id` when extractable, so the sender's `sendWithAck` resolves instead of
+   *  timing out) and leave an audit trace with the reject reason. Best-effort
+   * by construction — this is the broken-input path and must never throw. */
+  private _handleInvalidEnvelope(conn: PeerConn, line: string, reason: string): void {
+    let raw: { id?: unknown; to?: unknown; re?: unknown } | null = null;
+    try {
+      raw = JSON.parse(line) as { id?: unknown; to?: unknown; re?: unknown };
+    } catch {
+      raw = null; // not even JSON — nothing to correlate a NACK with
+    }
+    const id = raw !== null && typeof raw.id === "string" ? raw.id : null;
+    if (id !== null) {
+      const ackEnv: Envelope = {
+        from: BROKER_NAME,
+        to: conn.address,
+        id: uuidv7(),
+        re: id,
+        body: { type: "ack", status: "invalid_envelope", target: conn.address } satisfies AckBody,
+      };
+      try {
+        conn.socket.write(serialize(ackEnv));
+      } catch {
+        // sender dropped mid-write; close handler will fire
+      }
+    }
+    if (this.auditPath) {
+      const auditLine = JSON.stringify({
+        ts: Date.now(),
+        from: auditText(conn.address),
+        to: raw !== null && typeof raw.to === "string" ? auditText(raw.to) : null,
+        id: id === null ? null : auditText(id),
+        re: raw !== null && typeof raw.re === "string" ? auditText(raw.re) : null,
+        delivered: [],
+        ack_status: "invalid_envelope",
+        via: "uds",
+        error: reason,
+      }) + "\n";
+      const write = this.auditWrite.then(async () => {
+        await mkdir(dirname(this.auditPath!), { recursive: true, mode: 0o700 });
+        await appendFile(this.auditPath!, auditLine, "utf8");
+      });
+      this.auditWrite = write.catch(() => undefined);
+    }
   }
 
   private _handleRegister(conn: PeerConn, line: string): void {
