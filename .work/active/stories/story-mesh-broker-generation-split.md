@@ -1,7 +1,7 @@
 ---
 id: story-mesh-broker-generation-split
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, bug]
 parent: null
 depends_on: []
@@ -424,6 +424,61 @@ Fleet state at park time: all sessions on the fixed dist; roster split
 three ways (islands internally healthy, cross-island sends silently drop);
 active coordination quad (fleet-root, outpost_pi, nextup, nxuC) shares one
 island.
+
+## Review (2026-10-10, cross-model, fresh context)
+
+Outside reviewer: `openai-codex/gpt-6-astra` (xhigh) on commit 275066368,
+with isolated real-UDS probes reproducing each finding. Verdict:
+CHANGES-REQUIRED — 1 blocker + 6 majors + 2 minors. Adjudication and
+resolution (all material findings fixed, re-verified):
+
+- **R1 blocker — pre-ownership connections:** the listener published before
+  Broker installed its handler; a follower accepted in the window was never
+  tracked (lost register; `close()` could hang on it — node's close waits
+  for connections). FIXED: refusal guard installed at bind (pre-ownership
+  connections are destroyed deterministically; followers retry),
+  `removeAllListeners("connection")` on election win so the Broker handler is
+  sole owner, and `closeServer` force-closes via `closeAllConnections()`.
+- **R2 — staged-candidate ownership:** candidates were untracked locals; a
+  late ACK after `leave()` could promote a ghost; failed handshakes leaked
+  sockets; handshake death waited out the 5s ack timeout. FIXED:
+  `this.staged` set owns candidates (leave destroys them), post-leave ACK
+  acknowledges-and-drops without promoting, failures destroy, and socket
+  close during handshake fails fast via an `onDeath` hook. Regression test:
+  late-ack-after-leave (broker-side socket count → 0).
+- **R3 — leader loopback dialed the mutable rendezvous:** a racer publishing
+  between verify and connect wedged the leader into its successor while it
+  still hosted the old broker (ghost bridge, no reconnect notification).
+  FIXED: loopback dials the leader's OWN unique target, so dissolve destroys
+  it and the failover re-resolve fires (`onReconnect` pinned by test).
+- **R4 — unfenced `onSuperseded`:** a late dissolve callback could clear a
+  NEWER broker the watcher had installed. FIXED: callback fenced by broker
+  identity. Regression test drives broker1's check manually after
+  re-leading to broker2.
+- **R5 — startup election failure was permanent:** `start()` rejected before
+  the retry/watcher existed. FIXED: degraded start (resolves with requested
+  name, sends fail fast) + background retry + watcher armed.
+- **R6 — probe-error churn:** a single probe timeout with a live connection
+  re-registered on the SAME generation (`#2` churn). FIXED: `error` is
+  uncertainty — retain on single occurrence; only the consecutive-miss
+  threshold escalates. Regression test via probe-overriding subclass.
+- **R7 — named-pipe false supersession:** direct-bind leaders ran the
+  filesystem pointer check (target === rendezvous → false dissolve loop).
+  FIXED: watch disabled when `targetPath === sockPath` (POSIX indirection
+  only).
+- **R8 minor — colon suppression:** the un-bridged cross-PC NACK exclusion
+  (`to.includes(":")`) also suppresses NACKs for exotic local addresses
+  containing `:`; those keep the legacy silent-drop → timeout. ACCEPTED as a
+  strictly-better-than-legacy limitation (no router attached is the
+  bridgeless-leader corner); recorded here rather than widening scope.
+- **R9 minor — test honesty:** supersede-test assertion was trivially true;
+  legacy fixture emitted an invalid UUID (exercising the error path, not
+  passive-compat) and hid re-registrations. FIXED: broadcast-only assertion,
+  valid fixture UUID, registration counter asserting exactly one register,
+  plus the regression tests above.
+
+Post-fix verification: `corepack pnpm typecheck` ✓; full `vitest run`
+1232 passed / 3 pre-existing skips ✓; `corepack pnpm build` ✓.
 
 ## Provenance
 

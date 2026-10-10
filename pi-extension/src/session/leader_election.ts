@@ -168,13 +168,23 @@ export async function joinOrLead(sockPath: string): Promise<ElectionResult> {
 
 /** Bind a unique sibling target, atomically publish the rendezvous symlink,
  *  and verify ownership. Returns null when another racer won the rename or
- *  the bind failed — the caller backs off and re-probes. */
+ *  the bind failed — the caller backs off and re-probes.
+ *
+ *  Connection ownership: a placeholder connection handler is installed the
+ *  moment the bind succeeds — BEFORE publication — so a follower that
+ *  connects during the publish/verify window is deterministically refused
+ *  (destroyed) instead of being accepted into a socket nobody tracks. The
+ *  winner's Broker constructor replaces the handler and owns connections
+ *  from then on; the loser's `closeServer` force-closes everything. */
 async function leadViaRendezvous(sockPath: string): Promise<ElectionResult | null> {
   const dir = dirname(sockPath);
   const generation = uuidv7();
   const target = join(dir, `broker-${generation}.sock`);
   const server = await tryBind(target);
   if (!server) return null;
+  // Pre-ownership guard: refuse (reset) every connection until a Broker
+  // takes over. Followers see ECONNRESET and retry — never a lost register.
+  server.on("connection", (sock) => { sock.destroy(); });
 
   const tmpLink = join(dir, `.broker-publish-${generation}-${randomUUID().slice(0, 8)}.lnk`);
   try {
@@ -190,13 +200,16 @@ async function leadViaRendezvous(sockPath: string): Promise<ElectionResult | nul
 
   if (!(await rendezvousPointsAt(sockPath, target))) {
     // A rival renamed over us between our publish and verify. Demote: close
-    // our server — libuv unlinks only OUR unique target — and let the caller
-    // follow the winner on the next probe.
+    // our server — force-closing any connections and unlinking only OUR
+    // unique target — and let the caller follow the winner on the next probe.
     await closeServer(server);
     return null;
   }
 
   void gcOrphanTargets(dir, target).catch(() => undefined);
+  // Hand the listener to the Broker CLEAN: drop the refusal guard so the
+  // broker's own connection handler is the only one installed.
+  server.removeAllListeners("connection");
   return { role: "leader", server, leaderInfo: { generation, target } };
 }
 
@@ -251,11 +264,12 @@ async function gcOrphanTargets(dir: string, ownTarget: string): Promise<void> {
 }
 
 async function closeServer(server: Server): Promise<void> {
+  // server.close() only completes once every accepted connection has ended —
+  // with an unacked keep-alive connection it would hang forever. Force-close
+  // every connection first (Node ≥18.2 runtime API), then stop the listener.
+  (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
-    // Connections are not tracked here (election-level); force-close waits
-    // only for the listener. Lingering accepted sockets close with the
-    // caller's higher-level teardown.
   });
 }
 

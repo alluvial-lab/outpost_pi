@@ -89,6 +89,10 @@ interface ConnState {
   buf: string;
   /** Pre-register-ack line listener (register handshake), else null. */
   preAck: ((raw: unknown) => void) | null;
+  /** Handshake-death hook: set while the register handshake is pending so a
+   *  socket close fails the handshake fast instead of waiting out the ack
+   *  timeout. Cleared on promote/failure. */
+  onDeath?: (err: Error) => void;
 }
 
 /** Own a peer's broker connection, pending requests, and failover rejoin lifecycle until {@link leave} tears them down. */
@@ -123,6 +127,9 @@ export class SessionPeer {
   private leftFlag = false;
   /** Single-flight chain for re-resolves (watcher / failover / NACK all funnel here). */
   private resolveChain: Promise<void> = Promise.resolve();
+  /** In-flight register candidates (make-before-break staging). Owned here so
+   *  `leave()` can destroy them and late ACKs can be fenced against disposal. */
+  private readonly staged = new Set<ConnState>();
   /** Divergence watcher scheduling handle (recursive timeout, jittered). */
   private watcherTimer: ReturnType<typeof setTimeout> | null = null;
   private consecutiveMisses = 0;
@@ -139,11 +146,23 @@ export class SessionPeer {
 
   // ── public API ────────────────────────────────────────────────────────────
 
-  /** Joins or leads the session at `sockPath`. Resolves with the assigned name. */
+  /** Joins or leads the session at `sockPath`. Resolves with the assigned
+   *  name — or, when the election exhausts (wedged rendezvous, inconclusive
+   *  probes), with the requested name while the mesh stays DEGRADED: a
+   *  jittered background retry owns recovery and the divergence watcher is
+   *  armed, so a transient startup stall no longer disables the mesh for the
+   *  process lifetime (design v2 R4). Sends fail fast ("not connected")
+   *  until a rejoin succeeds. */
   async start(): Promise<string> {
-    const name = await this._rejoin("initial-start");
-    this._startWatcher();
-    return name;
+    try {
+      const name = await this._rejoin("initial-start");
+      this._startWatcher();
+      return name;
+    } catch {
+      this._scheduleRejoinRetry();
+      this._startWatcher();
+      return this.opts.name;
+    }
   }
 
   /** Returns the clean leaf name as assigned by the broker (after any `#N`). */
@@ -313,13 +332,17 @@ export class SessionPeer {
     // Same-generation retain (design v2 R3): when the current connection is
     // alive and the rendezvous still serves OUR generation, a watcher or
     // failover trigger was a false alarm — keep the connection (and the
-    // broker-assigned identity) instead of re-registering as `#N`.
+    // broker-assigned identity) instead of re-registering as `#N`. A probe
+    // `error` (timeout, no reply) with a live connection is UNCERTAINTY, not
+    // divergence — retain here too; only the watcher's consecutive-miss
+    // threshold escalates uncertainty into a re-resolve.
     const connAlive = this.conn !== null && !this.conn.socket.destroyed;
     if (connAlive) {
       const probe = await this._probeGeneration();
       if (probe === "match") return;
       if (probe === "legacy" && this.registeredGeneration === undefined) return;
-      // "mismatch" | "miss" | "legacy-with-generation" | "error" → re-resolve.
+      if (probe === "error") return;
+      // "mismatch" | "miss" | "legacy-with-generation" → re-resolve.
     }
 
     try {
@@ -360,20 +383,31 @@ export class SessionPeer {
     if (result.role === "leader") {
       this.role = "leader";
       // Take over the local broker role; onSuperseded clears it when the
-      // rendezvous stops pointing at us (the loopback client's close then
-      // drives this peer's re-resolve through the normal failover path).
-      this.broker = new Broker({
+      // rendezvous stops pointing at us — fenced to THIS broker incarnation,
+      // so a late dissolve callback can never clear a newer leader the
+      // watcher already installed. The loopback client's close then drives
+      // this peer's re-resolve through the normal failover path.
+      const broker = new Broker({
         server: result.server,
         auditPath: this.opts.auditPath,
         sockPath: this.opts.sockPath,
         targetPath: result.leaderInfo.target,
         generation: result.leaderInfo.generation,
         supersedePollMs: this.opts.supersedePollMs,
-        onSuperseded: () => { this.broker = null; this.role = "follower"; },
+        onSuperseded: () => {
+          if (this.broker === broker) {
+            this.broker = null;
+            this.role = "follower";
+          }
+        },
       });
+      this.broker = broker;
       // Leader also registers itself as a peer so other followers see it +
-      // can address it: a real client connection back to our own server.
-      const sock = createConnection(this.opts.sockPath);
+      // can address it: a real client connection back to our own server —
+      // dialed at OUR UNIQUE TARGET, never the mutable rendezvous, so a
+      // racer publishing between verify and connect cannot wedge us into
+      // the successor while still hosting the old broker.
+      const sock = createConnection(result.leaderInfo.target);
       await new Promise<void>((resolve, reject) => {
         sock.once("connect", () => resolve());
         sock.once("error", reject);
@@ -388,19 +422,38 @@ export class SessionPeer {
   /** Stage a candidate connection: wire its handlers to its OWN state, run
    *  the register handshake, and only then promote it to `this.conn`
    *  (destroying the previous connection, whose late events are fenced by
-   *  the identity check in its close handler). */
+   *  the identity check in its close handler). The candidate is owned by
+   *  `this.staged` for its whole handshake: `leave()` destroys it, a late
+   *  ACK after `leave()` never promotes it, and a failed handshake destroys
+   *  it — no ghost sockets, no post-disposal promotion. */
   private _registerStaged(sock: Socket): Promise<string> {
     const staged: ConnState = { socket: sock, buf: "", preAck: null };
+    this.staged.add(staged);
     sock.setEncoding("utf8");
     sock.on("data", (chunk: string) => this._onData(staged, chunk));
-    sock.on("close", () => this._onConnClose(staged));
+    sock.on("close", () => {
+      this.staged.delete(staged);
+      // Handshake still pending → the candidate died before its ACK: fail
+      // the registration fast (leave(), broker reset, crash) rather than
+      // holding the rejoin hostage for the 5s ack timeout.
+      if (staged.preAck) staged.onDeath?.(new Error("register socket closed before ack"));
+      this._onConnClose(staged);
+    });
     sock.on("error", () => { /* close will follow */ });
 
+    const fail = (reject: (err: Error) => void, err: Error): void => {
+      staged.preAck = null;
+      staged.onDeath = undefined;
+      this.staged.delete(staged);
+      try { sock.destroy(); } catch { /* already gone */ }
+      reject(err);
+    };
+
     return new Promise<string>((resolve, reject) => {
+      staged.onDeath = (err: Error) => fail(reject, err);
       // The first inbound line MUST be the register_ack. Buffer-aware.
       const wait = setTimeout(() => {
-        staged.preAck = null;
-        reject(new Error("register_ack timeout"));
+        fail(reject, new Error("register_ack timeout"));
       }, 5_000);
       staged.preAck = (raw: unknown) => {
         clearTimeout(wait);
@@ -415,6 +468,15 @@ export class SessionPeer {
         const address = typeof ack?.address_assigned === "string" ? ack.address_assigned : ack?.name_assigned;
         if (ack && ack.type === "register_ack" && typeof name === "string" && typeof address === "string") {
           staged.preAck = null;
+          staged.onDeath = undefined;
+          this.staged.delete(staged);
+          if (this.leftFlag) {
+            // Disposed mid-handshake: acknowledge-and-drop — never promote a
+            // ghost connection after leave().
+            try { sock.destroy(); } catch { /* already gone */ }
+            resolve(name);
+            return;
+          }
           this.assignedName = name;
           this.assignedAddress = address;
           this.registeredGeneration = typeof ack.generation === "string" ? ack.generation : undefined;
@@ -429,7 +491,7 @@ export class SessionPeer {
           this.consecutiveMisses = 0;
           resolve(name);
         } else {
-          reject(new Error(`expected register_ack, got: ${JSON.stringify(raw)}`));
+          fail(reject, new Error(`expected register_ack, got: ${JSON.stringify(raw)}`));
         }
       };
       const req = JSON.stringify({
@@ -444,8 +506,7 @@ export class SessionPeer {
         sock.write(req);
       } catch (e) {
         clearTimeout(wait);
-        staged.preAck = null;
-        reject(e as Error);
+        fail(reject, e as Error);
       }
     });
   }
@@ -551,6 +612,12 @@ export class SessionPeer {
   }
 
   private async _teardownConn(): Promise<void> {
+    // Destroy in-flight register candidates FIRST — a late ACK must never
+    // promote a connection the peer has already abandoned.
+    for (const candidate of this.staged) {
+      try { candidate.socket.destroy(); } catch { /* already gone */ }
+    }
+    this.staged.clear();
     if (this.conn) {
       try { this.conn.socket.destroy(); } catch { /* ignored */ }
       this.conn = null;
@@ -625,8 +692,10 @@ export class SessionPeer {
   }
 
   /** Outcome of one rendezvous generation probe. `error` (whole-probe
-   *  budget exhausted) is a miss for counting purposes, never a mismatch. */
-  private _probeGeneration(): Promise<"match" | "mismatch" | "legacy" | "miss" | "error"> {
+   *  budget exhausted) is uncertainty for counting purposes, never a
+   *  mismatch. Protected so tests can subclass and inject deterministic
+   *  probe outcomes. */
+  protected _probeGeneration(): Promise<"match" | "mismatch" | "legacy" | "miss" | "error"> {
     return new Promise((resolve) => {
       let settled = false;
       let buf = "";

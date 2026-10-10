@@ -93,6 +93,13 @@ describe("mesh generation convergence (design v2 acceptance)", () => {
     const sock = sockIn(dir, "broker.sock");
     const a = await spawn(sock, "a");
     expect(a.currentRole()).toBe("leader");
+    // Pin the demotion MECHANISM (not just the end state): the loopback
+    // client dials the leader's OWN unique target, so the dissolve destroys
+    // it, the failover re-resolve runs, and onReconnect fires (review
+    // finding 3: a loopback dialed at the mutable rendezvous would survive
+    // the dissolve and the flag would stay false with a ghost registration).
+    let reconnectFired = false;
+    a.onReconnect(() => { reconnectFired = true; });
 
     const x = await spawn(sockIn(dir, "broker2.sock"), "x");
     await stealRendezvous(sock, x);
@@ -102,6 +109,8 @@ describe("mesh generation convergence (design v2 acceptance)", () => {
     const demoted = await until(() => a.currentRole() === "follower" && rosterOf(x).includes("a"));
     expect(demoted).toBe(true);
     expect(a.generation()).toBe(x.generation());
+    const fired = await until(() => reconnectFired);
+    expect(fired).toBe(true);
 
     await Promise.all([a.leave(), x.leave()]);
   });
@@ -139,7 +148,9 @@ describe("mesh generation convergence (design v2 acceptance)", () => {
 
     // A minimal LEGACY broker: binds broker.sock directly as a socket file,
     // answers register with a generation-less ack and observer list_peers
-    // with a generation-less reply envelope (pre-fix wire shape).
+    // with a generation-less reply envelope (pre-fix wire shape). Counts
+    // registrations so passive-watcher behavior is provable.
+    const registrations: string[] = [];
     const legacy: Server = await new Promise((res) => {
       const s = createServer((conn) => {
         let buf = "";
@@ -153,13 +164,14 @@ describe("mesh generation convergence (design v2 acceptance)", () => {
             try {
               const msg = JSON.parse(line) as { type?: string; name?: string };
               if (msg.type === "register" && typeof msg.name === "string") {
+                registrations.push(msg.name);
                 conn.write(JSON.stringify({
                   type: "register_ack", name_assigned: msg.name, address_assigned: msg.name,
                 }) + "\n");
               } else if (msg.type === "list_peers") {
                 conn.write(JSON.stringify({
-                  from: "broker", to: "observer", id: "01976000-0000-7000-8000-00000000aa1",
-                  re: null,
+                  from: "broker", to: "observer",
+                  id: "01976000-0000-7000-8000-0000000000aa", re: null,
                   body: { type: "list_peers_reply", peers: [] },
                 }) + "\n");
               }
@@ -181,6 +193,10 @@ describe("mesh generation convergence (design v2 acceptance)", () => {
     const stableAddress = p.address();
     await wait(300);
     expect(p.address()).toBe(stableAddress);
+    // Passive proof: exactly ONE registration ever reached the legacy broker —
+    // the watcher probed (list_peers, generation-less → passive) and never
+    // re-registered (review finding 9).
+    expect(registrations).toEqual(["n1"]);
 
     await p.leave();
     await new Promise<void>((res) => legacy.close(() => res()));
@@ -197,6 +213,30 @@ describe("mesh generation convergence (design v2 acceptance)", () => {
     expect(b.address()).toBe(before);
     expect(rosterOf(a).length).toBe(2);
     expect(readlinkSync(sock)).toBeDefined();
+
+    await Promise.all([a.leave(), b.leave()]);
+  });
+
+  test("probe error (uncertainty) with a live connection retains identity (review finding 6)", async () => {
+    const sock = sockIn(tmpDir(), "broker.sock");
+    const a = await spawn(sock, "a");
+    // A peer whose probes always time out (busy/stalled broker) while its
+    // actual connection stays perfectly healthy.
+    class FlakyProbePeer extends SessionPeer {
+      protected override _probeGeneration(): Promise<"match" | "mismatch" | "legacy" | "miss" | "error"> {
+        return Promise.resolve("error");
+      }
+    }
+    const b = new FlakyProbePeer({ sockPath: sock, name: "b", defaultTimeoutMs: 3_000, ...FAST });
+    await b.start();
+    const before = b.address();
+
+    // Watcher ticks see "error" repeatedly. The threshold path schedules a
+    // resolve whose own probe ALSO errors — and uncertainty must RETAIN the
+    // live registration: no #2 churn, roster stays exactly 2.
+    await wait(500);
+    expect(b.address()).toBe(before);
+    expect(rosterOf(a).length).toBe(2);
 
     await Promise.all([a.leave(), b.leave()]);
   });

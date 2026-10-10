@@ -132,12 +132,14 @@ describe("broker supersession self-check (design v2 G4/R2)", () => {
     // The broker notices within a poll cycle or two.
     const noticed = await until(() => broker.isRetiring());
     expect(noticed).toBe(true);
-    // The follower heard the supersession broadcast (or its socket closed).
-    const heard = await until(() => followerSaw.length > 0 || follower.localBroker() === null);
+    // The follower heard the supersession broadcast before its socket closed.
+    const heard = await until(() => followerSaw.length > 0);
     expect(heard).toBe(true);
     // The successor's rendezvous is untouched by the dissolve.
     expect(readlinkSync(sock)).toBe(basename(racerTarget));
-
+    // The dissolving leader's own re-resolve must not hang on the raw racer
+    // (register fails against it; background retry owns recovery) — leave()
+    // completes regardless (staged-candidate teardown, review finding 2).
     await leader.leave();
     await follower.leave();
     await new Promise<void>((res) => racerServer.close(() => res()));
@@ -161,6 +163,81 @@ describe("broker supersession self-check (design v2 G4/R2)", () => {
     expect(noticed).toBe(true);
     await leader.leave();
     await new Promise<void>((res) => legacy.close(() => res()));
+  });
+});
+
+describe("peer lifecycle hardening (review findings 2+4)", () => {
+  test("late register_ack after leave() never promotes a ghost connection", async () => {
+    const sock = tmpSock();
+    const liveSockets = new Set<import("node:net").Socket>();
+    const registrations: string[] = [];
+    // A SLOW legacy-style broker: delays register_ack 300ms so leave() lands
+    // mid-handshake; tracks its accepted sockets.
+    const slow: Server = await new Promise((res) => {
+      const s = createServer((conn) => {
+        liveSockets.add(conn);
+        conn.on("close", () => liveSockets.delete(conn));
+        let buf = "";
+        conn.setEncoding("utf8");
+        conn.on("data", (chunk: string) => {
+          buf += chunk;
+          const nl = buf.indexOf("\n");
+          if (nl < 0) return;
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          try {
+            const msg = JSON.parse(line) as { type?: string; name?: string };
+            if (msg.type === "register" && typeof msg.name === "string") {
+              registrations.push(msg.name);
+              setTimeout(() => {
+                conn.write(JSON.stringify({
+                  type: "register_ack", name_assigned: msg.name, address_assigned: msg.name,
+                }) + "\n");
+              }, 300);
+            }
+          } catch { /* ignore */ }
+        });
+      });
+      s.listen(sock, () => res(s));
+    });
+
+    const p = new SessionPeer({ sockPath: sock, name: "ghost", generationProbeMs: 0 });
+    const started = p.start();
+    await wait(80); // register sent, ack still pending
+    await p.leave();
+    await started;
+    await wait(450); // the delayed ack arrives here
+    // No ghost: the broker-side socket for our candidate is gone.
+    expect(liveSockets.size).toBe(0);
+    expect(registrations).toEqual(["ghost"]);
+    await new Promise<void>((res) => slow.close(() => res()));
+  });
+
+  test("identity fence: an old broker's late supersede never clears the new leader", async () => {
+    const dir = tmpSock().slice(0, tmpSock().lastIndexOf("/"));
+    // Build the fence scenario deterministically: a leads broker1 with the
+    // supersede poll effectively disabled; the rendezvous goes missing; a's
+    // watcher re-resolves and a LEADS AGAIN (broker2); then broker1's check
+    // fires late — it must not clear broker2.
+    const sock = join(dir, "broker.sock");
+    const a = await spawnPeer(sock, "a", undefined, { generationProbeMs: 40, supersedePollMs: 3_600_000 });
+    expect(a.currentRole()).toBe("leader");
+    const broker1 = a.localBroker()!;
+
+    await (await import("node:fs/promises")).unlink(sock).catch(() => undefined);
+    // a re-leads onto the missing path (watcher miss-threshold → resolve).
+    const reLed = await until(() =>
+      a.currentRole() === "leader" && a.localBroker() !== null && a.localBroker() !== broker1);
+    expect(reLed).toBe(true);
+    const broker2 = a.localBroker()!;
+
+    // The stale broker's check fires now (late): superseded, but fenced.
+    expect(await broker1._checkSuperseded()).toBe(true);
+    await wait(50);
+    expect(a.localBroker()).toBe(broker2);
+    expect(a.currentRole()).toBe("leader");
+
+    await a.leave();
   });
 });
 

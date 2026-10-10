@@ -318,7 +318,12 @@ export class Broker {
   // ── supersession watch (design v2 R2/R6) ──────────────────────────────
 
   private _startSupersedeWatch(): void {
+    // Pointer-based supersession only exists on POSIX rendezvous platforms:
+    // named pipes have no symlink/filename indirection (direct bind), and on
+    // direct-bind fallbacks target === sockPath — watching would false-dissolve
+    // every cycle. (Review finding 7.)
     if (!this.sockPath || !this.targetPath) return;
+    if (this.targetPath === this.sockPath) return;
     this.supersedeTimer = setInterval(() => void this._checkSuperseded(), this.supersedePollMs);
     this.supersedeTimer.unref?.();
   }
