@@ -144,6 +144,85 @@ exactly one broker generation holds live clients, every session's roster
 shows the full fleet, and cross-pair delivery ACKs — bounded by a settle
 constant (order: election backoff tail, seconds).
 
+## Design v2 (post cross-model advisory, 2026-10-10 — supersedes v1 G3/G4 rendezvous mechanics)
+
+An `openai-codex/gpt-6-astra` fresh-context review (xhigh) adjudicated v1
+with 12 findings; blocker + majors adopted, verdict "right direction, not
+sound as specified". The v1 goals, G1/G2/G5/G6, compat posture, and
+client-side semantics stand; the rendezvous mechanics change:
+
+**R1 — Symlink rendezvous over generation-unique bind targets (replaces
+blind unlink entirely).** A new-code leader binds a unique sibling
+`broker-<gen>.sock` next to the rendezvous and ATOMICALLY publishes
+`broker.sock → broker-<gen>.sock` via tmpsymlink + `rename()` (rename
+atomically replaces legacy socket files, dead files, and rival symlinks —
+there is no unlink window and no unlinked-live-listener state, ever).
+Adopted because the review REPRODUCED on this host (Node 24.21) that
+libuv `server.close()` implicitly unlinks the bind path even when a
+successor has since rebound it — v1's demote-close would have deleted the
+successor's path (blocker finding 1). With unique targets, closing a
+superseded broker can only ever unlink its OWN file. Post-publish VERIFY:
+readlink(rendezvous) must equal our target; if a racer renamed over us we
+demote ourselves (destroy our server — unlinks only our file — and follow
+the winner). Racer collision becomes benign last-writer-wins + demote,
+which IS the fencing operation (finding 2: delayed ECONNENT/REFUSED
+handlers can no longer unlink a live owner — there is no shared-file
+unlink path at all; a racer replacing the rendezvous is a supersession
+the old owner detects, not a corruption).
+
+**R2 — Pointer-based supersession (fixes baseline-acquisition race).**
+The broker's identity is its own unique file, established at ITS bind;
+supersession = readlink/lstat(rendezvous) no longer resolving to it
+(symlink elsewhere, plain socket file = legacy rebound, or missing). No
+stat-at-construction baseline (finding 3). Missing rendezvous after
+ownership = orphaned, still demotes ("orphaning, not proof a successor
+exists" — adopted wording).
+
+**R3 — Staged make-before-break (fixes identity churn + shared-buffer
+races).** Re-resolve candidates get their OWN socket + buffer + ack
+listener (staged), promoted atomically after register_ack. The path's
+generation is learned from the observer probe BEFORE registering: same
+generation as current + connection alive → RETAIN current connection
+(no `#N` churn — finding 4); different → register new, then destroy old.
+Late callbacks fenced against connection revision + disposal (finding 4).
+
+**R4 — Recovery instead of throw.** Exhausted-inconclusive elections no
+longer permanently wedge the session mesh-less (finding 7): bounded,
+jittered background retry (cap 30s) preserves today's connection until a
+replacement registers. A frozen broker may accept kernel connects yet
+never answer registration — connect success is not application health,
+so no recovery path unlinks or republishes on timeout evidence alone.
+
+**R5 — Claims narrowed (findings 5, 9, 10, 12).** Mixed-version: new-code
+islands always self-dissolve; LEGACY-broker islands persist until that
+broker restarts (rollout's final sweep covers it) — fleet convergence
+needs the sweep, not just the fix. "≤20s" is an operating target under
+stated assumptions, not a bound. `unknown_peer` means "not routed by this
+broker at this instant"; MCP wrapper gets the formatting case; `request()`
+still swallows broker ACKs by design. Audit chain is broker-local during
+splits — diagnostic evidence, not a globally ordered ledger; lifecycle
+lines carry generation + pid; audit never gates demotion. G1's uuidv7 is
+an OPAQUE equality token — ordering is never load-bearing (finding 11).
+
+**R6 — Delivery-loss window accepted (finding 8).** Supersession teardown
+may drop in-flight intra-island envelopes; `received` retains its existing
+meaning (broker wrote to the peer socket), not end-to-end processing. All
+accepted sockets — observers included — are tracked and destroyed; the
+broker is marked retiring and host/bridge ownership revoked before async
+teardown; close is idempotent and cannot clear a successor.
+
+**Orphan GC.** At bind, sibling `broker-*.sock` targets not referenced by
+the rendezvous and older than 1h are unlinked (crashed brokers' files). A
+frozen broker losing its file is unaffected operationally (its check
+reads the rendezvous, not its own file; only its close-time unlink no-ops).
+
+**Named pipes (Windows):** indirection disabled; direct-bind path keeps
+v1's honest-probe rules that still apply. The fleet is Linux.
+
+Legacy `tryConnect` keeps its null-means-no-answer contract (escalated
+3.5s worst case); cwd_lock's destructive consumption of it remains the
+documented follow-up (finding 6 adopted as scope boundary).
+
 ## Design (chosen 2026-10-10 design pass; supersedes "fix directions" above — D1→G1/G4, D2→G2, D3→G3, D4→G6)
 
 Goal: no persistent broker-generation split can survive longer than a small
