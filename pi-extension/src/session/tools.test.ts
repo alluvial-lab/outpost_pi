@@ -101,6 +101,28 @@ describe("agent_send tool (ACK protocol)", () => {
     expect(result.details).toMatchObject({ status: "denied", ok: false });
   });
 
+  test("design v2: unknown_peer NACK → NOT delivered, points at list_peers", async () => {
+    const { pi, tools } = makeMockPi();
+    const peer = makeMockPeer({
+      sendWithAck: vi.fn().mockResolvedValue(
+        { status: "unknown_peer", id: "uuid-out", target: "ghost" } satisfies AckResult,
+      ),
+    });
+    registerAgentTools(pi, () => peer);
+    const tool = tools.get("agent_send")!;
+
+    const result = await tool.execute(
+      TOOL_CALL_ID,
+      { to: "ghost", body: { x: 1 } },
+      undefined, undefined, {} as never,
+    );
+
+    expect(result.details).toMatchObject({ status: "unknown_peer", ok: false });
+    expect(
+      (result.content[0] as { type: "text"; text: string }).text,
+    ).toMatch(/not registered on this broker/i);
+  });
+
   test("unicast timeout → status=timeout, ok=false", async () => {
     const { pi, tools } = makeMockPi();
     const peer = makeMockPeer({

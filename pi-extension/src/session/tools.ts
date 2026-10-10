@@ -26,7 +26,7 @@ interface RequestInput {
   timeout_ms?: number;
 }
 
-type SendStatus = "received" | "busy" | "denied" | "timeout" | "sent" | "refused" | "invalid_envelope";
+type SendStatus = "received" | "busy" | "denied" | "timeout" | "sent" | "refused" | "invalid_envelope" | "unknown_peer";
 
 interface SendDetails {
   status: SendStatus;
@@ -301,6 +301,12 @@ function _formatAck(to: string, status: SendStatus, re: string | null | undefine
       return `NOT delivered — the broker rejected the envelope as malformed${reSuffix} ` +
         `(e.g. a non-UUID \`re\`; note a pre-fix broker drops such envelopes ` +
         `silently instead). Fix the envelope fields and resend.`;
+    case "unknown_peer":
+      return `NOT delivered — "${to}"${reSuffix} is not registered on this broker right now. ` +
+        `It may simply be offline, or the local mesh may be split across broker ` +
+        `generations (a fixed defect rollout heals this automatically; see ` +
+        `\`outpost-pi peers\` for the current roster). Verify the address with ` +
+        `list_peers before retrying.`;
     default:
       return `Sent to "${to}"${reSuffix} — status: ${status}.`;
   }

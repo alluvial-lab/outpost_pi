@@ -313,24 +313,84 @@ orphan path → re-resolve; legacy broker → passive); convergence sweep
 
 ## Scope / acceptance (to finalize in design)
 
-- [ ] Full-sweep restart (all fleet sessions incl. broker host) converges
+- [x] Full-sweep restart (all fleet sessions incl. broker host) converges
       to one generation + full roster within the settle bound (≤20s
       steady-state at production intervals; proportionally faster at
-      injected test intervals)
-- [ ] Superseded-generation client detects divergence and re-registers
-      (watcher path and unknown_peer fast-path) without operator action
-- [ ] Election never unlinks without definitive proof of death
+      injected test intervals) — `generation_convergence.test.ts` "full-sweep
+      acceptance" (leader broker death → survivors + demoted leader converge
+      onto ONE generation with the full roster)
+- [x] Superseded-generation client detects divergence and re-registers
+      (watcher path and unknown_peer fast-path) without operator action —
+      "stale island heals" + the coalesced NACK-triggered probe in `peer.ts`
+- [x] Election never unlinks without definitive proof of death
       (inconclusive probes abort, never unlink/bind); `tryConnect`
       consumers (cwd_lock, supervisor probe) keep semantics with a
       narrowed race window; cwd_lock's own steal-on-false-death semantics
-      deferred with a follow-up note
-- [ ] Broker supersession self-check dissolves stale islands (broadcast
-      + close + leader self-demotion) within one poll cycle
-- [ ] Broker register/supersede/bind/close lifecycle lands in the audit
-      chain; unicast to unknown peers NACKs `unknown_peer` (audited)
-- [ ] Mixed-version fleet (v0.13.x peers + trunk) degrades safely during
+      deferred with a follow-up note — `leader_election.test.ts` F1-honesty
+      (stalled-loop probe → `inconclusive`, listener untouched) + tri-state
+      `probePeer`; there is no shared-name unlink anywhere on POSIX
+- [x] Broker supersession self-check dissolves stale islands (broadcast
+      + close + leader self-demotion) within one poll cycle —
+      `broker_generation.test.ts` (symlink steal + legacy-socket steal →
+      retiring + successor rendezvous intact) and "superseded leader
+      self-demotes"
+- [x] Broker register/supersede/bind/close lifecycle lands in the audit
+      chain; unicast to unknown peers NACKs `unknown_peer` (audited) —
+      `broker_generation.test.ts` audit + NACK cases (NACK excluded for
+      cross-PC-prefixed targets on un-bridged brokers — legacy silent-drop
+      shape preserved for bridgeless leaders)
+- [x] Mixed-version fleet (v0.13.x peers + trunk) degrades safely during
       rollout — older clients must not wedge, per the re-UUID story's
-      paired-deployal lesson
+      paired-deployal lesson — legacy-broker compat test (generation-less
+      ack/probe → passive detection, stable identity); new-code islands
+      self-dissolve even when a legacy racer owns the path (supersede check
+      sees the plain socket file). Narrowed claim per design v2 R5:
+      LEGACY-broker islands persist until that broker restarts — the
+      rollout's final sweep covers exactly this.
+
+## Implementation notes (2026-10-10)
+
+- Execution capability: inline (outpost_pi session; live-diagnostic context
+  carried over from the incident; design v2 shaped by cross-model advisory).
+- Files changed: `src/session/leader_election.ts` (tri-state `probePeer`;
+  `joinOrLead` v2 — unique-target bind + tmpsymlink/rename publish + verify
+  + demote-on-loss; `tryConnect` internally escalated; orphan GC;
+  `rendezvousOwner`), `src/session/broker.ts` (generation on register_ack /
+  both list_peers surfaces / joined+left broadcasts; `generation_superseded`
+  broadcast + supersede poll + dissolve with all-conn teardown + observer
+  tracking + idempotent close; `unknown_peer` NACK with un-bridged-cross-PC
+  exclusion; lifecycle audit {event, generation, pid}; shared chained audit
+  writer extracted), `src/session/peer.ts` (per-connection staging with
+  revision fencing; make-before-break re-resolve with same-generation
+  retain; divergence watcher with miss threshold + jitter; coalesced
+  unknown_peer fast-path; jittered background rejoin retry replacing
+  permanent throw; `AckStatus` + `unknown_peer`), `src/session/tools.ts` +
+  `src/mcp/mesh_server.ts` (`unknown_peer` formatting on both send
+  surfaces), `src/session/mesh_node.ts` (interval pass-through),
+  `src/session/e2e.test.ts` (replaced two raw-private-socket reply hacks
+  with the public `send(from, body, re)`), `PROTOCOL.md` (ACK table row +
+  rendezvous-protocol section).
+- Tests added: `leader_election.test.ts` +6 (probe honesty incl.
+  stalled-loop determinism, definitive death, symlink publish shape, legacy
+  socket follow, dead-path 2-racer single-leader, **the libuv
+  close-unlinks-successor regression test**), `broker_generation.test.ts`
+  (new — generation surfaces, NACK + audit, supersede via symlink steal and
+  via legacy socket, lifecycle audit lines), `generation_convergence.test.ts`
+  (new — stale-island heal, leader self-demotion, full-sweep acceptance,
+  legacy-broker passive compat, same-generation retain), `tools.test.ts`
+  (+1 unknown_peer framing).
+- Verification: `corepack pnpm typecheck` ✓, full `vitest run` 1229 passed /
+  3 pre-existing skips ✓, `corepack pnpm build` ✓.
+- Discrepancies from design: (1) unknown_peer NACK needed an exclusion for
+  cross-PC-prefixed targets on un-bridged brokers — an un-bridged broker
+  cannot judge another PC's roster, and bridgeless leaders are where
+  relay-side ACK injection must remain possible (caught by the existing
+  cross-PC ACK e2e test). (2) The e2e request/reply tests reached into the
+  renamed private socket field; fixed by moving them to the public
+  correlation API rather than renaming back.
+- Adjacent issues parked: cwd_lock's destructive consumption of
+  `tryConnect`-null (lock steal on a false death) — narrowed, not repaired;
+  needs its own semantics pass (a false refusal is as bad as a stolen lock).
 
 ## Postscript: second + third live manifestations (2026-10-09 20:33–20:35Z)
 

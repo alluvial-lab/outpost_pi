@@ -1,4 +1,5 @@
 import type { Socket } from "node:net";
+import { createConnection } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { type Envelope, envelope, parse, serialize, EnvelopeError } from "./envelope.js";
 import { joinOrLead, type ElectionResult } from "./leader_election.js";
@@ -12,6 +13,15 @@ import { Broker } from "./broker.js";
  *
  * Failover: when the leader dies, follower socket emits `close`. Remaining
  * peers re-run `joinOrLead`. One becomes the new leader; others reconnect.
+ *
+ * Design v2 (`story-mesh-broker-generation-split`): connections are STAGED —
+ * each socket owns its buffer, pre-ack listener, and a monotonically
+ * increasing revision, so late callbacks from a replaced connection can
+ * never corrupt a fresh handshake (the make-before-break re-join registers
+ * the candidate BEFORE destroying the old socket). A divergence watcher
+ * probes the rendezvous path with the unregistered `list_peers` observer
+ * probe and re-resolves when the path's broker generation no longer matches
+ * the one this peer registered under — stale islands dissolve on their own.
  */
 export type MessageHandler = (env: Envelope) => void;
 /** Receive notification after a successful post-failover rejoin, not during initial startup. */
@@ -32,14 +42,29 @@ export interface SessionPeerOptions {
   auditPath?: string;
   /** Per-request default timeout (ms). Override per call if needed. */
   defaultTimeoutMs?: number;
+  /** Divergence-watcher interval (ms). Default 10s; inject smaller in tests. */
+  generationProbeMs?: number;
+  /** Passed through to the hosted Broker's supersession poll. Default 5s. */
+  supersedePollMs?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const ACK_TIMEOUT_MS = 5_000;
 const FAILOVER_RETRY_MS = 100;
+const DEFAULT_GENERATION_PROBE_MS = 10_000;
+/** Consecutive rendezvous misses before a re-resolve (suspicion, not proof —
+ *  one stall can correlate two ticks). */
+const GENERATION_MISS_THRESHOLD = 2;
+/** Whole-probe budget (connect + reply). */
+const GENERATION_PROBE_BUDGET_MS = 5_000;
+/** Minimum spacing between unknown_peer-triggered probes (coalescing). */
+const NACK_PROBE_MIN_INTERVAL_MS = 2_000;
+/** Background rejoin backoff after an election failure: floor/cap, jittered. */
+const REJOIN_BACKOFF_FLOOR_MS = 1_000;
+const REJOIN_BACKOFF_CAP_MS = 30_000;
 
 /** Classify the broker acknowledgement for a unicast delivery attempt. */
-export type AckStatus = "received" | "busy" | "denied" | "timeout" | "invalid_envelope";
+export type AckStatus = "received" | "busy" | "denied" | "timeout" | "invalid_envelope" | "unknown_peer";
 
 /** Report the terminal acknowledgement result; timeout means no broker confirmation arrived. */
 export interface AckResult {
@@ -52,8 +77,18 @@ export interface AckResult {
 
 interface AckBody {
   type: "ack";
-  status: "received" | "busy" | "denied";
+  status: "received" | "busy" | "denied" | "unknown_peer";
   target: string;
+}
+
+/** One live (or staged) broker connection. All mutable per-connection state
+ *  lives here — never on the peer — so a replaced connection's late events
+ *  are fenced by identity comparison against `this.conn`. */
+interface ConnState {
+  socket: Socket;
+  buf: string;
+  /** Pre-register-ack line listener (register handshake), else null. */
+  preAck: ((raw: unknown) => void) | null;
 }
 
 /** Own a peer's broker connection, pending requests, and failover rejoin lifecycle until {@link leave} tears them down. */
@@ -63,13 +98,15 @@ export class SessionPeer {
    *  collision suffix). Used for display + self-filtering. */
   private assignedName: string;
   /** Canonical address assigned by the broker (`[<pc>:]<cwd>@<name>`, or just
-   *  the name for a legacy broker). This is the routing/identity key the mesh
-   *  uses; callers ECHO it, never compose it. */
+   * the name for a legacy broker). This is the routing/identity key the mesh
+   * uses; callers ECHO it, never compose it. */
   private assignedAddress: string;
+  /** Generation of the broker this peer is registered under. Undefined
+   * against a legacy broker (detection off) or before the first register. */
+  private registeredGeneration: string | undefined;
   private role: "leader" | "follower" = "follower";
   private broker: Broker | null = null;
-  private socket: Socket | null = null;
-  private buf = "";
+  private conn: ConnState | null = null;
   /** Map of in-flight request ids → resolver. Used by `request()`. */
   private readonly pending = new Map<string, {
     resolve: (env: Envelope) => void;
@@ -84,6 +121,15 @@ export class SessionPeer {
   private readonly handlers = new Set<MessageHandler>();
   private readonly reconnectHandlers = new Set<ReconnectHandler>();
   private leftFlag = false;
+  /** Single-flight chain for re-resolves (watcher / failover / NACK all funnel here). */
+  private resolveChain: Promise<void> = Promise.resolve();
+  /** Divergence watcher scheduling handle (recursive timeout, jittered). */
+  private watcherTimer: ReturnType<typeof setTimeout> | null = null;
+  private consecutiveMisses = 0;
+  private lastNackProbeAt = 0;
+  /** Background rejoin timer after an election failure. */
+  private rejoinTimer: ReturnType<typeof setTimeout> | null = null;
+  private rejoinBackoff = REJOIN_BACKOFF_FLOOR_MS;
 
   constructor(opts: SessionPeerOptions) {
     this.opts = opts;
@@ -95,7 +141,9 @@ export class SessionPeer {
 
   /** Joins or leads the session at `sockPath`. Resolves with the assigned name. */
   async start(): Promise<string> {
-    return this._joinOrLead();
+    const name = await this._rejoin("initial-start");
+    this._startWatcher();
+    return name;
   }
 
   /** Returns the clean leaf name as assigned by the broker (after any `#N`). */
@@ -104,8 +152,8 @@ export class SessionPeer {
   }
 
   /** Returns the canonical address (`[<pc>:]<cwd>@<name>`) assigned by the
-   *  broker — the key the mesh routes on. Equals `name()` against a legacy
-   *  broker that returns no address. */
+   * broker — the key the mesh routes on. Equals `name()` against a legacy
+   * broker that returns no address. */
   address(): string {
     return this.assignedAddress;
   }
@@ -115,9 +163,15 @@ export class SessionPeer {
     return this.role;
   }
 
+  /** Generation of the broker this peer is registered under (undefined when
+   * the broker is legacy or before the first register). Equality-only token. */
+  generation(): string | undefined {
+    return this.registeredGeneration;
+  }
+
   /** Returns the locally-hosted Broker when this peer is the leader, or
-   *  null when it's a follower. Wave 25C uses this to attach the
-   *  cross-PC router. */
+   * null when it's a follower. Wave 25C uses this to attach the
+   * cross-PC router. */
   localBroker(): Broker | null {
     return this.broker;
   }
@@ -142,8 +196,10 @@ export class SessionPeer {
 
   /**
    * Unicast send + await broker ACK. Returns the ACK status:
-   *   - `received` — peer was idle, envelope delivered, will be processed soon
-   *   - `busy`     — peer mid-turn, envelope dropped; sender is owner of retry
+   *   - `received` — envelope written to the peer's socket; will be processed soon
+   *   - `unknown_peer` — target not registered on THIS broker at this instant
+   *     (peer offline, or the roster may be split — check `list_peers`)
+   *   - `busy`     — legacy status; no longer produced (plan/34)
    *   - `denied`   — peer explicitly refused (reserved; no producer in MVP)
    *   - `timeout`  — no ACK within `timeoutMs`; treat as transport error
    *
@@ -225,79 +281,157 @@ export class SessionPeer {
     await this._teardownConn();
     this.opts.name = newName;
     this.assignedName = newName;
-    return this._joinOrLead();
+    await this._rejoin("rename");
+    return this.assignedName;
   }
 
   async leave(): Promise<void> {
     this.leftFlag = true;
+    this._stopWatcher();
+    if (this.rejoinTimer !== null) {
+      clearTimeout(this.rejoinTimer);
+      this.rejoinTimer = null;
+    }
     await this._teardownConn();
   }
 
   // ── join / failover loop ──────────────────────────────────────────────────
 
-  private async _joinOrLead(): Promise<string> {
-    const result: ElectionResult = await joinOrLead(this.opts.sockPath);
-    if (result.role === "leader") {
-      this.role = "leader";
-      this.broker = new Broker({
-        server: result.server,
-        auditPath: this.opts.auditPath,
-      });
-      // Leader also registers itself as a peer so other followers see it +
-      // can address it. We create a self-loopback socket via the broker's
-      // internal API: easiest is to open a real client connection back to
-      // our own server.
-      return this._registerAsClient();
-    } else {
-      this.role = "follower";
-      this._wireSocket(result.socket);
-      return this._registerOver(result.socket);
+  /** Single-flight wrapper: every re-resolve trigger (watcher mismatch,
+   *  rendezvous misses, socket close, unknown_peer NACK) funnels through one
+   *  serialized chain so concurrent triggers can never double-register. */
+  private _scheduleResolve(reason: string): void {
+    this.resolveChain = this.resolveChain.then(
+      () => this._resolvePath(reason),
+      () => this._resolvePath(reason),
+    );
+  }
+
+  private async _resolvePath(reason: string): Promise<void> {
+    if (this.leftFlag) return;
+
+    // Same-generation retain (design v2 R3): when the current connection is
+    // alive and the rendezvous still serves OUR generation, a watcher or
+    // failover trigger was a false alarm — keep the connection (and the
+    // broker-assigned identity) instead of re-registering as `#N`.
+    const connAlive = this.conn !== null && !this.conn.socket.destroyed;
+    if (connAlive) {
+      const probe = await this._probeGeneration();
+      if (probe === "match") return;
+      if (probe === "legacy" && this.registeredGeneration === undefined) return;
+      // "mismatch" | "miss" | "legacy-with-generation" | "error" → re-resolve.
+    }
+
+    try {
+      await this._rejoin(reason);
+      this.rejoinBackoff = REJOIN_BACKOFF_FLOOR_MS;
+      // The new broker's peers map starts fresh — consumers must re-query
+      // any cached state (peer count, etc.) that depended on the old broker.
+      for (const h of this.reconnectHandlers) {
+        try { h(); } catch { /* handler errors don't break peer */ }
+      }
+    } catch {
+      // Election exhausted (inconclusive probes, wedged rendezvous): never
+      // destructive — schedule a jittered background retry and keep whatever
+      // connection we still have (design v2 R4).
+      this._scheduleRejoinRetry();
     }
   }
 
-  private async _registerAsClient(): Promise<string> {
-    const { createConnection } = await import("node:net");
-    const sock = createConnection(this.opts.sockPath);
-    await new Promise<void>((resolve, reject) => {
-      sock.once("connect", () => resolve());
-      sock.once("error", reject);
-    });
-    this._wireSocket(sock);
-    return this._registerOver(sock);
+  private _scheduleRejoinRetry(): void {
+    if (this.leftFlag || this.rejoinTimer !== null) return;
+    const backoff = this.rejoinBackoff;
+    this.rejoinBackoff = Math.min(this.rejoinBackoff * 2, REJOIN_BACKOFF_CAP_MS);
+    const jittered = backoff + Math.random() * (backoff / 4);
+    this.rejoinTimer = setTimeout(() => {
+      this.rejoinTimer = null;
+      this._scheduleResolve("rejoin-retry");
+    }, jittered);
+    this.rejoinTimer.unref?.();
   }
 
-  private _wireSocket(sock: Socket): void {
-    this.socket = sock;
-    this.buf = "";
+  /** One joinOrLead + staged register + atomic promote. Throws on election
+   *  failure (caller owns the retry). The OLD connection is destroyed only
+   *  after the candidate registered — make-before-break. */
+  private async _rejoin(reason: string): Promise<string> {
+    void reason;
+    const result: ElectionResult = await joinOrLead(this.opts.sockPath);
+
+    if (result.role === "leader") {
+      this.role = "leader";
+      // Take over the local broker role; onSuperseded clears it when the
+      // rendezvous stops pointing at us (the loopback client's close then
+      // drives this peer's re-resolve through the normal failover path).
+      this.broker = new Broker({
+        server: result.server,
+        auditPath: this.opts.auditPath,
+        sockPath: this.opts.sockPath,
+        targetPath: result.leaderInfo.target,
+        generation: result.leaderInfo.generation,
+        supersedePollMs: this.opts.supersedePollMs,
+        onSuperseded: () => { this.broker = null; this.role = "follower"; },
+      });
+      // Leader also registers itself as a peer so other followers see it +
+      // can address it: a real client connection back to our own server.
+      const sock = createConnection(this.opts.sockPath);
+      await new Promise<void>((resolve, reject) => {
+        sock.once("connect", () => resolve());
+        sock.once("error", reject);
+      });
+      return await this._registerStaged(sock);
+    }
+
+    this.role = "follower";
+    return await this._registerStaged(result.socket);
+  }
+
+  /** Stage a candidate connection: wire its handlers to its OWN state, run
+   *  the register handshake, and only then promote it to `this.conn`
+   *  (destroying the previous connection, whose late events are fenced by
+   *  the identity check in its close handler). */
+  private _registerStaged(sock: Socket): Promise<string> {
+    const staged: ConnState = { socket: sock, buf: "", preAck: null };
     sock.setEncoding("utf8");
-    sock.on("data", (chunk: string) => this._onData(chunk));
-    sock.on("close", () => this._onSocketClose(sock));
+    sock.on("data", (chunk: string) => this._onData(staged, chunk));
+    sock.on("close", () => this._onConnClose(staged));
     sock.on("error", () => { /* close will follow */ });
-  }
 
-  private _registerOver(sock: Socket): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       // The first inbound line MUST be the register_ack. Buffer-aware.
-      const wait = setTimeout(() => reject(new Error("register_ack timeout")), 5_000);
-      const onceListener = (raw: unknown) => {
+      const wait = setTimeout(() => {
+        staged.preAck = null;
+        reject(new Error("register_ack timeout"));
+      }, 5_000);
+      staged.preAck = (raw: unknown) => {
         clearTimeout(wait);
         // plan/38: a new broker returns `address_assigned` (canonical key) +
-        // `name_assigned` (clean leaf). Read both with cross-fallback so we work
-        // against either a new broker OR a legacy one (only `name_assigned`,
-        // where address == name).
-        const ack = raw as { type?: string; name_assigned?: string; address_assigned?: string };
+        // `name_assigned` (clean leaf). Read both with cross-fallback so we
+        // work against either a new broker OR a legacy one (only
+        // `name_assigned`, where address == name).
+        const ack = raw as {
+          type?: string; name_assigned?: string; address_assigned?: string; generation?: string;
+        };
         const name = typeof ack?.name_assigned === "string" ? ack.name_assigned : ack?.address_assigned;
         const address = typeof ack?.address_assigned === "string" ? ack.address_assigned : ack?.name_assigned;
         if (ack && ack.type === "register_ack" && typeof name === "string" && typeof address === "string") {
+          staged.preAck = null;
           this.assignedName = name;
           this.assignedAddress = address;
-          this._preAckListener = null;
+          this.registeredGeneration = typeof ack.generation === "string" ? ack.generation : undefined;
+          // Promote: the staged connection becomes THE connection; the old
+          // one (if any) is destroyed — its close handler sees `this.conn`
+          // already swapped and stays a no-op.
+          const previous = this.conn;
+          this.conn = staged;
+          if (previous && previous !== staged) {
+            try { previous.socket.destroy(); } catch { /* already gone */ }
+          }
+          this.consecutiveMisses = 0;
           resolve(name);
         } else {
           reject(new Error(`expected register_ack, got: ${JSON.stringify(raw)}`));
         }
       };
-      this._preAckListener = onceListener;
       const req = JSON.stringify({
         type: "register",
         name: this.opts.name,
@@ -310,30 +444,29 @@ export class SessionPeer {
         sock.write(req);
       } catch (e) {
         clearTimeout(wait);
+        staged.preAck = null;
         reject(e as Error);
       }
     });
   }
 
-  private _preAckListener: ((raw: unknown) => void) | null = null;
-
-  private _onData(chunk: string): void {
-    this.buf += chunk;
+  private _onData(conn: ConnState, chunk: string): void {
+    conn.buf += chunk;
     let nl: number;
-    while ((nl = this.buf.indexOf("\n")) >= 0) {
-      const line = this.buf.slice(0, nl);
-      this.buf = this.buf.slice(nl + 1);
+    while ((nl = conn.buf.indexOf("\n")) >= 0) {
+      const line = conn.buf.slice(0, nl);
+      conn.buf = conn.buf.slice(nl + 1);
       if (!line) continue;
-      this._handleLine(line);
+      this._handleLine(conn, line);
     }
   }
 
-  private _handleLine(line: string): void {
+  private _handleLine(conn: ConnState, line: string): void {
     // Before register_ack: parse loosely as an ack control message.
-    if (this._preAckListener) {
+    if (conn.preAck) {
       try {
         const parsed = JSON.parse(line) as unknown;
-        this._preAckListener(parsed);
+        conn.preAck(parsed);
       } catch {
         // Garbage during register window — ignore.
       }
@@ -370,6 +503,10 @@ export class SessionPeer {
           const status = ackBody.status as AckBody["status"];
           slot.resolve({ status, id: env.re, target: ackBody.target });
         }
+        // Design v2 (G2 fast-path): an unknown_peer NACK means "not routed
+        // by this broker at this instant" — probe the rendezvous right away
+        // (coalesced) so a split heals at send speed instead of watcher speed.
+        if (ackBody.status === "unknown_peer") this._maybeProbeAfterNack();
         return;
       }
     }
@@ -392,41 +529,31 @@ export class SessionPeer {
   }
 
   private async _writeEnvelope(env: Envelope): Promise<void> {
-    if (!this.socket || this.socket.destroyed) {
+    if (!this.conn || this.conn.socket.destroyed) {
       throw new Error("session peer not connected");
     }
-    this.socket.write(serialize(env));
+    this.conn.socket.write(serialize(env));
   }
 
-  private async _onSocketClose(closedSock: Socket): Promise<void> {
+  private _onConnClose(closed: ConnState): void {
     if (this.leftFlag) return;  // intentional leave
-    // Only the CURRENT socket dying is a real failover. A close from a socket
-    // we've already replaced — `rename()` (teardown + rejoin) or a prior
-    // reconnect — must NOT trigger another `_joinOrLead`, or we'd double-
-    // register (the broker suffixes the second as `#N`) and leave an orphaned
-    // still-open socket as a ghost peer. `this.socket` is null mid-rename
-    // (teardown done, rejoin in flight) or already the new socket — either way
-    // `!== closedSock`, so we skip. Genuine leader death: `this.socket` is still
-    // the (now-closed) follower socket → identity matches → we re-elect.
-    if (this.socket !== closedSock) return;
+    // Only the CURRENT connection dying is a real failover. A close from a
+    // connection we've already replaced (rename, re-resolve promote, or a
+    // prior reconnect) must NOT trigger another rejoin — the promote step
+    // destroyed it deliberately and its events are fenced here.
+    if (this.conn !== closed) return;
     // Attempt to re-elect once. New leader will bind sockPath; we either
     // become leader ourselves or rejoin as follower.
-    await delay(FAILOVER_RETRY_MS);
-    if (this.leftFlag || this.socket !== closedSock) return;
-    try {
-      await this._joinOrLead();
-      // The new broker's peers map starts fresh — consumers must re-query
-      // any cached state (peer count, etc.) that depended on the old broker.
-      for (const h of this.reconnectHandlers) {
-        try { h(); } catch { /* handler errors don't break peer */ }
-      }
-    } catch { /* election failed; peer stuck in disconnected state */ }
+    void delay(FAILOVER_RETRY_MS).then(() => {
+      if (this.leftFlag || this.conn !== closed) return;
+      this._scheduleResolve("conn-closed");
+    });
   }
 
   private async _teardownConn(): Promise<void> {
-    if (this.socket) {
-      try { this.socket.destroy(); } catch { /* ignored */ }
-      this.socket = null;
+    if (this.conn) {
+      try { this.conn.socket.destroy(); } catch { /* ignored */ }
+      this.conn = null;
     }
     if (this.broker) {
       try { await this.broker.close(); } catch { /* ignored */ }
@@ -442,5 +569,119 @@ export class SessionPeer {
       slot.resolve({ status: "timeout", id: "" });
     }
     this.ackPending.clear();
+  }
+
+  // ── divergence watcher (design v2 G2/R3) ─────────────────────────────────
+
+  private _startWatcher(): void {
+    if (this.leftFlag || this.opts.generationProbeMs === 0) return;
+    this._armWatcher(Math.random() * (this.opts.generationProbeMs ?? DEFAULT_GENERATION_PROBE_MS));
+  }
+
+  private _stopWatcher(): void {
+    if (this.watcherTimer !== null) {
+      clearTimeout(this.watcherTimer);
+      this.watcherTimer = null;
+    }
+  }
+
+  private _armWatcher(delayMs: number): void {
+    this._stopWatcher();
+    this.watcherTimer = setTimeout(() => {
+      this.watcherTimer = null;
+      void this._watchTick();
+    }, delayMs);
+    this.watcherTimer.unref?.();
+  }
+
+  private async _watchTick(): Promise<void> {
+    if (this.leftFlag) return;
+    const interval = this.opts.generationProbeMs ?? DEFAULT_GENERATION_PROBE_MS;
+    try {
+      const probe = await this._probeGeneration();
+      if (this.leftFlag) return;
+      switch (probe) {
+        case "match":
+        case "legacy":
+          this.consecutiveMisses = 0;
+          break;
+        case "mismatch":
+          this.consecutiveMisses = 0;
+          this._scheduleResolve("generation-mismatch");
+          break;
+        case "miss":
+        case "error":
+          this.consecutiveMisses++;
+          if (this.consecutiveMisses >= GENERATION_MISS_THRESHOLD) {
+            this.consecutiveMisses = 0;
+            this._scheduleResolve("rendezvous-miss");
+          }
+          break;
+      }
+    } catch {
+      /* probe trouble alone never mutates state */
+    }
+    if (!this.leftFlag) this._armWatcher(interval * (0.9 + Math.random() * 0.2));
+  }
+
+  /** Outcome of one rendezvous generation probe. `error` (whole-probe
+   *  budget exhausted) is a miss for counting purposes, never a mismatch. */
+  private _probeGeneration(): Promise<"match" | "mismatch" | "legacy" | "miss" | "error"> {
+    return new Promise((resolve) => {
+      let settled = false;
+      let buf = "";
+      const settle = (val: "match" | "mismatch" | "legacy" | "miss" | "error") => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { sock.destroy(); } catch { /* ignored */ }
+        resolve(val);
+      };
+      const sock = createConnection({ path: this.opts.sockPath });
+      const timer = setTimeout(() => settle("error"), GENERATION_PROBE_BUDGET_MS);
+      sock.setEncoding("utf8");
+      sock.once("connect", () => {
+        try {
+          sock.write(JSON.stringify({ type: "list_peers" }) + "\n");
+        } catch {
+          settle("error");
+        }
+      });
+      sock.once("error", () => settle("miss"));
+      sock.on("data", (chunk: string) => {
+        buf += chunk;
+        const nl = buf.indexOf("\n");
+        if (nl < 0) return;
+        const line = buf.slice(0, nl);
+        try {
+          const env = parse(line) as Envelope & {
+            body?: { type?: string; generation?: string } | null;
+          };
+          const body = env.body;
+          if (body && body.type === "list_peers_reply") {
+            const gen = body.generation;
+            if (typeof gen !== "string") settle("legacy");
+            else if (gen === this.registeredGeneration) settle("match");
+            else settle("mismatch");
+          } else {
+            settle("error");
+          }
+        } catch {
+          settle("error");
+        }
+      });
+    });
+  }
+
+  /** Coalesced immediate probe after an unknown_peer NACK: at most one per
+   *  NACK_PROBE_MIN_INTERVAL_MS; skips when a watcher probe or resolve is
+   *  already in flight (the single-flight chain covers the resolve side). */
+  private _maybeProbeAfterNack(): void {
+    const now = Date.now();
+    if (now - this.lastNackProbeAt < NACK_PROBE_MIN_INTERVAL_MS) return;
+    this.lastNackProbeAt = now;
+    void this._probeGeneration().then((probe) => {
+      if (probe === "mismatch") this._scheduleResolve("nack-mismatch");
+    });
   }
 }

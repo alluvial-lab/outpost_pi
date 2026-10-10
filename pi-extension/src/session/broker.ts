@@ -1,8 +1,9 @@
 import type { Server, Socket } from "node:net";
 import { appendFile, mkdir, rename, stat, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { type Envelope, parse, serialize, uuidv7, EnvelopeError } from "./envelope.js";
 import { sanitizeSegment } from "./local_config.js";
+import { rendezvousOwner } from "./leader_election.js";
 
 /**
  * Structured view of one mesh peer (plan/38). The `address` is the canonical
@@ -85,6 +86,21 @@ export interface BrokerOptions {
   auditPath?: string;
   /** Optional callback invoked after each successful route (testing/observability). */
   onRouted?: (env: Envelope, deliveredTo: string[]) => void;
+  /** Rendezvous path this broker was elected at (design v2). When set
+   *  together with `targetPath`, the broker self-checks every
+   *  `supersedePollMs` that the rendezvous still points at its own unique
+   *  target; on mismatch it dissolves (broadcast + close + notify host). */
+  sockPath?: string;
+  /** This broker's unique bind target (`broker-<gen>.sock`). */
+  targetPath?: string;
+  /** Incarnation token; minted when absent. Equality-only semantics. */
+  generation?: string;
+  /** Supersession poll interval (default 5s; inject smaller in tests). */
+  supersedePollMs?: number;
+  /** Notified after a supersession dissolve completes teardown steps that
+   *  are synchronous (audit/broadcast are fire-and-forget); the host uses it
+   * to clear leader state. */
+  onSuperseded?: () => void;
 }
 
 /**
@@ -149,11 +165,11 @@ function auditRecipients(value: unknown): string[] {
     .map((recipient) => recipient.slice(0, BROKER_AUDIT_MAX_FIELD_LENGTH));
 }
 
-type AckStatus = "received" | "denied" | "invalid_envelope";
+type AckStatus = "received" | "denied" | "invalid_envelope" | "unknown_peer";
 
 interface AckBody {
   type: "ack";
-  status: "received" | "denied" | "invalid_envelope";
+  status: "received" | "denied" | "invalid_envelope" | "unknown_peer";
   target: string;
 }
 
@@ -173,10 +189,13 @@ interface RegisterAck {
    *  collision). New clients use it for display; for a legacy peer (no cwd)
    *  it equals `address_assigned`. */
   name_assigned: string;
+  /** Broker incarnation token (design v2) — additive; legacy clients ignore
+   *  it, new clients use it as their registered-generation equality token. */
+  generation?: string;
 }
 
 interface SystemBody {
-  type: "peer_joined" | "peer_left" | "list_peers_reply";
+  type: "peer_joined" | "peer_left" | "generation_superseded" | "list_peers_reply";
   /** Compat: carries the peer's ADDRESS (the Map key), not the bare name. */
   name?: string;
   /** Explicit address (plan/38) for clients that prefer the typed field. */
@@ -185,23 +204,58 @@ interface SystemBody {
   peers?: string[];
   /** Structured roster (plan/38) — clients group by `cwd`/`pc` without parsing. */
   peers_detailed?: PeerInfo[];
+  /** Incarnation token of the emitting broker (design v2, additive). */
+  generation?: string;
 }
 
 /** Own a leader's UDS peer registry and route local or delegated cross-PC envelopes until {@link close} releases its sockets. */
 export class Broker {
   private readonly peers = new Map<string, PeerConn>();
+  /** Every accepted connection — registered peers AND unregistered observer
+   *  probes — so teardown (close/dissolve) can never strand a socket. */
+  private readonly conns = new Set<PeerConn>();
   private readonly auditPath?: string;
   private readonly onRouted?: BrokerOptions["onRouted"];
   private readonly server: Server;
   /** Plan/25 Wave C: optional handoff for cross-PC routing. Null = local only. */
   private remoteRouter: RemoteRouter | null = null;
   private auditWrite: Promise<void> = Promise.resolve();
+  /** Opaque incarnation token (design v2 R5: equality-only, never ordered). */
+  private readonly generation: string;
+  /** Rendezvous supersession watch (design v2 R2). Undefined → no watch
+   *  (legacy embeds, tests, named-pipe platforms). */
+  private readonly sockPath?: string;
+  /** This broker's unique bind target — the rendezvous must point here. */
+  private readonly targetPath?: string;
+  private readonly supersedePollMs: number;
+  private supersedeTimer: ReturnType<typeof setInterval> | null = null;
+  private dissolving = false;
+  private closed = false;
+  private readonly onSuperseded?: () => void;
 
   constructor(opts: BrokerOptions) {
     this.server = opts.server;
     this.auditPath = opts.auditPath;
     this.onRouted = opts.onRouted;
+    this.generation = opts.generation ?? uuidv7();
+    this.sockPath = opts.sockPath;
+    this.targetPath = opts.targetPath;
+    this.supersedePollMs = opts.supersedePollMs ?? 5_000;
+    this.onSuperseded = opts.onSuperseded;
     this.server.on("connection", (socket) => this._handleConnection(socket));
+    this._startSupersedeWatch();
+    void this._appendLifecycle("bind", { target: this.targetPath ?? null });
+  }
+
+  /** This broker incarnation's generation token (opaque, equality-only). */
+  getGeneration(): string {
+    return this.generation;
+  }
+
+  /** True once supersession teardown or close has begun — callers must not
+   *  route or register through a retiring broker. */
+  isRetiring(): boolean {
+    return this.dissolving || this.closed;
   }
 
   /** Attach (or detach with null) a cross-PC router. Idempotent. */
@@ -249,15 +303,76 @@ export class Broker {
   }
 
   async close(): Promise<void> {
-    for (const p of this.peers.values()) p.socket.destroy();
+    if (this.closed) return;
+    this.closed = true;
+    this._stopSupersedeWatch();
+    void this._appendLifecycle("close", {});
+    for (const c of this.conns) {
+      try { c.socket.destroy(); } catch { /* already gone */ }
+    }
+    this.conns.clear();
     this.peers.clear();
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
+  }
+
+  // ── supersession watch (design v2 R2/R6) ──────────────────────────────
+
+  private _startSupersedeWatch(): void {
+    if (!this.sockPath || !this.targetPath) return;
+    this.supersedeTimer = setInterval(() => void this._checkSuperseded(), this.supersedePollMs);
+    this.supersedeTimer.unref?.();
+  }
+
+  private _stopSupersedeWatch(): void {
+    if (this.supersedeTimer !== null) {
+      clearInterval(this.supersedeTimer);
+      this.supersedeTimer = null;
+    }
+  }
+
+  /** One rendezvous ownership check. Exposed for tests. Superseded iff the
+   *  rendezvous exists and does not point at our unique target (a rival's
+   *  symlink or a legacy socket file), or is gone entirely (orphaned).
+ *  `"unknown"` read errors are NOT supersession — never demote on an
+   *  unreadable state. */
+  async _checkSuperseded(): Promise<boolean> {
+    if (this.dissolving || this.closed) return false;
+    if (!this.sockPath || !this.targetPath) return false;
+    const owner = await rendezvousOwner(this.sockPath);
+    if (owner === "unknown") return false;
+    if (owner !== basename(this.targetPath)) {
+      void this._dissolve(owner === null ? "orphaned" : owner === "legacy" ? "replaced-legacy" : "replaced");
+      return true;
+    }
+    return false;
+  }
+
+  /** Supersession teardown: audit, tell the island, destroy every
+   *  connection (registered peers AND observers), close the listener —
+   *  which, bound to our UNIQUE target, can only unlink our own file — and
+   *  hand the host its demotion. In-flight intra-island envelopes may be
+   *  lost (accepted, documented: `received` means broker-to-socket write,
+   *  not end-to-end processing). */
+  private async _dissolve(reason: string): Promise<void> {
+    if (this.dissolving || this.closed) return;
+    this.dissolving = true;
+    this._stopSupersedeWatch();
+    void this._appendLifecycle("superseded", { reason });
+    this._broadcastSystem({ type: "generation_superseded", generation: this.generation }, "");
+    for (const c of this.conns) {
+      try { c.socket.destroy(); } catch { /* already gone */ }
+    }
+    this.conns.clear();
+    this.peers.clear();
+    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+    this.onSuperseded?.();
   }
 
   // ── connection lifecycle ──────────────────────────────────────────────────
 
   private _handleConnection(socket: Socket): void {
     const conn: PeerConn = { name: "", cwd: "", address: "", socket, buf: "" };
+    this.conns.add(conn);
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => this._onData(conn, chunk));
     socket.on("close", () => this._onClose(conn));
@@ -385,13 +500,14 @@ export class Broker {
     // `name_assigned` doubles as the compat alias: for a legacy peer it equals
     // `address_assigned` (cwd empty → address == name), so old clients that read
     // `name_assigned` still get a routable identity.
-    const ack: RegisterAck = { type: "register_ack", address_assigned: address, name_assigned: name };
+    const ack: RegisterAck = { type: "register_ack", address_assigned: address, name_assigned: name, generation: this.generation };
     try {
       conn.socket.write(JSON.stringify(ack) + "\n");
     } catch { /* peer hung up */ }
 
     // Notify others (peer_joined broadcast). The field carries the ADDRESS.
-    this._broadcastSystem({ type: "peer_joined", name: address, address }, address);
+    this._broadcastSystem({ type: "peer_joined", name: address, address, generation: this.generation }, address);
+    void this._appendLifecycle("register", { address });
   }
 
   /**
@@ -421,6 +537,7 @@ export class Broker {
         type: "list_peers_reply",
         peers: this._allPeerNames(),
         peers_detailed: this._allPeerInfos(),
+        generation: this.generation,
       } as SystemBody,
     };
     try { conn.socket.write(serialize(reply)); } catch { /* probe hung up */ }
@@ -476,9 +593,11 @@ export class Broker {
   }
 
   private _onClose(conn: PeerConn): void {
+    this.conns.delete(conn);
     if (!conn.address) return;
     this.peers.delete(conn.address);
-    this._broadcastSystem({ type: "peer_left", name: conn.address, address: conn.address }, conn.address);
+    void this._appendLifecycle("unregister", { address: conn.address });
+    this._broadcastSystem({ type: "peer_left", name: conn.address, address: conn.address, generation: this.generation }, conn.address);
   }
 
   // ── routing ───────────────────────────────────────────────────────────────
@@ -509,9 +628,11 @@ export class Broker {
     // busy-drop and `busy` is no longer a possible ACK status. Unicast sends
     // to an online peer always ACK `received`.
     let ackStatus: AckStatus | "none" = "none";
+    let matchedAny = false;
     for (const targetName of targets) {
       const peer = this.peers.get(targetName);
-      if (!peer) continue;  // unknown peer: silent drop (sender times out)
+      if (!peer) continue;  // see the unknown_peer NACK below for unicast
+      matchedAny = true;
 
       try {
         peer.socket.write(line);
@@ -523,6 +644,25 @@ export class Broker {
       } catch {
         // peer dropped mid-write — close handler will fire; treat as silent
       }
+    }
+
+    // Design v2 (F4): unicast to an address this broker does not know is NO
+    // LONGER a silent drop — NACK `unknown_peer` so the sender can
+    // distinguish "not routed by THIS broker at this instant" (roster may
+    // be split, or the peer is simply offline) from a transport failure.
+    // Broadcast/multicast keep silent semantics (no single authoritative
+    // recipient). Exclusion: a cross-PC-PREFIXED target with NO router
+    // attached keeps the legacy silent drop — an un-bridged broker cannot
+    // judge another PC's roster, and bridgeless leaders are exactly where
+    // relay-side ACK injection (broker_remote) must stay possible. With a
+    // router attached, reaching this point means the router already
+    // declined the prefix — NACK is then legitimate.
+    if (
+      isUnicast && !matchedAny &&
+      !(typeof env.to === "string" && env.to.includes(":") && !this.remoteRouter)
+    ) {
+      ackStatus = "unknown_peer";
+      this._sendAckToSender(env, "unknown_peer", typeof env.to === "string" ? env.to : "");
     }
 
     if (this.auditPath) await this._appendAudit(env, delivered, ackStatus);
@@ -587,6 +727,7 @@ export class Broker {
           type: "list_peers_reply",
           peers: this._allPeerNames(),       // addresses — legacy clients route by these
           peers_detailed: this._allPeerInfos(),  // plan/38 — clients group without parsing
+          generation: this.generation,          // design v2 — divergence watcher signal
         } as SystemBody,
       };
       const peer = this.peers.get(env.from);
@@ -616,6 +757,46 @@ export class Broker {
     }
   }
 
+  /** Lifecycle audit line (design v2 R5/G6): bind/superseded/close/register/
+   *  unregister events, always carrying the generation + pid so split-brain
+   *  forensics no longer need /proc + ss. Diagnostic evidence, not a ledger:
+   *  during a split multiple brokers append broker-locally, and audit
+   *  completion never gates demotion. */
+  private _appendLifecycle(event: string, extra: Record<string, unknown>): void {
+    if (!this.auditPath) return;
+    const line = JSON.stringify({
+      ts: Date.now(),
+      event,
+      generation: this.generation,
+      pid: process.pid,
+      ...extra,
+    }) + "\n";
+    const write = this.auditWrite.then(() => this._appendAuditLine(line));
+    this.auditWrite = write.catch(() => undefined);
+  }
+
+  /** Shared chained writer body (rotation + append). Both envelope audit and
+   *  lifecycle lines serialize through this so ordering is preserved per
+   *  broker. */
+  private async _appendAuditLine(line: string): Promise<void> {
+    if (!this.auditPath) return;
+    await mkdir(dirname(this.auditPath), { recursive: true, mode: 0o700 });
+    const bytes = Buffer.byteLength(line);
+    const currentBytes = await stat(this.auditPath).then((entry) => entry.size).catch(() => 0);
+    if (currentBytes > 0 && currentBytes + bytes > BROKER_AUDIT_MAX_BYTES) {
+      const previous = `${this.auditPath}.1`;
+      await unlink(previous).catch(() => undefined);
+      if (currentBytes <= BROKER_AUDIT_MAX_BYTES) {
+        await rename(this.auditPath, previous);
+      } else {
+        // Drop an unbounded pre-hardening log instead of preserving it as the
+        // predecessor and carrying the oversized segment forward indefinitely.
+        await unlink(this.auditPath);
+      }
+    }
+    await appendFile(this.auditPath, line, "utf8");
+  }
+
   private async _appendAudit(
     env: Envelope,
     delivered: string[],
@@ -639,23 +820,7 @@ export class Broker {
       ack_status: ackStatus,
       via,
     }) + "\n";
-    const write = this.auditWrite.then(async () => {
-      await mkdir(dirname(this.auditPath!), { recursive: true, mode: 0o700 });
-      const bytes = Buffer.byteLength(line);
-      const currentBytes = await stat(this.auditPath!).then((entry) => entry.size).catch(() => 0);
-      if (currentBytes > 0 && currentBytes + bytes > BROKER_AUDIT_MAX_BYTES) {
-        const previous = `${this.auditPath}.1`;
-        await unlink(previous).catch(() => undefined);
-        if (currentBytes <= BROKER_AUDIT_MAX_BYTES) {
-          await rename(this.auditPath!, previous);
-        } else {
-          // Drop an unbounded pre-hardening log instead of preserving it as the
-          // predecessor and carrying the oversized segment forward indefinitely.
-          await unlink(this.auditPath!);
-        }
-      }
-      await appendFile(this.auditPath!, line, "utf8");
-    });
+    const write = this.auditWrite.then(() => this._appendAuditLine(line));
     this.auditWrite = write.catch(() => undefined);
     await write.catch(() => undefined);
   }

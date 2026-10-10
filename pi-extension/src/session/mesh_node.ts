@@ -62,6 +62,10 @@ export interface MeshNodeOptions {
   cwd?: string;
   /** Optional audit log path passed through to SessionPeer. */
   auditPath?: string;
+  /** Divergence-watcher interval passed through to SessionPeer (tests). */
+  generationProbeMs?: number;
+  /** Broker supersession poll interval passed through to SessionPeer (tests). */
+  supersedePollMs?: number;
   /** Self-managed relay bridge — brought up if this node leads. */
   bridge?: MeshSelfRelayBridge;
   /** Diagnostic logger. Defaults to a no-op (avoids leaking into TUIs). */
@@ -113,6 +117,8 @@ export class MeshNode {
     const peerOpts: SessionPeerOptions = { sockPath: opts.sockPath, name: opts.name };
     if (opts.cwd !== undefined) peerOpts.cwd = opts.cwd;
     if (opts.auditPath !== undefined) peerOpts.auditPath = opts.auditPath;
+    if (opts.generationProbeMs !== undefined) peerOpts.generationProbeMs = opts.generationProbeMs;
+    if (opts.supersedePollMs !== undefined) peerOpts.supersedePollMs = opts.supersedePollMs;
     this.peer_ = new SessionPeer(peerOpts);
     if (opts.bridge) {
       const p: BridgeParams = { relayUrl: opts.bridge.relayUrl, cwd: opts.bridge.cwd };

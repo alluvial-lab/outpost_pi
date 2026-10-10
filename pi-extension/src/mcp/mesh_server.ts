@@ -239,6 +239,11 @@ mcp.registerTool("agent_send", {
       ack.status === "invalid_envelope" ?
         `NOT delivered — the broker rejected the envelope as malformed (e.g. a non-UUID re; ` +
         `a pre-fix broker drops such envelopes silently). Fix the envelope fields and resend.` :
+      ack.status === "unknown_peer" ?
+        `NOT delivered — "${to}" is not registered on this broker right now. It may be ` +
+        `offline, or the local mesh may be split across broker generations ` +
+        `(heals automatically once the fixed rollout lands). Verify with list_peers ` +
+        `before retrying.` :
       `No ACK from ${to} (timeout) — peer may be offline`;
     return {
       content: [{ type: "text" as const, text: note }],

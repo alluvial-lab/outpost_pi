@@ -63,15 +63,12 @@ describe("agent-network e2e", () => {
     // a low-level approach by re-creating backend's handler:
     await backend.leave();
     const backend2 = await makePeer(sock, "backend");
-    backend2.onMessage(async (env) => {
-      // Reply with re=env.id so orq's request() resolves.
-      const { envelope, serialize } = await import("./envelope.js");
-      const reply = envelope(backend2.name(), env.from, { ok: true, text: "pong" }, env.id);
-      // Internal: write via the peer's send() with correlation — extend API.
-      // SessionPeer doesn't expose direct reply; emulate with raw socket access.
-      // Cleanest: add a `reply()` helper. For now, fake via private socket.
-      const sockets = (backend2 as unknown as { socket: import("node:net").Socket | null }).socket;
-      if (sockets) sockets.write(serialize(reply));
+    backend2.onMessage((env) => {
+      // Reply with re=env.id so orq's request() resolves — via the public
+      // send() (its third arg is the correlation id).
+      void backend2.send(env.from, { ok: true, text: "pong" }, env.id)
+        .then(() => undefined)
+        .catch(() => undefined);
     });
 
     const result = await orq.request("backend", { text: "ping" }, 2000);
@@ -90,12 +87,11 @@ describe("agent-network e2e", () => {
     const fe = await makePeer(sock, "fe");
 
     async function autoReply(p: SessionPeer, replyText: string) {
-      p.onMessage(async (env) => {
+      p.onMessage((env) => {
         if (env.re !== null) return;  // skip replies
-        const { envelope, serialize } = await import("./envelope.js");
-        const env2 = envelope(p.name(), env.from, { text: replyText }, env.id);
-        const s = (p as unknown as { socket: import("node:net").Socket | null }).socket;
-        if (s) s.write(serialize(env2));
+        void p.send(env.from, { text: replyText }, env.id)
+          .then(() => undefined)
+          .catch(() => undefined);
       });
     }
     await autoReply(be, "be-pong");
