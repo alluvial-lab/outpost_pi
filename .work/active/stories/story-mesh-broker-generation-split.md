@@ -1,7 +1,7 @@
 ---
 id: story-mesh-broker-generation-split
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, bug]
 parent: null
 depends_on: []
@@ -144,15 +144,111 @@ exactly one broker generation holds live clients, every session's roster
 shows the full fleet, and cross-pair delivery ACKs — bounded by a settle
 constant (order: election backoff tail, seconds).
 
+## Design (chosen 2026-10-10 design pass; supersedes "fix directions" above — D1→G1/G4, D2→G2, D3→G3, D4→G6)
+
+Goal: no persistent broker-generation split can survive longer than a small
+converge bound, and the election never *creates* a split through a blind
+unlink. All wire changes are additive envelope-body fields (no envelope
+format change), safe across mixed v0.13.x/trunk fleets.
+
+**G1 — Generation identity.** Broker mints `generation = uuidv7()` at
+construction and includes it additively in `register_ack`, both
+`list_peers_reply` surfaces (registered + observer probe), and
+`peer_joined`/`peer_left` broadcasts. `SessionPeer` records the generation
+it registered under (undefined against a legacy broker → detection off).
+
+**G2 — Client divergence watcher.** `SessionPeer` probes `sockPath` every
+10s (injectable) with the existing unregistered `list_peers` observer
+probe (zero mesh perturbation — that surface already exists for the CLI):
+
+- reply generation ≠ mine → I'm on a stale island → guarded re-resolve
+  (`_joinOrLead` under a `_rejoining` latch; old socket destroyed after
+  re-register; `onReconnect` fires so MeshNode re-attaches the bridge and
+  the roster cache refreshes).
+- probe cannot connect after 2 consecutive ticks → path has no listener
+  → same re-resolve (orphaned islands dissolve; the normal failover path
+  already covers "my own broker died").
+- reply lacks generation (legacy broker) → passive (no detection, no harm).
+- an `unknown_peer` NACK (G5) triggers one immediate probe (fast-path).
+
+**G3 — Honest election primitives** (`leader_election.ts`). New tri-state
+`probePeer(path, budgets)`: `alive` (connected), `dead` (definitive
+ECONNREFUSED/ENOENT — error event, not a timeout), `inconclusive` (no
+event after escalating budgets 500ms → 3s; the timer-vs-callback race
+cannot prove death). `joinOrLead` becomes: alive → follower; dead →
+unlink+bind (the only unlink path); inconclusive → backoff+retry, and on
+exhaustion **throw** — never unlink or bind on an unproven death.
+`tryConnect` (consumed by `cwd_lock` and the daemon supervisor probe)
+keeps its signature/semantics but internally escalates 500ms → 3s on the
+timer path, narrowing its blind-unlink consumers' race window for free.
+`cwd_lock`'s own lock-steal-on-false-death semantics are deferred to a
+follow-up note (a false refusal is as bad as a stolen lock there; the
+tri-state primitive is available to it after this story).
+
+**G4 — Broker supersession self-check.** Broker constructed with
+`sockPath` records `stat()` dev+ino of its bound path and re-checks every
+5s (injectable). Path gone or inode changed → superseded: audit
+`{event:"superseded"}`, broadcast `{type:"generation_superseded",
+generation}` to island peers, destroy all peer sockets (every client —
+new and legacy — re-runs its failover `joinOrLead` and lands on the live
+path owner), close the server, notify the hosting `SessionPeer` (clears
+broker/role so its loopback-close failover rejoins as a follower — the
+leader demotes itself). Disabled on named-pipe platforms. This makes
+splits caused by legacy blind-unlink racers **transient** (~5s) during
+rollout, converging onto whichever broker owns the path regardless of
+its code version.
+
+**G5 — `unknown_peer` NACK (F4).** Unicast to an unregistered address:
+NACK `{status:"unknown_peer", target}` + audit line instead of silent
+drop; `_formatAck` case tells the sender the peer isn't on this broker
+(roster may be split or peer offline → check `list_peers`). Broadcast /
+multicast unchanged. Legacy senders degrade through the string-typed ACK
+default case (same pattern the re-UUID story qualified).
+
+**G6 — Lifecycle audit.** `{event:"bind"|"superseded"|"close", generation}`
+and `{event:"register"|"unregister", address}` lines through the existing
+chained audit writer — tonight's diagnosis needed `/proc`+`ss` forensics
+because none of this was recorded.
+
+**Convergence bound.** split detection ≤ max(watcher 10s, supersede poll
+5s) + election retry tail (~2.6s) + probe cost ≈ **≤ 20s steady-state**;
+rollout worst case adds one 5s supersede cycle per legacy-racer event.
+
+**Compatibility matrix.** new client + legacy broker: no generation →
+watcher passive, behavior as today. Legacy client + new broker: extra
+body fields ignored; supersession close → legacy failover rejoins the
+path owner. Legacy racer rebinds over a new broker → detected in ≤5s,
+island dissolves onto the racer's broker (unified, whatever its version).
+New clients never unlink without definitive death. No paired deploy
+required.
+
+**Test plan (deterministic via injected intervals/budgets):** election
+honesty (tiny budgets → throw-without-unlink; definitive-death → unlink+
+lead; live leader + exhausted-inconclusive → path untouched); generation
+fields on all three surfaces; supersession (rebind racer → broadcast +
+close + demote + audit); watcher heal (stale island rejoins path owner;
+orphan path → re-resolve; legacy broker → passive); convergence sweep
+(kill leader, staggered restarts → one broker, full roster within bound);
+`unknown_peer` NACK + formatting; existing suites stay green
+(`typecheck`/`test`/`build`).
+
 ## Scope / acceptance (to finalize in design)
 
 - [ ] Full-sweep restart (all fleet sessions incl. broker host) converges
-      to one generation + full roster within the settle bound
+      to one generation + full roster within the settle bound (≤20s
+      steady-state at production intervals; proportionally faster at
+      injected test intervals)
 - [ ] Superseded-generation client detects divergence and re-registers
-      (send-timeout path and/or probe path) without operator action
-- [ ] A live broker's path is never unlinked (claim/liveness check before
-      stale-removal); cwd-lock primitive inherits the fix
-- [ ] Broker register/supersede lifecycle lands in the audit chain
+      (watcher path and unknown_peer fast-path) without operator action
+- [ ] Election never unlinks without definitive proof of death
+      (inconclusive probes abort, never unlink/bind); `tryConnect`
+      consumers (cwd_lock, supervisor probe) keep semantics with a
+      narrowed race window; cwd_lock's own steal-on-false-death semantics
+      deferred with a follow-up note
+- [ ] Broker supersession self-check dissolves stale islands (broadcast
+      + close + leader self-demotion) within one poll cycle
+- [ ] Broker register/supersede/bind/close lifecycle lands in the audit
+      chain; unicast to unknown peers NACKs `unknown_peer` (audited)
 - [ ] Mixed-version fleet (v0.13.x peers + trunk) degrades safely during
       rollout — older clients must not wedge, per the re-UUID story's
       paired-deployal lesson
