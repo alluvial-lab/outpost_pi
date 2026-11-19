@@ -74,6 +74,11 @@ impl FirehoseMetrics {
         self.outbound_queue_dropped.fetch_add(n, Ordering::Relaxed);
     }
 
+    /// Return newest-frame drops in the current reporting window.
+    pub fn outbound_queue_dropped(&self) -> u64 {
+        self.outbound_queue_dropped.load(Ordering::Relaxed)
+    }
+
     /// Atomically drains every counter and, if anything happened in the
     /// window, emits a single structured `info!` line with the totals.
     /// Quiet windows are silent (no log spam when nothing's going on).

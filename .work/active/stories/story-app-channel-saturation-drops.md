@@ -1,7 +1,7 @@
 ---
 id: story-app-channel-saturation-drops
 kind: story
-stage: drafting
+stage: done
 tags: [relay, app, bug]
 parent: null
 depends_on: []
@@ -79,6 +79,26 @@ The 2026-10-18 triage's downlink/handshake hypotheses described the drain
 side; the kill side is the relay's saturation close. Both prior hypotheses
 are superseded by this mechanism.
 
+## Design (chosen 2026-11-15, evidence-constrained)
+
+Source-verified facts shaping the design:
+- Relay mailbox: `resource_limits.rs` `OUTBOUND_QUEUE_CAPACITY=16`, drop-newest
+  + disconnect-signal on saturation (`peers/connections.rs` `deliver()`).
+  Bounded memory + forced hydration for authoritative frames is the documented
+  contract — preserved as-is; no queue/capacity/backpressure redesign.
+- Saturation close currently tears the socket down as a stream error
+  (`handlers/peer.rs` `CLOSE_OUTBOUND_MAILBOX_SATURATED` → disconnect signal),
+  which is why the app sees 1002/1006 with no distinguishable reason.
+- Producer of large frames: app↔Pi owner-channel envelopes through the
+  phone's solo relay room `main` (opaque forward, ct cap 4MiB). Transcript
+  streaming/replay is the fill source. No replay redesign in this story.
+
+Scope: FD-1 (relay graceful 1013 + reason instead of stream-error teardown)
++ FD-3 (app classification/observability for that close) + PROTOCOL.md doc.
+FD-2 (replay bounding) and FD-4 (WiFi auth) stay open follow-ups; replay
+redesign is NOT included here. Mixed-version safe: 1013 is
+reconnect-recoverable; an old app retries as today.
+
 ## Fix directions (design input, not chosen)
 
 - **FD-1 — Relay close semantics:** make backpressure shedding a clean,
@@ -108,6 +128,41 @@ are superseded by this mechanism.
   worth confirming in app source.
 - Mailbox bound definition (bytes vs frames) and whether saturation
   accounting differs per room channel — relay source check.
+
+## Review (2026-11-19, cross-model, bounded)
+
+Outside reviewer: `openai-codex/gpt-6.1-sol` (high). Verdict:
+APPROVED-WITH-NITS (no blockers). Nits resolved: PROTOCOL.md now states the
+1013 close is a bounded best-effort attempt (a blocked/dead connection still
+surfaces as ordinary transport loss); the integration test's 20ms sleep was
+replaced with a deterministic `rooms_check` snapshot barrier (subscribe_rooms
+emits nothing itself), capacity+1 fill re-verified. Confirmed by the reviewer:
+the 1s close bound stalls only the dying connection; the app classifies a
+received 1013 on the normal streamDone path (streamError metadata check is
+harmless defense); mixed-version directions safe; no payload logging; tests
+exercise real boundaries (actual registry saturation observed over a real WS).
+Shared-fate question resolved from source during implementation: the app runs
+ONE active channel (`ConnectionManager`, `connection_manager.dart:2061-2088`),
+so room targets share transport teardown by construction — the cross-room
+losses in the captures are the same socket dying, not collateral.
+
+## Implementation notes (2026-11-19)
+
+- Execution capability: delegated workhorse lane
+  (`kimi-coding/k3.1-pro-highspeed`, high) with orchestrator review +
+  independent re-verification. Ledger row: admin/highspeed-workhorse-trial.md.
+- Files: `relay/src/handlers/peer.rs` (graceful 1013 + reason on saturation,
+  1s bounded write, existing drop-newest/16-frame contract preserved),
+  `relay/src/metrics.rs` (read accessor), `relay/tests/{common/mod.rs,
+  integration.rs}` (fixture + real-boundary saturation test), 
+  `app/lib/data/transport/ws_transport.dart` (exact 1013+reason →
+  serverCloseFrame + transportBackpressure; other reasons still "present"),
+  `app/test/data/transport/{ws_transport_close_diagnostics_test.dart,
+  connection_manager_test.dart}`, `PROTOCOL.md` (close + compat matrix).
+- Orchestrator re-verification: relay fmt/clippy/test (240 incl. integration),
+  flutter analyze + full app suite 1079 passed.
+- Out of scope (unchanged): reconnect/backoff behavior, replay re-feed
+  bounding (FD-2 follow-up), WiFi auth failures (FD-4 follow-up).
 
 ## Provenance
 

@@ -280,6 +280,40 @@ void main() {
     conn.dispose();
   });
 
+  test(
+    'channel loss event preserves transport backpressure classification',
+    () async {
+      final log = _RecordingDebugLog();
+      final channel = _DiagnosticChannel();
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(),
+        debugLog: log,
+      );
+      conn.adopt(channel, _peer);
+
+      await channel.lose(
+        const ChannelCloseDetails(
+          origin: ChannelCloseOrigin.serverCloseFrame,
+          closeCode: 1013,
+          closeReason: 'relay_outbound_mailbox_saturated',
+          errorType: 'transportBackpressure',
+        ),
+      );
+      await _settle();
+
+      final event = log.events
+          .whereType<ConnChannelLostEvent>()
+          .single
+          .toJson();
+      expect(event['closeOrigin'], 'serverCloseFrame');
+      expect(event['closeCode'], 1013);
+      expect(event['closeReason'], 'relay_outbound_mailbox_saturated');
+      expect(event['errorType'], 'transportBackpressure');
+      conn.dispose();
+    },
+  );
+
   test('channel loss event carries the local close owner path', () async {
     final log = _RecordingDebugLog();
     final channel = _DiagnosticChannel();

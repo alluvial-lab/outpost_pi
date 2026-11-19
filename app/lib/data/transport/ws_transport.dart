@@ -132,6 +132,9 @@ const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
 const Duration defaultAuthHandshakeTimeout = Duration(seconds: 9);
 const int _finalTextFrameFirstByte = 0x81;
 const int _finalCloseFrameFirstByte = 0x88;
+const int _relayOutboundMailboxSaturatedCloseCode = 1013;
+const String _relayOutboundMailboxSaturatedCloseReason =
+    'relay_outbound_mailbox_saturated';
 
 WsPayloadLengthClass _wsPayloadLengthClass(int bytes) {
   if (bytes <= 125) return WsPayloadLengthClass.inline7;
@@ -141,8 +144,13 @@ WsPayloadLengthClass _wsPayloadLengthClass(int bytes) {
 
 String? _categorizeCloseReason(String? raw) {
   if (raw == null || raw.isEmpty) return null;
+  if (raw == _relayOutboundMailboxSaturatedCloseReason) return raw;
   return 'present';
 }
+
+bool _isTransportBackpressureClose(int? code, String? reason) =>
+    code == _relayOutboundMailboxSaturatedCloseCode &&
+    reason == _relayOutboundMailboxSaturatedCloseReason;
 
 /// Carry peer envelopes and relay control frames over one authenticated WebSocket.
 ///
@@ -736,11 +744,19 @@ class WsTransport
     final inner = error is WebSocketChannelException && error.inner != null
         ? error.inner!
         : error;
+    final isBackpressure = _isTransportBackpressureClose(
+      _ws.closeCode,
+      _ws.closeReason,
+    );
     _closeDetails = ChannelCloseDetails(
-      origin: ChannelCloseOrigin.streamError,
+      origin: isBackpressure
+          ? ChannelCloseOrigin.serverCloseFrame
+          : ChannelCloseOrigin.streamError,
       closeCode: _ws.closeCode,
       closeReason: _categorizeCloseReason(_ws.closeReason),
-      errorType: inner.runtimeType.toString(),
+      errorType: isBackpressure
+          ? 'transportBackpressure'
+          : inner.runtimeType.toString(),
     );
   }
 
@@ -751,12 +767,11 @@ class WsTransport
     // flags a framing violation, and 1001 (goingAway) for the missed-pong
     // watchdog — neither is a received server Close frame. Pinned empirically
     // in ws_transport_close_diagnostics_test.dart (framing garbage → 1002,
-    // silent peer → 1001, mid-frame death → 1006). The relay never closes
-    // with 1xxx codes (its closes carry 4xxx codes + reasons, or are empty),
-    // so codes synthesized by dart must not be attributed to the server —
-    // a phone-side RST surfaces here as a dart-synthesized close, not a
-    // relay Close frame. If the relay ever
-    // starts closing with 1xxx codes, revisit this classification.
+    // silent peer → 1001, mid-frame death → 1006). These two codes are not
+    // attributed to the server because dart synthesizes them locally; the
+    // relay's explicit 1013 saturation close is classified separately below.
+    // A phone-side RST surfaces here as a dart-synthesized close, not a
+    // relay Close frame.
     if (code == WebSocketStatus.protocolError ||
         code == WebSocketStatus.goingAway) {
       _closeDetails = ChannelCloseDetails(
@@ -773,12 +788,14 @@ class WsTransport
         code != null &&
         code != WebSocketStatus.noStatusReceived &&
         code != WebSocketStatus.abnormalClosure;
+    final isBackpressure = _isTransportBackpressureClose(code, _ws.closeReason);
     _closeDetails = ChannelCloseDetails(
       origin: hasRemoteCloseFrame
           ? ChannelCloseOrigin.serverCloseFrame
           : ChannelCloseOrigin.streamDone,
       closeCode: code,
       closeReason: _categorizeCloseReason(_ws.closeReason),
+      errorType: isBackpressure ? 'transportBackpressure' : null,
     );
   }
 

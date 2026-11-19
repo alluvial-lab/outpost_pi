@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, ready};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
 use axum::extract::ws::{CloseFrame as AxumCloseFrame, Message as RegistryMessage};
@@ -38,6 +38,7 @@ type PeerWebSocket = WebSocketStream<PreAuthGuard<TokioIo<hyper::upgrade::Upgrad
 const CLOSE_OUTBOUND_MAILBOX_SATURATED: &str = "relay_outbound_mailbox_saturated";
 const CLOSE_SAME_DEVICE_SUPERSEDED: &str = "relay_same_device_superseded";
 const CLOSE_PI_FORWARD_RATE_LIMITED: &str = "relay_pi_forward_rate_limited";
+const OUTBOUND_SATURATION_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 const FNV1A64_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 const FNV1A64_PRIME: u64 = 0x00000100000001b3;
@@ -109,6 +110,13 @@ fn fold_running_hash(mut running: u64, frame_idx: u64, frame_hash: u64) -> u64 {
 
 fn format_hash(hash: u64) -> String {
     format!("{hash:016x}")
+}
+
+fn outbound_mailbox_saturation_close_message() -> Message {
+    Message::Close(Some(CloseFrame {
+        code: CloseCode::Again,
+        reason: CLOSE_OUTBOUND_MAILBOX_SATURATED.into(),
+    }))
 }
 
 async fn send_instrumented<S>(
@@ -287,8 +295,8 @@ async fn handle_peer(
     'routing: loop {
         tokio::select! {
             _ = registration.disconnect.cancelled() => {
-                // A bounded mailbox dropped an update. Disconnect so this
-                // recipient rehydrates authoritative state on reconnect.
+                // A bounded mailbox dropped an update. Send a recoverable,
+                // distinguishable close so the recipient rehydrates on reconnect.
                 debug!(
                     peer = %peer_short,
                     room = %room_id,
@@ -299,6 +307,15 @@ async fn handle_peer(
                     out_hash = %format_hash(outbound.out_hash),
                     "relay initiated peer socket close"
                 );
+                let _ = time::timeout(
+                    OUTBOUND_SATURATION_CLOSE_TIMEOUT,
+                    send_instrumented(
+                        &mut sink,
+                        outbound_mailbox_saturation_close_message(),
+                        &mut outbound,
+                    ),
+                )
+                .await;
                 break;
             }
             item = stream.next() => {
@@ -667,6 +684,21 @@ mod tests {
         assert_eq!(instrument.out_hash, expected);
         assert_eq!(first_hash, 0x3130f1192e1ad66f);
         assert_eq!(format_hash(instrument.out_hash).len(), 16);
+    }
+
+    #[test]
+    fn outbound_mailbox_saturation_close_is_retryable_and_distinguishable() {
+        let message = outbound_mailbox_saturation_close_message();
+
+        let Some(frame) = (match message {
+            Message::Close(frame) => frame,
+            other => panic!("saturation must emit a WebSocket Close frame, got {other:?}"),
+        }) else {
+            panic!("saturation Close frame must carry code and reason");
+        };
+        assert_eq!(frame.code, CloseCode::Again);
+        assert_eq!(frame.reason, CLOSE_OUTBOUND_MAILBOX_SATURATED);
+        assert!(frame.reason.len() <= 123);
     }
 
     #[test]

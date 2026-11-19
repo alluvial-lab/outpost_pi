@@ -25,6 +25,13 @@ pub async fn start_relay() -> u16 {
 
 /// Starts the relay while retaining its registry for live-boundary assertions.
 pub async fn start_relay_with_registry() -> (u16, Arc<PeerRegistry>) {
+    let (port, registry, _) = start_relay_with_registry_and_metrics().await;
+    (port, registry)
+}
+
+/// Starts the relay with live-boundary registry and saturation-metric handles.
+pub async fn start_relay_with_registry_and_metrics()
+-> (u16, Arc<PeerRegistry>, Arc<FirehoseMetrics>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let mesh = Arc::new(MeshStore::open_in_memory().unwrap());
@@ -46,7 +53,7 @@ pub async fn start_relay_with_registry() -> (u16, Arc<PeerRegistry>) {
             relay::protocol::outer::DEFAULT_MAX_CT_MIB * 1024 * 1024,
         ),
         mesh_auth,
-        metrics,
+        metrics: metrics.clone(),
     };
     let app = build_router(state);
     tokio::spawn(async move {
@@ -58,7 +65,7 @@ pub async fn start_relay_with_registry() -> (u16, Arc<PeerRegistry>) {
     });
     // Give axum a moment to start accepting.
     tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-    (port, registry)
+    (port, registry, metrics)
 }
 
 /// Connects using a caller-supplied key and room_id, completes the full auth handshake.

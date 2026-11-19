@@ -616,6 +616,7 @@ Details in `plan/04-pairing.md`.
 | Owner revokes Pi-A from the mesh | Pi-A detects it at the next `mesh_versions` poll, self-revokes, and exits gracefully |
 | Pi WS reconnects frequently (NAT timeout) | Relay deduplicates `peer_online` emission (offline→online transition only); client deduplicates identical snapshots |
 | Relay crashes | All cross-PC traffic stops; local agents continue operating (UDS) |
+| An authenticated peer's bounded outbound mailbox saturates | The relay drops the newest frame and **attempts** WebSocket close **1013** with reason `relay_outbound_mailbox_saturated` (bounded best-effort write — a blocked or dead connection can still surface as ordinary transport loss); reconnect hydration restores authoritative state. New apps classify this as `transportBackpressure`, older apps retry it as an ordinary transport loss, and new apps behind older relays retain the existing stream-error retry path. |
 | App exits with an unconfirmed owner prompt | The encrypted room-scoped outbox retains the original client id and payload; resend waits for a fresh live room with a canonical session id |
 | Extension starts managed shutdown while a prompt arrives | The restart fence returns `delivery_retry` before SDK delivery; the app keeps the outbox entry and retargets it after successor-room hydration |
 

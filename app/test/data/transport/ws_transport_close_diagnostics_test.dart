@@ -20,22 +20,23 @@ void main() {
   });
 
   test(
-    'server close frame records code, bounded reason tag, and origin',
+    'mailbox saturation close records transport backpressure and its safe reason',
     () async {
-      final relay = await _CloseRelay.start();
+      final relay = await _AbruptRelay.start();
       addTearDown(relay.close);
       final transport = await _connect(relay.url);
       addTearDown(transport.close);
 
-      await relay.closePeer(4001, 'relay_outbound_mailbox_saturated');
+      await relay.closePeer(1013, 'relay_outbound_mailbox_saturated');
       await transport.transportClosed.timeout(const Duration(seconds: 1));
 
       expect(
         transport.closeDetails,
         const ChannelCloseDetails(
           origin: ChannelCloseOrigin.serverCloseFrame,
-          closeCode: 4001,
-          closeReason: 'present',
+          closeCode: 1013,
+          closeReason: 'relay_outbound_mailbox_saturated',
+          errorType: 'transportBackpressure',
         ),
       );
     },
@@ -140,8 +141,7 @@ void main() {
       // Strike shape: dart:io synthesizes closeCode 1002 when ITS OWN parser
       // flags a framing violation — a wedged netstack delivers mangled
       // framing, dart closes on its own protocol error, and the relay only
-      // ever sees an RST. A 1002 here is NOT a received server Close frame;
-      // the relay never closes with 1xxx codes.
+      // ever sees an RST. A 1002 here is NOT a received server Close frame.
       expect(transport.closeDetails?.origin, ChannelCloseOrigin.streamError);
       expect(transport.closeDetails?.closeCode, WebSocketStatus.protocolError);
       expect(
@@ -154,7 +154,6 @@ void main() {
       );
     },
   );
-
 
   test(
     'cancelled pre-upgrade hang classifies as a handshake stall',
@@ -491,6 +490,21 @@ final class _AbruptRelay {
     final socket = _socket!;
     // Opcode 3 is reserved and therefore invalid in a server data frame.
     socket.add(<int>[0x83, 0x00]);
+    await socket.flush();
+  }
+
+  Future<void> closePeer(int code, String reason) async {
+    await _ready.future;
+    final socket = _socket!;
+    final reasonBytes = utf8.encode(reason);
+    assert(reasonBytes.length <= 121);
+    final header = ByteData(2)..setUint16(0, code);
+    socket.add(<int>[
+      0x88,
+      2 + reasonBytes.length,
+      ...header.buffer.asUint8List(),
+      ...reasonBytes,
+    ]);
     await socket.flush();
   }
 

@@ -1,5 +1,7 @@
 mod common;
-use common::{connect_and_auth, start_relay, start_relay_with_registry};
+use common::{
+    connect_and_auth, start_relay, start_relay_with_registry, start_relay_with_registry_and_metrics,
+};
 
 use std::time::Duration;
 
@@ -80,6 +82,86 @@ async fn two_peers_route_message() {
         "relay must rewrite room to sender room"
     );
     assert_eq!(received_json["ct"], ct, "ct must be forwarded unchanged");
+}
+
+/// A slow recipient forces the bounded mailbox to shed its connection with a
+/// real, recoverable close instead of an undifferentiated stream error.
+#[tokio::test(flavor = "current_thread")]
+async fn saturated_outbound_mailbox_sends_try_again_later_close() {
+    let (port, registry, metrics) = start_relay_with_registry_and_metrics().await;
+    let (_ws_pi, peer_pi) = connect_and_auth(port).await;
+    let (mut ws_app, _) = connect_and_auth(port).await;
+    ws_app
+        .send(Message::text(
+            json!({"type": "subscribe_rooms", "peers": [&peer_pi]}).to_string(),
+        ))
+        .await
+        .unwrap();
+    // Deterministic barrier: `subscribe_rooms` itself emits nothing, so drive
+    // `rooms_check` — its deduped rooms snapshot proves the subscription is
+    // processed and live before we fill the mailbox.
+    ws_app
+        .send(Message::text(
+            json!({"type": "rooms_check", "peers": [&peer_pi]}).to_string(),
+        ))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match ws_app.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    if serde_json::from_str::<serde_json::Value>(&text)
+                        .map(|v| v.get("type").and_then(|t| t.as_str()) == Some("rooms"))
+                        .unwrap_or(false)
+                    {
+                        break;
+                    }
+                }
+                Some(Ok(_)) => continue,
+                Some(Err(e)) => panic!("recipient socket failed before subscription: {e}"),
+                None => panic!("recipient stream ended before subscription snapshot"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for first subscription frame");
+
+    // On a current-thread runtime these non-yielding registry updates fill the
+    // live subscriber mailbox before its socket task can drain it. One update
+    // beyond capacity then saturates it. The public socket boundary observes
+    // the close emitted for that exact saturation.
+    for index in 0..=relay::resource_limits::OUTBOUND_QUEUE_CAPACITY {
+        assert!(
+            registry
+                .update_room_meta(
+                    &peer_pi,
+                    "main",
+                    relay::RoomMetaPatch {
+                        working: Some(index % 2 == 0),
+                        ..Default::default()
+                    },
+                )
+                .await
+        );
+    }
+    assert!(metrics.outbound_queue_dropped() > 0);
+
+    let frame = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match ws_app.next().await {
+                Some(Ok(Message::Close(frame))) => break frame,
+                Some(Ok(_)) => continue,
+                Some(Err(_)) => panic!("recipient socket failed before saturation close"),
+                None => panic!("recipient stream ended without a saturation close"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for saturation close")
+    .expect("saturation close must carry code and reason");
+
+    assert_eq!(u16::from(frame.code), 1013);
+    assert_eq!(frame.reason, "relay_outbound_mailbox_saturated");
 }
 
 /// Sending to an unknown peer ID is silently dropped; the sender's connection stays alive.
