@@ -6,13 +6,10 @@ backstop that would have caught the `v0.6.0` non-functional ship (the
 `/outpost-pi pair` flow was broken by three integration bugs that all passed
 the automated gate suite).
 
-This is a **manual checkpoint**, not an entry in `gates_for_release`. The
-agile-workflow `release-deploy` skill invokes each `gates_for_release` entry as
-`Skill(skill="agile-workflow:gate-<name>")`; there is no `gate-uat` skill, so a
-`uat` slot there would fail to resolve and halt the release. Instead,
-`release-deploy` pauses for user action after the automated gates pass and
-before tag creation (its "mapping requires user action → pause and prompt"
-path), and the operator runs this runbook at that pause.
+This is a **manual checkpoint**, not an automated entry in Workbench
+`release_gates`. After the automated release gates and E2E battery pass and
+before a release tag is cut, the operator runs and acknowledges this runbook
+manually.
 
 The durable automation that catches integration regressions going forward is
 the checked-in `e2e/run-pairing.sh` harness; this manual runbook is the

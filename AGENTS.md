@@ -35,16 +35,70 @@ Rules while dormant:
   theme tokens), un-freeze the Flutter pin via a normal stack-currency pass,
   re-enable the release workflow.
 
+<!-- workbench:start -->
+## Workbench
+
+This repository is Workbench-owned. For stateful work, read
+`.work/CONVENTIONS.md`, relevant foundations, and the selected skill. Follow
+required references when their conditions apply; reuse unchanged context.
+Never run setup without explicit user direction. Keep unrelated requests outside
+Workbench; loose designs and reviews use project calibration without ledger mechanics.
+
+Use `work` to own a continuous outcome, drawing on `design` for consequential
+choices and `deliver` for ready implementation. Use `ideate` for early exploration,
+`scan` for opportunities without remediation, `park` for selected findings, and
+`release` only for a requested versioned summary.
+
+The user's request and effective autonomy define scope. Ask about consequential
+requirements; do not invent them or treat repository aspirations as current work.
+Use features by default and `work/references/lifecycle.md` for hierarchy and cleanup.
+Keep independent items parallel; `blocked_by` needs a real dependency.
+Agents maintain `.work/`: reconcile encountered stale records and close verified
+finished work in the same run, without separate housekeeping approval. Preserve
+unmet requirements and live ownership; commit never-recorded items atomically
+before completion or trimming, then apply configured retention.
+
+Before any design or review, apply the current `## Overbuilding calibration` from
+conventions. Pass it explicitly to delegated roles. The work item carries the
+contract: designers author and revise it; implementers read it directly; the
+outcome owner adjudicates scope and acceptance. Reviewers propose, not decide.
+
+`.work/` holds operational state. Foundations hold durable repository or sub-project
+truth, not delivery history. Write only durable artifacts named by the workflow;
+keep questions, proposals, progress, and reports in chat. Preserve user-owned
+roadmaps rather than rewriting them incidentally.
+
+Reference work by name. Items, epics, and delivery units take domain-native
+names — game mechanics, engine or framework vocabulary, not generic labels.
+A number or letter code never stands alone in user-facing communication
+(conversation, reports, commit messages): pair it with its name. Include the
+context a reader needs when the transcript does not already carry it. Machine
+fields and dense intra-item tables keep bare identifiers.
+
+For all repository writes, including loose edits, commit owned changes before
+handoff or the final report. Reviews use committed targets; follow the minimum
+Git floor in `work/references/git-posture.md`. Read-only work needs no empty commit.
+
+Apply configured execution, review, simplification, and commit postures; unset
+execution means `inline-first` under `work/references/sub-agents.md`.
+Align optional design review once per run and choose coherent implementation checkpoints.
+Use `work/references/review.md` for concrete Workbench reviews. Verify each unit
+promptly; keep pending review visible until acceptance. Before closure, reconcile
+affected foundations and indexes and complete the lifecycle sweep. Use another
+context when it adds enough value or is requested; do not restart settled work.
+Park valuable adjacent findings instead of silently adding them to scope.
+<!-- workbench:end -->
+
 ## Work tracking
 
-This repo carries its own `.work/` queue for Outpost-Pi code/product bugs,
-follow-up slices, and operational work.
+This repo carries its own Workbench `.work/` ledger for Outpost-Pi code/product
+bugs, features, stories, and operational work:
 
-- `.work/backlog/` — parked bugs and ideas.
-- `.work/active/stories/` — scoped implementation-sized work.
-- `.work/active/features/` — multi-story or design-bearing work.
-- `.work/active/epics/` — larger arcs.
-- `.work/CONVENTIONS.md` — frontmatter, tags, and routing rules.
+- `.work/CONVENTIONS.md` — Workbench conventions, overbuilding calibration, verification commands, tags, and release gates.
+- `.work/active/` — active epics, features, and stories (flat files).
+- `.work/backlog/` — parked bugs, ideas, and deferred work.
+- `.work/completed/` — completion stubs for finished items awaiting release.
+- `.work/releases/` — flat release summaries.
 
 `.work/session-notes/` is gitignored local-only territory (never commit).
 

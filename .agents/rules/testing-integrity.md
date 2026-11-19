@@ -28,8 +28,8 @@ Do not silently fix unrelated product bugs mid-test-pass unless the user asked f
 ## Agent-reported test results
 
 Subagent pass/fail self-reports are claims, not evidence (2026-06-30
-false-failure incidents; full history in
-`.work/archive/backlog-piext-agents-false-uds-failure-claims`):
+false-failure incidents; historical item `backlog-piext-agents-false-uds-failure-claims`
+in Git history):
 
 - The orchestrator independently re-runs the owning suite on high-risk
   stories (lifecycle, listeners, delivery, identity). Agent

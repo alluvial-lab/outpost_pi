@@ -1,209 +1,100 @@
-# Outpost-Pi work conventions
-
-This `.work/` tier tracks Outpost-Pi product and ops work.
-Use it for bugs, follow-up slices, and product/ops ideas that belong with the codebase rather than in the SNC root queue.
-
-Before advancing work items, read `AGENTS.md` and `.agents/rules/*.md`. The rule surface is agent-neutral; `.work/` is the queue, not the place to preserve lasting design/routing policy.
-
-## Layout
-
-- `backlog/` — parked bugs and ideas, flat files.
-- `active/stories/` — scoped implementation-sized work.
-- `active/features/` — multi-story or design-bearing work.
-- `active/epics/` — larger arcs that decompose into features/stories.
-- `archive/` — completed/retired items when they no longer need active bodies.
-
-## Frontmatter
-
-Backlog items use:
-
-```yaml
 ---
-id: <slug>
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-tags: [<tag>, ...]
+owner: workbench
+schema: 1
+workbench_version: 0.26.13
+completed_items: summarize
+review_weight: standard
+simplification_posture: balanced
+autonomy: adaptive
+release_gates: [security, tests, cruft, docs, patterns, boundaries, lifecycle, protocol-contract]
+validator_command: [python3, scripts/validate-work.py]
 ---
-```
 
-Active items use:
+# Outpost-Pi Workbench Conventions
 
-```yaml
----
-id: <kind>-<slug>
-kind: epic|feature|story
-stage: drafting|implementing|review|done
-tags: [<tag>, ...]
-parent: <id>|null
-depends_on: [<id>, ...]
-release_binding: <version>|null
-gate_origin: <gate-name>|null
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
----
-```
+This `.work/` substrate tracks Outpost-Pi product and operational work across `pi-extension/`, `app/`, `relay/`, `site/`, and (when reactivated) `cockpit/`. Before designing, implementing, or reviewing, read `AGENTS.md` and `.agents/rules/*.md`. Durable foundations live in `docs/` (`VISION.md`, `SPEC.md`, `ARCHITECTURE.md`, `DECISIONS.md`, `release-uat.md`, `site-deploy.md`) and `PROTOCOL.md`; detailed recurring implementation shapes live in `.agents/skills/patterns/`.
 
-For normal user-scoped items, set `release_binding: null` until `release-deploy` binds the item to a release, and set `gate_origin: null` unless the item was produced by a release gate.
+## Overbuilding calibration
 
-Research-tagged active items additionally carry an ARD-style registration block:
+- **Project context** — Single-operator, self-hosted, wire-paired 5-surface product (`pi-extension/`, `app/`, `relay/`, `site/`, plus dormant `cockpit/` frozen at Flutter 3.44.4). Security and reliable remote coding over untrusted networks matter; there are no external multi-tenant SaaS consumers or independent per-component downstream semver consumers.
+- **Likely overbuilding shapes** — Premature multi-tenant abstractions, independent per-component semver/release machinery, speculative compatibility shims for unshipped surfaces, hand-mirrored wire DTOs where canonical schemas/generators exist, and unrequested work on dormant `cockpit/`.
+- **Justified complexity** — End-to-end AEAD owner-channel security (`outer.ct`, signed ephemeral-DH pairing), explicit lifecycle ownership and teardown guards (Pi session replacement, WebSocket reconnect, Flutter `BuildContext` mounted guards, `working` state convergence), single-source-of-truth protocol contracts across TypeScript/Dart/Rust, bounded mailboxes/backpressure, and deterministic async/lifecycle regression tests.
+- **Where cost is felt** — Mobile reconnect/rehydration latency and WebSocket frame sizes (relay outbound mailbox saturation on mobile links), Pi extension restart/reconnect turn-delivery latency, and relay memory per active room/peer. Numeric ceilings live in `PROTOCOL.md` and `relay/` resource policy.
+- **Revisit evidence** — External multi-user distribution (such as Play Store launch), reactivation of `cockpit/`, or independent external consumers pinning a subproject.
 
-```yaml
-research_dials:
-  scope_authority: pre-registered|mixed|in-engagement-judgment
-  verification_rigor: floor|standard|full
-  intent: <short free-text inventory value>
-  output_kind: <short free-text inventory value>
-```
+## Verification commands
 
-The operator-confirmed dials are part of scoping. If a research item lacks them, pause before dispatching research and confirm/register dials instead of silently proceeding.
+Run from the owning subproject root (see `.agents/rules/testing-integrity.md` for full guidance):
 
-When picking up any active item tagged `research` or containing `research_dials`, load and follow the `research-orchestrator` skill before authoring research outputs. Do not produce research-backed docs, skills, briefs, or references ad hoc; the item's `research_dials` are the commissioning registration and must be surfaced/confirmed according to the orchestrator workflow.
+- `pi-extension/`: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
+- `app/`: `flutter analyze && flutter test --exclude-tags e2e` (use `--concurrency=2` on constrained VMs)
+- `relay/`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test`
+- `site/`: `pnpm lint && pnpm build`
+- Cross-component E2E (repo root): `e2e/run-pairing.sh`
+- `cockpit/`: dormant — excluded from release gates and normal scoping unless reactivated (CI keeps a compile+test guard on Flutter 3.44.4).
 
 ## Tags
 
-Start small. Current tags:
+Use existing component and concern tags for routing and filtering:
 
-- `pi-extension` — Node/TypeScript Pi extension work.
-- `app` — Flutter mobile app work.
-- `relay` — Rust relay work.
-- `cockpit` — desktop cockpit work.
-- `workflow` — developer/operator workflow for the fork.
-- `research` — source-grounded discovery work whose output informs later implementation.
-- `docs` — agent/reference documentation, skills, or operator docs.
+- `pi-extension` — Node/TypeScript Pi extension, daemon, mesh, pairing.
+- `app` — Flutter mobile app.
+- `relay` — Rust relay.
+- `cockpit` — desktop cockpit (dormant unless reactivated).
+- `site` — Next.js marketing/docs site.
+- `workflow` — developer/operator workflow and CI.
+- `research` — source-grounded discovery work informing implementation.
+- `docs` — durable documentation, skills, or operator runbooks.
 - `bug` — observed defect or regression.
+
+## Research integration
+
+`.research/` is an **alternate-owned ARD-style research substrate** (see `.research/CONVENTIONS.md`), not `workbench-research`. Preserve `.research/` and maintain it strictly through its own ARD conventions and `research-orchestrator` skill; do not run Workbench Research's linter, knowledge-index builder, or handoff against it.
+
+When working an item tagged `research`, confirm and record the operator's ARD `research_dials` (`scope_authority`, `verification_rigor`, `intent`, `output_kind`) in item prose before dispatching research via `research-orchestrator`.
 
 ## Releases
 
-This fork ships a **single unified product version** (`vX.Y.Z`) covering the
-whole Outpost-Pi product. All items bind to the one product release regardless
-of which component they touch. Components still deploy as independent artifacts
-(docker image, APK, extension `dist/`, desktop install) and may carry their own
-artifact identifiers (`outpost-pi-relay:0.4`, app `versionName`), but those are
-deploy details recorded in the release — not separate substrate releases.
+- **Unified product versioning** — Outpost-Pi ships a single unified product version (`vX.Y.Z`) because `app/`, `relay/`, and `pi-extension/` are wire-paired and co-deployed. Components still deploy as independent artifacts (Docker image, APK, extension `dist/`, site image).
+- **Two-lane slicing** — Fix lane (bugs/regressions in shipped surfaces) cuts patches (`v0.x.y`) as needed; feature lane cuts minors (`v0.x.0`) when a coherent batch is ready. Publishing, tagging, and deployment are always operator-gated.
+- **Selective `.work/completed/` binding** — Fix-lane patch releases selectively bind only their fix stubs from `.work/completed/`, leaving parked feature stubs intact until the next minor cut.
+- **E2E battery** — Minor cuts (`v0.x.0`) require the full E2E battery (`e2e/run-pairing.sh`, live lanes, and 600s seeded chaos soak `live_soak.py`) green before publish; patch cuts (`v0.x.y`) run `e2e/run-pairing.sh` plus lanes covering the changed surface.
+- **Manual UAT checkpoint** — Before cutting a release tag, the operator runs and acknowledges the live smoke runbook in `docs/release-uat.md`.
+- **Dormant exclusion** — `cockpit/` is excluded from release gates and release summaries while dormant.
 
-The fork reset to `0.1.0` at the Outpost-Pi rebrand (`release-v0.1.0`,
-2026-07-12). Earlier pre-rebrand tags (`app-v1.x`, `cockpit-v1.x`,
-`extension-0.5.x`, `relay-0.1.0`, `v0.4.0`/`v0.5.0`/`v0.6.0`) were deleted; the
-retained item bodies for those old generations were relocated to
-`.work/releases-pre-rebrand/` as historical record.
+## Release gates
 
-**Why unified (changed 2026-08-11).** Per-component semver was inherited
-convention, but this is a single-operator product whose components are
-wire-paired (app↔relay↔extension↔cockpit cut together) and co-deployed — they
-move in lockstep, so independent component versions were ceremony without
-independence. Cross-cutting work forced a repo-level release *alongside*
-component cuts, and the operator ended up cutting both `vX.Y.Z` and
-`app-vX.Y.Z`/`cockpit-vX.Y.Z` for the same batch. Unified versioning collapses
-that to one release event. Component tags are retained on items for
-routing/scan purposes but no longer split the release. Per-component semver
-would regain its value only if components gained independent external consumers
-pinning each one. (Historical per-component releases under `.work/releases/` —
-`app-v0.2.0`/`v0.3.0`, `cockpit-v0.2.0`/`v0.3.0`, `extension-0.2.0`,
-`relay-0.2.0` — remain as record.)
+Critical and high findings block release readiness until resolved; medium and low findings park to `.work/backlog/` (an operator may still promote a specific finding to blocking). Project-local scan lenses under `.agents/skills/scan-*/` supply the evidence contracts for `boundaries`, `docs`, `lifecycle`, and `protocol-contract`.
 
-**Why the pre-rebrand relocation.** work-view resolves `--release <version>`
-by scanning `.work/`, `.work/active/`, `.work/archive/`, and `.work/releases/`
-(recursively) for matching `release_binding:` frontmatter values. Pre-rebrand
-versions share exact version numbers with the post-rebrand series, so any
-retained item still carrying a pre-rebrand binding value would be silently
-swept into a future release's gate scope + readiness check at the version
-collision — a landmine far from cause. Moving them out of the scanned tiers
-(`.work/releases-pre-rebrand/` is a top-level sibling, invisible to
-work-view) removes the whole collision class. Do not move pre-rebrand
-release artifacts back into `.work/releases/` or `.work/archive/`.
+### security
+Authentication, pairing/AEAD owner-channel boundaries, relay authorization, secret/key isolation, privacy of diagnostic logs, and supply-chain/dependency exposure must have no unresolved critical or high vulnerabilities across the release bundle.
 
-### Attribution rule (unified)
+### tests
+Changed behavior and high-risk lifecycle/async/reconnect boundaries must be protected by deterministic, behavior-focused tests at stable interfaces (per `.agents/rules/testing-integrity.md`), with no gamed assertions or unattributed skips.
 
-All items bind to the single product release `vX.Y.Z` regardless of component
-tags. `release-deploy <version>` is invoked once per product version.
-Component tags on items are retained for routing/scan filtering but no longer
-split items across component releases.
+### cruft
+Dead code, orphaned scaffolding, stale feature flags, redundant helpers, and obsolete workflow or comment residue introduced or exposed by the release bundle must be cleaned up before release.
 
-### Release config
+### docs
+Public docs, `PROTOCOL.md`, `CHANGELOG.md`, `AGENTS.md`, subproject guidance, and Always-tier native doc comments (checked via `.agents/skills/scan-documentation/`) must match shipped behavior with no dangling links or contradictory claims.
 
-- `release_slicing: two-lane (fix/feature)` — operator policy (2026-08-25):
-  work items stay unbound; each `release-deploy` binds selectively.
-  Fix lane (bugs/regressions in shipped surfaces) → patch cuts `v0.8.x`,
-  cut whenever needed. Feature lane (parked queue) → minor cuts `v0.9.0+`,
-  cut when a coherent batch is done. App `+versionCode` is a dev counter
-  that increments freely on trunk; the release tag is chosen at cut time
-  from the bind set. Every cut runs the rc flow (`v<ver>-rc.<n>` draft
-  prerelease → operator UAT → publish promotes fat + slim-arm64 artifacts);
-  publishing is always operator-gated per release, trunk is never blocked
-  on a prior release's UAT.
-- `release_mapping: tag-based` — git tags mark releases; push is external
-  (operator runs from their machine). `release-deploy` creates the tag locally;
-  the operator pushes.
-- `gates_for_release: [security, tests, cruft, docs, patterns, refactor]` — bold-refactor
-  work is shipped and the substrate is gate-capable (work-view 0.15.3 installed). The
-  `refactor` gate is now active: three Remote-Pi-native scan-rule libraries are installed
-  under `.agents/skills/scan-{boundaries,lifecycle,protocol-contract}/` (all untagged,
-  `findings-route: none` — findings route through story/feature design, not
-  refactor-design, because the fixes are not black-box-preserving). The libraries are
-  grounded in `.agents/rules/code-design.md` and were cross-model-reviewed before commit.
-  Tiered-gate model (v0.4.0 trial: full gates on feature items, security-only regression
-  on gate-origin items) evaluated 2026-08-26 and **not carried forward** — post-trial
-  releases ran all six gates by default, and proportionality is handled by two-lane
-  release slicing; record at `.work/archive/idea-evaluate-tiered-release-gates.md`.
-- `release_e2e_battery: minor cuts (0.x.0)` — operator policy (2026-08-27):
-  minor cuts run the FULL e2e battery before publish — `e2e/run-pairing.sh`
-  (docker suite) + the live lanes (golden/failure/state-shapes/grid/
-  capture-delivery) + a 600s seeded chaos soak (`live_soak.py`), all green
-  before the tag ships. Patch cuts (0.x.y) run the pairing suite + any lane
-  touching the changed surface. Rationale: the v0.10.0 battery caught
-  nothing the suites had — but the no-start and hung-connect classes this
-  session proved only device-adjacent verification covers build-system and
-  transport wedges; the battery is cheap insurance at minor cadence.
-- `release_uat: manual-checkpoint` — after the automated `gates_for_release` pass and
-  before tag creation, `release-deploy` pauses for operator action; the operator runs
-  the smoke runbook in [`docs/release-uat.md`](../docs/release-uat.md) and records an
-  ack before the tag is cut. This is **not** a `gates_for_release` slot: `release-deploy`
-  invokes each of those as `Skill(skill="agile-workflow:gate-<name>")`, and there is no
-  `gate-uat` skill, so a `uat` entry there would fail to resolve and halt the release.
-  The manual-checkpoint path uses `release-deploy`'s built-in "mapping requires user
-  action → pause and prompt" pause instead. The durable automation that catches
-  integration regressions going forward is `feature-cross-component-e2e-pairing-suite`;
-  this runbook is the independent, sooner backstop (motivating incident: `v0.6.0`
-  non-functional ship).
-- `gate_finding_routing: { critical: implementing, high: implementing, medium: backlog, low: backlog }`
-  — gate findings are routed by severity into blocking vs trackable work. **critical/high
-  are release-blocking**: they bind to the release and ship blocks on them reaching `done`.
-  **medium/low are non-blocking**: they are unbound from the release (`release_binding: null`)
-  and land in `.work/backlog/` as tracked improvements, so the release ships once its
-  blocking findings resolve. This is the fork's deliberate posture: the gate surfaces real
-  issues without low/medium findings stalling every ship. (An operator may still mark a
-  medium/low finding blocking case-by-case by leaving it bound — e.g., a debug artifact left
-  in production is worth fixing before ship regardless of nominal severity.)
-- `terminal-tier retention: retain-bodies` — bound item bodies stay on disk.
-  Active done items move to `.work/releases/<version>/`; archived items stay in
-  `.work/archive/`. A release summary doc is produced at
-  `.work/releases/<version>/release-<version>.md`.
-- `binding_guard: warn` (default) — cross-component work legitimately spans
-  releases; INCOMPLETEs under `epic_cohesion: phased` (default) are informational.
+### patterns
+Changed code must remain consistent with confirmed patterns in `.agents/skills/patterns/`, and any newly recurring pattern or stale anchor surfaced by the release bundle must be reconciled at the integration checkpoint.
+
+### boundaries
+Ports-and-adapters boundaries and fail-fast untrusted-input validation must hold across subprojects, checked via `.agents/skills/scan-boundaries/`.
+
+### lifecycle
+Long-lived resource teardown, Flutter `BuildContext` async guards, Pi stale-session handling, and `working` state convergence must hold on every exit path, checked via `.agents/skills/scan-lifecycle/`.
+
+### protocol-contract
+Wire message types, room/session metadata fields, and frame discriminators must derive from single-source schemas/registries without handwritten drift, checked via `.agents/skills/scan-protocol-contract/`.
+
+## Review boundaries
+
+Apply `standard` review weight by default. Prefer behavior-focused tests at stable interfaces where each test protects meaningful contract or regression risk. Park valuable out-of-scope findings into `.work/backlog/` with concrete evidence pointers rather than expanding active scope.
 
 ## Routing
 
-### Archive-tier semantics (added 2026-07-24)
-
-`.work/archive/` holds two classes: **done items** awaiting release
-late-binding, and **retired husks** — merge-absorbed, duplicate, superseded,
-or resolved-in-substance items whose substance lives elsewhere. Rules:
-
-- Retired husks MUST carry `status: superseded|duplicate` plus a pointer
-  (`superseded_by:` / `folded_into:` / `duplicate_of:`) at retirement time.
-  The release-deploy archived-stub gather skips status-stamped and non-`done`
-  archive files (patched 2026-07-24 after the same stale-stub sweep hit both
-  v0.2.0 and v0.3.0).
-- Grooms that merge/absorb items MUST stamp the absorbed files as part of the
-  merge commit (the 2026-07-22 groom merged 15 findings into 3 backlog items
-  without stamping; release-deploy re-swept the husks twice).
-- Genuinely incomplete work belongs in `.work/backlog/`, not `.work/archive/`.
-  An archived item at `stage: drafting|implementing` is a smell — either stamp
-  it as retired or move it back to backlog.
-
-## Routing
-
-- Keep code-owned Remote Pi bugs here.
-- Keep SNC root `.work/` for SNC operational orchestration only.
-- Keep `plan/` for broader architectural plans already used by this repo; `.work/` is the queue for concrete bugs/slices.
-- Upstream contribution remains opt-in. Private-carry work can live here without opening upstream PRs.
+- Keep Outpost-Pi code and operational work in this `.work/` ledger, separate from SNC root `.work/`.
+- Local-only operational narratives and soak/drill logs belong in `.work/session-notes/` (gitignored; never commit). `scripts/validate-work.py` wraps Workbench's `--builtin` checks and permits `.work/session-notes/` only while it remains gitignored with zero tracked files.

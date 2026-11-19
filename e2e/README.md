@@ -116,7 +116,7 @@ tear down their Compose projects.
 
 Diagnostic pair for the connection-metronome investigation (verdict #6:
 tailscale tunnel severance under firehose bursts — see
-`.work/active/stories/story-fix-connection-metronome-death.md`). Both write
+`.work/active/story-fix-connection-metronome-death.md`). Both write
 JSONL evidence to `e2e/.run-state/severance/` (gitignored, local-only):
 
 ```bash

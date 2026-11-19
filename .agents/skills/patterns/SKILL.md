@@ -11,6 +11,7 @@ This skill contains detailed pattern documentation for this project.
 See individual pattern files for full details with code examples.
 
 Available patterns:
+- [diagnostic-schema-and-emission-coverage.md](diagnostic-schema-and-emission-coverage.md) — Pair every typed diagnostic family's serialization contract with a production-seam emission assertion, backstopped by a required-site registry.
 - [lifecycle-boundary-state-convergence.md](lifecycle-boundary-state-convergence.md) — Reset active lifecycle projections before transport teardown so replacement and shutdown cannot strand stale state.
 - [lifecycle-owned-repeating-animation.md](lifecycle-owned-repeating-animation.md) — Own repeating animation controllers in StatefulWidget state and dispose them at the widget boundary.
 - [durable-first-visibility-gating.md](durable-first-visibility-gating.md) — Append canonical transcript facts before publishing replayable live visibility, and gate on recorded or duplicate authority.

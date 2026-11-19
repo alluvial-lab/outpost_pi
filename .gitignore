@@ -7,6 +7,9 @@
 !.work/**
 !.agents/
 !.agents/**
+!.claude/
+.claude/*
+!.claude/skills
 !.research/
 !.research/**
 !.mockups/
@@ -14,12 +17,6 @@
 # Android Digital Asset Links must be published from this dot-directory.
 !site/public/.well-known/
 !site/public/.well-known/**
-
-# work-view binary is a plugin-managed build artifact — the agile-workflow
-# plugin installs the platform-appropriate Rust binary (or its bundled bash
-# fallback) into .work/bin/ on demand. Do not commit a platform-specific
-# binary or the stale fallback copy; the plugin owns this path.
-.work/bin/
 
 # session-notes are local-only operational records (incident narratives,
 # network/device specifics) — never tracked. Public work tracking lives in

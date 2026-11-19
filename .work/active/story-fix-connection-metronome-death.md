@@ -1,0 +1,746 @@
+---
+id: story-fix-connection-metronome-death
+kind: story
+status: blocked
+tags: [app, bug, relay]
+created: 2026-09-01
+updated: 2026-10-05
+---
+
+# Connection dies ~13-35s after connect (worsening); swallows agent turns mid-flap
+
+## Blocker
+
+Waiting on operator-side field evidence and decisions before landing the cancel-race behavioral fix:
+
+- Capture a v0.12.1+ Android debug log carrying the landed `ConnCancelEvent` attribution rows to name the live canceller (no blind behavioral fix).
+- Operator-side Tailscale Android bug report (verdict #8/#9 evidence package), battery-optimization check, and decision on optional mitigations (home-LAN relay candidate, rehydration burst splitting).
+
+Clears once the field capture identifies the canceller and the operator confirms scope for the behavioral fix.
+
+## Incident (operator report 2026-09-01 + three captures)
+
+A chat swallowed an agent turn while open. Capture
+`debug/app-capture-2026-09-01T15-36-13-082Z-466cbb4c4439.bin` (0.11.1
+release build, 22h span) shows the underlying disease:
+
+- **Metronomic connection death**: median online→lost = 13.1s (0.11.1)
+  vs 34.5s on the Aug-28 capture (0.11.0) — pre-existing and WORSENING.
+  Losses cluster 20-70s after msgSend (11/17 within 90s of a send).
+- The 15:19 incident end-to-end: msgSend 15:19:39 → echoed → pi woke,
+  delivered, TURN RAN (relay `working` heartbeats continue through the
+  outage) → app channel died 15:19:53 BEFORE any agent frame arrived →
+  app flapped (two relay-side "handshake step failed, closing phase
+  auth" at 15:20:28/32 from racing sockets) → rehydrations at 15:20:26
+  and 15:21:34 DID deliver large sync envelopes (27.5KB / 23.8KB) but
+  connections died 8-14s later each time → turn never rendered for the
+  operator (swallowed) → operator retried (sends 15:26, 15:30, 15:33,
+  15:34, 15:35 each chased by losses).
+- Protocol oracles all PASS (final durable state consistent); triage
+  flags 3 anomalous connChannelLost clusters. Message sends always
+  echo. The swallow is acquisition-side during the flap.
+- pi-side delivery.log healthy throughout (message delivered to the
+  NextUp session; turn committed).
+
+## Current diagnosis (frame-order stride 2026-09-05)
+
+The instrumented field capture establishes a server Close(1002) with no prior
+app-attributed local close. The relay's only surfaced error is the later
+`IO error: Connection reset by peer (os error 104)`: tungstenite consumed the
+original violation while auto-closing, so that row cannot identify the bad
+header. Relay mailbox saturation, same-device supersession, and an ordinary
+network loss do not produce this 1002 shape.
+
+The owning frame is still not named, so no behavioral fix is justified. The
+remaining evidence is ranked as follows:
+
+1. **A target-only WebSocket emission failure remains possible.** Every app
+   write site passes a `jsonEncode(...)` String to dart:io, which makes invalid
+   UTF-8 impossible at the authored seam. The live x86 Android harness captured
+   147 additional client frames after this stride: every frame was final,
+   masked, RSV-clear, and used a valid TEXT/PONG/CLOSE opcode. The field device
+   is ARM Android, so a dart:io/AOT/platform-only header or length failure is
+   not excluded.
+2. **Frame-boundary corruption below the authored seam remains possible but
+   unproven.** A wrong encoded length can make payload bytes look like a later
+   reserved/unmasked header. TCP/Tailscale cannot normally reorder or fabricate
+   bytes, so this ranks below a target-specific emitter fault.
+3. **The app-level Close-race theory is now falsified for the suspected
+   sequence.** There are exactly two direct `WebSocketSink.close` sites
+   (`app/lib/data/transport/ws_transport.dart:406,697` after this stride), and
+   both record the initiating local path before closing. Every manager close
+   funnels through `_closeOwned` with a `ChannelLocalClosePath`; both peer
+   adapters preserve it. Dart's `_WebSocketConsumer` serializes queued writes
+   before Close and drops adds once its controller is closed
+   (`websocket_impl.dart:1258-1272`). A raw RFC 6455 regression queued four
+   512-KiB sends and immediately closed: all four arrived as legal masked TEXT
+   frames before one masked Close, with no DATA afterward. The only SDK-local
+   unattributed close is the 45s ping plus 45s pong timeout, incompatible with
+   8-35s strikes.
+
+## Fix approach (two strides, instrumentation FIRST)
+
+1. **Instrument**: capture the WebSocket close code + reason (and
+   whether close came from the channel's close frame vs stream error vs
+   our own supersession logic) in the debug ring's connChannelLost row.
+   Also log relay-side close initiations at debug when we are the
+   closer. This makes the next repro conclusive.
+2. **Diagnose with instrumentation + code reading**: trace
+   connection_manager/ws_transport supersession and resume paths for
+   the racing-socket shape; fix the winner-gets-closed bug (or
+   intermediary finding) with a regression test at the transport seam.
+3. Re-run the operator repro loop (send → 30s window) to confirm
+   connection stability and turn acquisition.
+
+## Instrumentation delivered
+
+- `WsTransport` records the first close cause: close-frame vs stream error vs
+  content-free stream completion vs local close, including WebSocket close
+  code, a reason presence/absence category, runtime error type, and the exact
+  local lifecycle path.
+- `PlainPeerChannel`/`SecurePeerChannel` preserve that evidence through the
+  transport seam; `ConnectionManager` writes it into every observed
+  `connChannelLost` row as `closeOrigin`, `closeCode`, `closeReason`,
+  `closePath`, and optional `errorType`.
+- Server reason text is reduced to `present`/`none`; no payload or arbitrary
+  exception text enters the debug ring.
+- Relay-initiated mailbox saturation, same-device supersession, and Pi-forward
+  rate-limit closes now emit structured close-origin/reason rows with
+  peer/room/connection attribution.
+- Focused local harnesses cover remote close metadata, reason scrubbing,
+  local-path attribution, manager-event projection, and the racing-socket
+  winner-survival sequence.
+- `wsOut` ring rows now record each authored WebSocket write's per-connection
+  sequence, fixed write stage, expected first header byte, mask requirement,
+  UTF-8 payload length/class, and the exact local Close-initiation path. This is
+  an intent-side diagnostic, not a claim about bytes after dart:io encoding.
+- `OUTPOST_PI_E2E_RUST_LOG` makes the live relay log filter configurable. Use
+  only `tungstenite::protocol::frame::frame=trace,relay=debug`: that narrow
+  module logs the two header bytes/opcode/mask before validation and does not
+  log payloads. Broad `tungstenite=trace` is forbidden for field capture because
+  sibling modules print message content.
+
+## Next conclusive repro
+
+1. Deploy this instrumented app and run the relay with exactly
+   `RUST_LOG='relay=debug,tungstenite::protocol::frame::frame=trace'`; do not
+   change reconnect timing or mailbox limits and do not enable broader
+   tungstenite trace targets.
+2. Run the operator loop (connect, switch rooms/replay subscriptions, send,
+   leave foreground, wait at least 45s) until one 1002, then export the app
+   capture and matching relay header window.
+3. Correlate `wsOut.connectionId`/`sequence` with the close timestamp:
+   - a `closeInitiated` row before the violation names the exact app owner; an
+     actual relay DATA header after the matching Close would revive the race
+     theory with a concrete ordering;
+   - no prior `closeInitiated` rules out all authored close paths, leaving the
+     dart:io/control-frame or below-SDK emitter;
+   - the relay's final `Parsed headers [first, second]`, `Opcode`, and `Masked`
+     rows name invalid RSV/FIN/opcode/mask/length-class headers without content;
+   - legal headers followed by 1002 narrow the fault to frame boundaries or
+     payload validation, which must be tested against that exact byte class.
+4. Only after the violating frame is named should a minimal behavior fix land.
+
+## Verification (frame-order stride 2026-09-05)
+
+- Focused debug/privacy, real-WebSocket diagnostics, raw RFC 6455 frame-order,
+  and capture-site routing tests — pass (32 tests in the combined focused run).
+- `flutter analyze` — pass.
+- `e2e/run-live.sh state-shapes` with the narrow tungstenite header trace —
+  pass: connect → room switches/replays → sends → reconnects; 147 parsed client
+  frames, zero invalid headers, zero 1002. The exported ring retained the final
+  12 `wsOut` rows, including per-connection Close paths.
+- First full test run found the new tag missing from the capture-site registry;
+  fixed by naming the production-seam routing test. The next full run reached
+  1,013 passes except one unrelated parallel-only
+  `chat_viewmodel_test.dart` timing failure; that exact test passed alone.
+  Final `flutter test --exclude-tags e2e` rerun — pass, 1,014 tests.
+
+## Verification (instrumentation stride)
+
+- `flutter analyze` — pass.
+- `flutter test --exclude-tags e2e` — 1,012 passed.
+- `cargo fmt --check && cargo clippy -- -D warnings` — pass.
+- `cargo test` — 235 passed across unit/integration suites.
+
+## Acceptance criteria
+
+- [x] Instrumentation: connChannelLost rows carry close
+  code/reason/origin/path.
+- [ ] Root cause named with instrumented evidence (file:line).
+- [ ] Minimal fix confirmed by the operator repro.
+- [x] Transport-seam test proves the winning racing socket survives.
+- [x] Raw transport-seam test proves queued app DATA is ordered before Close
+  and no DATA follows it.
+- [x] `flutter analyze && flutter test --exclude-tags e2e` green after this
+  final instrumentation stride; relay source remained untouched.
+
+## Linked symptom (operator report 2026-09-05)
+
+TUI-authored user messages occasionally missing on mobile. Mechanism
+hypothesis: TUI messages reach the app only via transcript sync/replay
+(they never cross app ingress); if the app is mid-flap when one commits,
+acquisition depends on the next rehydrate — a replay cursor/high-water
+that advances past an unrendered event would skip it permanently.
+Prediction: misses correlate with the 1002 flap windows and affect only
+TUI-authored user_input. Verify when tracing: pick a known-missed TUI
+message (operator timestamps it), confirm it committed to the pi
+transcript, then trace which sync/replay windows carried it and whether
+the app's cursor skipped past it.
+
+## Linked symptom 2 (operator report 2026-09-05, later same day; sync limit resolved 2026-09-07)
+
+"Earlier history is not synced on this device" notice, first time seen.
+Mechanics: full session rehydrations replayed only the last 30 transcript
+events (overridable via OUTPOST_PI_SYNC_LIMIT); active multi-day sessions
+carry thousands of events, so every full rehydrate reported truncated.
+On a stable connection the app hydrates once and rides incremental deltas —
+the notice surfacing then was diagnostic of the flap forcing repeated FULL
+rehydrations (same root as symptom 1). Follow-up (a) landed 2026-09-07:
+SYNC_LIMIT_DEFAULT raised 30 → 200 (sized from measured event-size
+distribution vs the 4MiB decoded relay frame ceiling; ~7 busy turns).
+Remaining follow-up: (b) confirm the notice returns to its quiet
+once-per-attach behavior.
+
+## Network context (operator, 2026-09-05)
+
+Phone runs Tailscale with split tunneling (5G); currently home Wi-Fi.
+Either way the tailscale interface is in the path (relay is 100.106.7.<relay>,
+CGNAT range — routed through tailscale on every underlay). Implications:
+underlay varies while tunnel is constant — underlay likely cleared given
+the endpoint-generated 1002 close frame (a tunnel cannot fabricate WS
+close frames); tailscale's Android VPN socket-rebind behavior remains a
+plausible source of the teardown RSTs but not of the 1002. Open datum:
+whether the operator observes strikes on BOTH underlays.
+
+## Verdict (2026-09-06, stride-3 capture)
+
+Adjudication capture app-capture-2026-09-06T15-52-58: two strikes, both
+with complete stride-3 evidence. Every outbound INTENT legal (masked
+FIN+TEXT, control ~80B + envelope 193B); no local close preceded either
+1002 (the 0.0s closeInitiated row is dart's close-handshake ECHO of the
+server's frame). The relay's tungstenite rejected bytes the app never
+authored. Harness control: same app+relay on a clean path emit only
+legal frames (147 captured, zero 1002). CONCLUSION: byte-stream
+alteration between the phone's dart layer and the relay — prime suspect
+tailscale's Android userspace network stack (constant across underlays,
+phone-only, activity-shaped, harness-clean).
+
+## Differential test + mitigation (operator, at home on Wi-Fi)
+
+Point the app at the relay over LAN (direct 192.168.50.x:3300, bypassing
+tailscale; relay-failover candidates support this). Strikes stop on LAN
++ resume on tailscale = verdict sealed. Options after: LAN-primary at
+home, wss (TLS) hop to convert corruption into clean network errors,
+upstream tailscale issue with the full evidence package. Remaining
+luxury proof if ever needed: tcpdump on host:3300 during a strike shows
+the corrupted frame bytes directly.
+
+## Verdict REVERSAL (2026-09-07 evening capture)
+
+Post-cutover strikes RESUMED (12 × 1002, 16:46–17:14). The 16h silent
+window was NOT the docker-proxy cutover — it was the phone AWAY from
+home reaching the relay over tailnet subnet routing. Differential:
+tailscale path = 16h clean; home Wi-Fi → router → host virtio NIC
+(ens18, VM) = strikes within minutes of arriving home. Exonerated:
+docker-proxy (not in path), tailscale (the CLEAN leg — WireGuard
+integrity-checking), relay, app. Remaining suspects, ordered: host
+virtio NIC offload (tso/gso/gro), phone Wi-Fi stack offload, router.
+Test in flight: disable host offloads (operator, needs sudo) → strikes
+stop = host convicted; continue = phone/router side (next differential:
+force phone traffic over tailnet even at home).
+
+## VERDICT #2 (2026-09-08): host virtio offloads EXONERATED — corruption is router↔phone on the home LAN
+
+The 2026-09-07T17:23:47Z ethtool disable was runtime-only and died at the
+22:27:16Z VM reboot (container restart anchor; offloads verified back `on`
+post-reboot). Relay 0.5.4 instrumented logs give the full strike history
+(IO-104 / reset-without-handshake = the phone-strike signature):
+
+| UTC hour | strikes | regime |
+|---|---|---|
+| 15–16 | 66 | offloads ON (baseline dense) |
+| 17 | 8 (6 pre-disable + 2 at 17:26/17:29) | disable @ 17:23:47 |
+| 18 | 2 | **offloads OFF** (18:55 only) |
+| 19–20 | 48 | **offloads OFF — dense resumption** |
+| 21–22:27 | 2 | offloads OFF, quiet |
+| 22:27–01:00 | 15+ | offloads restored ON (reboot) |
+
+Decision math: ~54 strikes WITH offloads off (incl. two 20+ strike hours)
+vs. the same order post-reboot with them on — offload state made no
+difference. Control: all 77 strikes are the phone peer `qQLDCu8=`; zero
+from local pis over loopback on the same relay — the relay host process is
+exonerated alongside tailscale, docker-proxy, and now virtio offload.
+Pattern is bursty (86-min clean gap; quiet hours adjacent to dense ones) —
+usage/RF-correlated, not steady-state hardware offload corruption.
+
+Per the pre-registered tree: **strikes continue post-offload → phone Wi-Fi
+stack or router.** Next differential (operator): add the tailnet relay URL
+as primary/failover candidate in the app (ordered candidates supported) so
+at-home traffic rides tailscale; clean ⇒ mitigation = tailnet-first relay
+URL and the corrupting element is router/phone Wi-Fi (report upstream
+accordingly). No systemd ethtool unit is warranted — offloads are not the
+cause; leave them default-on.
+
+## VERDICT #3 (2026-09-08): strikes ride INSIDE the tailnet tunnel — wire-corruption theory mechanically dead; phone-side tunnel/socket lifecycle is the new prime suspect
+
+Capture `app-capture-2026-09-08T01-16-29-989Z` (13-min window, 1MiB buffer
+exhausted by active multi-room streaming — retention item parked) +
+relay 0.5.4 logs, cross-aligned:
+
+- **Both-side strike alignment**: relay IO-104 @ 01:13:39.879Z ↔ app
+  `retrying` @ 01:13:40.2Z — same event, both instruments agree.
+- **Recovery loop is a SECOND, distinct bug (client-side)**: after the
+  strike, the app logged 4 `connecting` states + 3 `retryConnect`
+  `_CancelledError`s (durations 23s / 103s / 10s — not a fixed timeout;
+  cancellations) across 01:13:40→01:16:11, while the relay saw ZERO auth
+  attempts in that gap. Connects were cancelled before reaching the wire —
+  an app-internal race (something cancels in-flight connects; note the
+  attempt counter repeated "attempt 2" twice → overlapping retry
+  schedulers suspected). This extends the outage ~2.5 min after every
+  strike it follows.
+- **Phone is ALWAYS tailnet-sourced**: 23/23 post-reboot phone auths from
+  100.121.111.<phone-tailnet> (CGNAT). The at-home differential has therefore been
+  running de facto — and strikes persist INSIDE the WireGuard tunnel.
+- **Mechanism consequence**: WG's poly1305 auth makes underlay byte
+  corruption (router or radio) unable to surface as corrupt/truncated TCP
+  payload — corrupt packets drop + retransmit, they never deliver bad
+  bytes. The "LAN corrupts frames" theory (verdicts #1–2 framing) cannot
+  explain the observations. Replacement hypothesis: **Android Wi-Fi
+  underlay events (power-save, roam, band steering) make the tailscale
+  Android VPN recycle its tunnel, resetting the TCP riding it** — phone
+  resets TCP, relay frames legal, only the phone strikes, 16h clean on 5G,
+  bursty at home. All prior evidence fits unchanged.
+- **Next differential (operator, in progress)**: 5G-at-home (Wi-Fi off an
+  hour at home). Clean ⇒ Wi-Fi-underlay↔tunnel interaction confirmed as
+  trigger; mitigation is phone-side (tailscale/keepalive/Wi-Fi power-save
+  exemption), NOT app protocol. 5G-at-home striking too would widen
+  suspicion to the tailscale app itself regardless of underlay.
+
+## Cancel-race addendum (2026-09-08, static analysis bounded)
+
+The 3× `retryConnect _CancelledError` loop (01:13:40→01:16:11) dissected:
+- NOT navigation: zero `route` events in the window; app sat on one room.
+- NOT the watchdog: `_runWatchdog` is guarded (reachability in-flight +
+  retry-timer checks) and only schedules.
+- NOT timeouts: every deadline path (`_connectAttemptDeadline`,
+  per-candidate 10s, foreground-resume expiry) throws `TimeoutException`;
+  `_CancelledError` is thrown ONLY by the factory when the parent CancelToken
+  was genuinely cancelled.
+- The canceller is therefore a re-entrant `_connect()` (generation bump →
+  `_connectCancel.cancel()`) or supervisor invalidation whose target
+  diverged from the in-flight attempt — leading candidate: the post-strike
+  room-offline retarget path (`_markActiveRoomOffline` → `_activeRoomId`
+  churn) making retried targets flap between the dead room and the
+  fallback, each flap cancelling the previous connect. The repeated
+  `attempt: 2` (twice) supports overlapping retry chains.
+- Durations 23s/103s/10s are inconsistent with any code timeout —
+  consistent with externally-timed cancellations (screen/suspend cycles or
+  reachability events from the same underlay churn that causes strikes).
+
+Needed to close: cancellation-site attribution logging (one line at each
+`_connectCancel.cancel()` site + factory checkpoint with generation ids),
+plus the capture-buffer retention fix. NOTE for the 5G differential: this
+race is app-side and independent of the strike cause — it should persist
+on 5G if a strike occurs there; if 5G shows zero strikes the race stays
+latent but unfixed.
+
+## VERDICT #4 (2026-09-08): THE METRONOME IS AN APP-SIDE READER BUG + RELAY BACKPRESSURE — no network corruption anywhere
+
+5G differential capture (02:22, 27-min window, phone on 5G at home):
+9 strikes — **underlay-independent, killing all path theories (Wi-Fi,
+router, offloads, transit)**. Cross-referenced with relay logs at the 9
+timestamps:
+
+- 8/9 strikes: app reports `closeOrigin: serverCloseFrame, closeCode: 1002`
+  — but the relay logged NO protocol error and sent NO close for any of
+  them (tungstenite logs its closes; the relay saw only the phone's TCP
+  reset → IO-104). Both cannot be true, and WG transit integrity makes
+  in-flight byte corruption impossible: **the app's hand-rolled WS frame
+  reader synthesizes a PHANTOM server-close(1002)** — the misparse happens
+  above the tunnel, on the phone.
+- 1/9 strikes (02:04:49): the relay legitimately force-closed with
+  `relay_outbound_mailbox_saturated` (logged, with a burst of dropped
+  dest-not-found frames) — and the app correctly reported THAT one as
+  `streamDone/1006`. The instruments agree whenever the close is real.
+- Correlate: two strikes directly preceded by a 189,877-byte inbound
+  envelope (identical size — fleet rooms/presence firehose burst). Context:
+  the phone drains the relay slowly; the relay's outbound mailbox
+  saturates under the firehose; large extended64-length frames arrive as
+  many fragmented socket reads — and the reader's fragmentation state
+  machine misparses (deterministically producing close-code 1002 =
+  0x03EA byte pattern read as a frame header).
+- This also reinterprets ALL prior evidence: the original "truncated
+  frames" (reader bug symptom), "relay last frames legal + no close sent"
+  (true — relay never closed), phone-only resets (true — phone tears down),
+  away-leg 16h clean (lower inbound volume/fewer firehose bursts —
+  weakest link in the new model, noted).
+
+**Fix surface**: app inbound frame parser (ws_transport hand-rolled reader:
+fragmented extended64 handling) + reader-side drain (why the phone lets
+the relay mailbox saturate — 190KB JSON envelope parse on the main
+isolate?). The recovery-time amplification (cancel race) stays a separate
+parked bug. No relay change required beyond the existing saturation close
+(which worked as designed and was honestly reported).
+
+The ethtool/systemd item is fully closed (no-op). Tailnet-first
+mitigation is moot (strikes ride the tunnel already).
+
+## VERDICT #4 CORRECTION (same day, pre-fix): not a reader misparse — dart-synthesized 1002 + missed-pong teardown under backpressure
+
+Deeper code read corrects the mechanism (core finding stands: no network
+corruption; phone-side teardown; relay exonerated):
+
+1. The app does NOT hand-roll inbound framing — `IOWebSocketChannel` +
+   `ws.stream.listen` delivers complete dart-parsed messages. The outbound
+   framing fields in wsOut intents are logging-only.
+2. `_recordStreamDone` classifies `closeCode != 1005 && != 1006` as
+   "serverCloseFrame" — but dart:io SYNTHESIZES closeCode 1002 (its
+   protocolError constant) when the stream dies abnormally mid-message. No
+   close frame was parsed; the attribution heuristic is wrong. (The one
+   REAL relay close in the capture was correctly reported streamDone/1006.)
+3. Full coherent chain: fleet firehose burst (the 189,877-byte envelope) →
+   phone's listen-callback parses/demuxes on the main isolate → socket
+   reads stall → TCP backpressure → relay's outbound mailbox/send-buffer
+   fills (proven: relay_outbound_mailbox_saturated) → relay's pong to
+   dart's 45s pingInterval ping cannot be processed in time → dart's
+   missed-pong watchdog kills the connection (synthesized 1002) → relay
+   sees IO-104. Explains everything incl. the away-16h-clean leg (fewer
+   fleet bursts away).
+
+Fix surfaces (app-side): (a) attribution correction (dart-synthesized 1002
+must not classify as serverCloseFrame); (b) inbound firehose parse off the
+socket-read critical path (or chunked decode) so reads never stall;
+(c) liveness tolerance under burst load (raise/disable dart pingInterval in
+favor of the app-level any-inbound-frame liveness the code already
+documents). Relay unchanged.
+
+## Probe map + verdict #3 correction (2026-09-08)
+
+Worker probes (Flutter 3.47.1 / Dart 3.13.1, raw RFC6455 fakes) pin dart's
+closeCode surface empirically:
+- abrupt mid-frame TCP death → **1006** (abnormalClosure)
+- dart's own missed-pong kill (pingInterval, silent server) → **1001**
+  (goingAway)
+- post-handshake framing garbage (reserved opcode 0x83) → **1002**
+  (protocolError)
+
+Observed strikes are closeCode **1002** ⇒ the phone's dart parser really
+parsed WS-framing violations off the socket. Two consequences:
+
+1. Verdict #4-correction's missed-pong mechanism is DEAD (would give 1001).
+2. Verdict #3's "WG integrity exonerates everything except the endpoints"
+   OVERREACHED: WG protects only the transit. Corruption between the relay
+   process and tailscaled ON THE VM (kernel TCP → TUN → tailscaled
+   userspace handoff) is encrypted faithfully and delivered corrupt —
+   WG-invisible. The VM-internal write path is back in scope. (Note: the
+   ethtool offload test disabled ens18 offloads — the TUN path doesn't
+   traverse ens18, so that test never covered this suspect.)
+
+Also exonerated by code read: PreAuthGuard (inspect-only; can kill, never
+corrupt either direction).
+
+**Next decisive instrument** (small, lands on both sides): paired frame
+hashes — relay logs a running hash of every frame tungstenite writes to
+the phone; app logs a hash of every raw frame dart delivers pre-parse.
+One strike with mismatched hashes localizes corruption to the VM-internal
+path; matching hashes with a dart parse error would implicate dart itself
+(unlikely but now falsifiable). Fix story stays stopped (escape hatch) —
+attribution relabel of 1002 is still worthwhile once the true origin
+settles.
+
+## Instrument first light + relay posture incident (2026-09-08, 03:5x)
+
+- First strikes on instrumented relay 0.5.5 (03:39:02 frames_out=418
+  out_hash=0f991278f3a937f2; 03:40:03 frames_out=32 out_hash=7d60d08909343ef5;
+  03:48 strike on connection to Vwjew room). Per-frame DEBUG records live:
+  `frame_idx/bytes/hash + running out_hash` — firehose class confirmed at
+  the writer up to **392,465 bytes/frame**. App side was still the old
+  build (no idx/h fields) — paired comparison starts with the rc.2 APK.
+- **Posture incident (introduced and fixed by orchestrator)**: the 0.5.5
+  container swap followed AGENTS.local.md's stale `docker run -p 3300:3000`
+  line and unknowingly moved the relay from HOST-NETWORKED (incident-era
+  posture, real source IPs) to docker-NAT (strikes showed addr=172.17.0.1).
+  Restored `--network host` + OUTPOSTPI_RELAY_PORT=3300 within ~15 min;
+  phone re-authed from 100.121.111.<phone-tailnet>; runbook line corrected. Diagnostic
+  value: 1002 strikes occurred in BOTH network modes within the hour —
+  docker-proxy adds no new exoneration, and the mechanism remains
+  VM-internal-or-dart (the paired hashes decide).
+
+## VERDICT #5 (2026-09-08, 05:1x): paired hashes read out — corruption lives in the VM-internal relay→tailscaled segment under burst backpressure; dart-misparse is the only surviving alternative
+
+First paired capture (rc.2 app + relay 0.5.5, 7 strikes in 29 min):
+
+**Instrument validity**: cross-side hash bases verified identical (recurring
+76-byte control frame hashes `ddadba6b4b33c4f8` on both sides; 102-byte
+broadcast class likewise). Comparisons are sound.
+
+**Strike shapes** (app last-delivered idx vs relay frames_out at the RST):
+- 04:49:36 — app healthy to idx=803 (last frame 19ms before loss); relay
+  had written 809. ~6 frames in flight at teardown — death mid-burst.
+- 05:01:48 — app reads went SILENT 23s after idx=41 while the relay pumped
+  to frames_out=344: ~303 frames written-but-never-delivered. The window's
+  connections carried the firehose class at the app too (idx=120 =
+  369,471-byte envelope).
+- 04:53 / 04:58 / 05:00 — app idx == relay frames_out at death (clean
+  boundary race).
+
+**Elimination chain** (settled): tungstenite cannot emit invalid frames
+(protocol implementation); WG transit cannot corrupt (auth-tag drops);
+frames never delivered cannot cause dart parse errors (dart only errors on
+bytes it reads); dart's own kills give 1001/1006 (probes). dart READ
+garbage ⇒ the garbage entered AFTER tungstenite's write and BEFORE WG
+encryption — i.e., the **VM-internal segment: kernel TCP → TUN →
+tailscaled userspace**, under burst/backpressure conditions (369KB-class
+frames, 23s read stalls, fleet-wide broadcast bursts of 102B frames).
+
+**Next decisive step (cheap, developer-reproducible)**: a slow-reading WS
+client on the VM itself (or laptop over tailnet — NOT the phone)
+subscribed to the same firehose. Reproduces ⇒ VM-side bug with a minimal
+repro for tailscale/kernel upstream; clean ⇒ phone-side, and the
+dart-misparse hypothesis gets tested via raw-socket capture on a dev
+machine. Relay per-frame records could also gain a peer tag for cleaner
+per-connection trails (instrument tweak, non-blocking).
+
+## VERDICT #6 — SEVERANCE, NOT CORRUPTION (2026-09-08, 05:5x): hash-proven
+
+Capture 05:56 cross-read with relay logs — the question is closed:
+
+- **5/6 strikes pair with EXACT count alignment** (app last-delivered idx ==
+  relay frames_out: 10/10, 19/19, 460/460, 44/44, 282/282). Every frame the
+  relay wrote was delivered. No written-but-lost tail at all.
+- **Final-frame hash match**: relay `frame_idx=10 frame_bytes=487113
+  frame_hash=720b02e19e97fc11` == app `idx 10 bytes 365271 (decoded;
+  wire 487113) h 720b02e19e97fc11`. Delivered bytes were INTACT, always.
+- Therefore the 1002s are **truncated-stream parse errors** (dart reads a
+  frame header then the stream ENDS — a severed stream mid-frame is itself
+  the protocol violation; my earlier "garbage bytes" reading was
+  over-literal — no corrupt byte ever existed).
+- The relay's IO-104 "Connection reset by peer" is **tailscaled resetting
+  the VM-local loopback TCP** when the tunnel connection to the phone
+  severs — tailscaled IS the relay's TCP peer under host networking.
+- Full mechanism: reconnect → full rooms/presence firehose (337–487KB wire
+  envelopes, hash-verified delivered) → the tailscale tunnel connection
+  severs right after/mid-burst → dart 1002 (truncation) + relay IO-104
+  (tailscaled reset) → cancel race drags recovery → repeat. The metronome
+  period ≈ firehose bursts on fleet activity.
+- **Remaining question (narrow, one variable)**: WHO severs the tunnel —
+  VM tailscaled, router NAT/state expiry under burst-then-quiet (both home
+  underlays traverse the router; the away-clean leg plausibly rode DERP),
+  or the phone's tailscale app. The non-phone slow-client repro harness
+  discriminates exactly this. No app-side or relay-side defect remains in
+  the strike path itself; app-side work reduces to the recovery UX
+  (cancel race — parked) and possibly burst pacing.
+
+## Repro harness landed + new tunnel-path evidence (2026-09-08, 15:5x)
+
+Committed `e2e/severance_harness.mjs` + `e2e/path_sampler.py` (66096f2dc).
+
+**Harness**: slow-reading WS client, own ed25519 identity per leg, mirrors
+the app's exact wire sequence (hello room_id=main → challenge → auth →
+presence_check([]) probe → subscribe_presence/rooms + one-shot checks),
+duty-cycle read throttle (socket pause/resume, default 500ms/2000ms),
+per-frame FNV-1a64 accounting on the relay's exact basis. **Instrument
+pairing validated over loopback**: harness `framesIn=5 runIn=c8942a09eaad559c`
+== relay `frames_out=5 out_hash=c8942a09eaad559c` on the same connection.
+Strike taxonomy: abrupt-reset/abrupt-eof (the severance signature),
+relay-close:<reason> (mailbox saturation etc., benign/self-identifying),
+watchdog-silent (NAT-blackhole variant). Relay-side note: an abrupt LOCAL
+kill renders as "Connection reset without closing handshake" while the
+phone strikes render as "IO error: Connection reset by peer (os error
+104)" — distinct classes, useful when reading harness-leg logs.
+
+**Legs running since 15:53Z (6h)**: A = loopback slow reader (no tailscale
+in path); path sampler = phone tunnel state every 10s + relay stream-error
+rows + VM tailscaled link-change events into one timeline.
+
+**New facts from the VM side**:
+
+1. Tailnet census: exactly THREE nodes — codebox (VM), pixel-10-pro
+   (offline 13d), pixel-11-pro-fold. NO laptop exists on the tailnet; a
+   real tunnel leg needs a second node (operator: join a laptop, or
+   approve a login for a userspace container node).
+2. Self-tailnet leg is a NO-OP: `ip route get 100.106.7.<relay>` → local table,
+   dev lo. Connecting to the VM's own tailnet IP never traverses tailscaled.
+3. VM tailscaled DOES rebind, but only on docker-bridge churn
+   (`rebind-reason=[ips-changed]`, br-* up/down from compose lanes);
+   rebinds cluster 06:20–08:38 and NONE coincide with the afternoon
+   strike cluster (14:51–15:48+, 7+ strikes). VM-rebind theory weakened
+   for observed strikes (default log verbosity caveat: peer-path events
+   may not log without -v — the sampler + status polling covers that).
+4. Phone's tunnel path FLIPPED mid-session: direct 192.168.40.<phone-wifi>:45886
+   (15:44) → DERP relay=den with empty CurAddr and a ~5min-stale handshake
+   (15:52 sample). Path instability is observable from the VM; correlate
+   flips against strike timestamps via the sampler timeline.
+
+## Final leg tally (2026-09-08, 21:53Z — all timed legs completed)
+
+- Leg A: ONE loopback connection held the full 6h (1,022 frames, zero
+  abnormal). A2: 177 cycles, zero abnormal. Bench: 170 cycles / 168 full
+  ~1.14MB ct bursts (191MB) through the throttled reader, zero abnormal.
+- Relay ledger, 6h: 10 phone strikes (all `qQLDCu8=`), ZERO on any harness
+  peer across ~350 connection-cycles with the phone's exact wire shape.
+- All 10 phone strikes rode the DIRECT UDP path (zero on DERP-only windows,
+  though those were also low-traffic — correlated, confounded).
+- Wire signature now 4/4: strike 16:45:35 (fo=530) shows the regular
+  [124,110]B exchange continuing through the strike second with the extra
+  96B from-phone packet arriving on top of it. Tunnel healthy in all four.
+
+## VERDICT #8 (2026-09-08, 16:4x): THE TUNNEL NEVER DIES — phone-side RST on a healthy tunnel; "severance" is falsified at the wire
+
+Wire capture (wgwatch docker: tcpdump `udp host 192.168.40.<phone-wifi>` on ens18,
+e2e/.run-state/severance/wire/) covering direct episodes 16:26–16:33 and
+16:34–16:36 with strikes #5 (16:30:47, fo=749), #6 (16:32:09, fo=15), #7
+(16:35:00, fo=10 — only 7s after connect, 6s after a 309KB burst):
+
+- **Bidirectional UDP flow continues THROUGH every strike**: regular
+  234B-pair exchange both directions the second before, same cadence the
+  second after. No flow gap, no unanswered keepalive storm, no rebind, no
+  path death — at strike #5 the tunnel carried the NEXT cycle's 703KB burst
+  30s later on the same 5-tuple. Verdict #6's "the tailscale tunnel
+  connection severs" is falsified: nobody severs the tunnel.
+- At each strike second the last packet is **~96B FROM the phone** — the
+  wire size of a WG packet carrying a bare TCP RST (~40B IP+TCP + WG
+  overhead). The RST is generated ON the phone, crosses its own healthy
+  tunnel, and resets the relay's socket (IO-104). Router and VM are
+  mechanically excluded: neither can forge a WG-authenticated packet from
+  the phone.
+- Mechanism (high-confidence hypothesis, phone-logs will confirm): Android
+  tailscale is fully userspace-netstack — the TCP the relay sees terminates
+  INSIDE the phone's tailscale app process. The RST is that netstack
+  resetting its tracked flow ~6–26s after buffering a ~1.2MB rehydration
+  burst (conntrack GC / memory-pressure reset / network-callback bounce —
+  the known tailscale-android connection-reset behavior class). Every
+  earlier observation re-fits: phone-only, burst-correlated, away-leg
+  cleaner (fewer/smaller rehydrations), "IO-104" = the phone's own RST
+  arriving, direct-vs-DERP irrelevant (netstack resets either way), WG
+  handshake cadence untouched.
+- Consequences: the fix story's app-side units are moot for the strike
+  itself (the app cannot prevent a netstack RST under it). Actionable:
+  (a) phone-side — tailscale app logs + bug report with this evidence;
+  battery-optimization check; (b) app-side recovery — the parked cancel-race
+  fix (post-RST reconnect drags 2.5min) becomes the primary UX lever;
+  (c) mitigation — home-LAN relay candidate (bypasses tailscale on the
+  phone entirely; earlier LAN differential was clean) or smaller
+  rehydration envelopes (burst-size reduction: split 730KB frames).
+- Leg B (laptop over tailnet) RETAINED but reinterpreted: it now tests
+  whether a non-Android netstack reader survives the same bursts — evidence
+  FOR the phone-app theory by counter-example (laptop clean), and a
+  regression rig for any future burst-shape changes.
+
+## VERDICT #7 (2026-09-08, 16:0x): burst-then-QUIET kills it — reset arrives FROM the phone through the tunnel; VM + relay fully exonerated in-run
+
+Same-session correlation of sampler + relay logs (3 phone strikes, each
+with 10s-resolution tunnel telemetry):
+
+- Every strike rode a DIRECT UDP path 26–80s old, seconds-to-tens after a
+  ~1.2–2.7MB firehose burst (reconnect snapshot), and — the sharp edge —
+  6–26s into the COMPLETE QUIET that follows the burst. Post-strike the
+  direct path itself drops to DERP-only (phone tunnel rebuilds), then the
+  cycle repeats: reconnect → direct → burst → quiet → strike → DERP.
+- ZERO WG keepalive traffic during the quiet (peer txBytes frozen at 0.0KB
+  for 60s+ while the TCP still stood): no keepalives refresh the UDP
+  mapping after the burst ends.
+- VM tailscaled logged NOTHING at any strike (no rebind, no link change;
+  the docker-churn rebinds were hours away). Leg A (loopback slow reader
+  riding the SAME firehose bursts, throttled) — ZERO strikes across all
+  three phone strikes. The relay/VM-internal path is exonerated live,
+  concurrent, same-load.
+- RST arithmetic: the relay is host-networked and the VM runs kernel-TUN
+  tailscale, so the relay's TCP terminates in the VM kernel and its IO-104
+  RST can only arrive as a WG-decrypted packet FROM the phone — VM
+  tailscaled cannot self-inject RSTs. The severance signal originates on
+  the phone's side of the tunnel, every time.
+- Remaining fork (one variable, narrower than verdict #6's): during the
+  post-burst quiet, WHO invalidates the flow — (i) the router expiring
+  the un-refreshed UDP mapping (phone then resets conns on path loss) or
+  (ii) the phone's tailscale app / Android VPN layer itself. Leg B from a
+  second tailnet node through the same router (laptop, direct UDP, same
+  harness) discriminates: laptop strikes ⇒ router; laptop clean ⇒ phone.
+  Phone-side tailscale app logs (operator) would likely settle it directly.
+- Mitigation worth testing regardless (phone-side, operator): enable
+  Tailscale's persistent keepalive... note tailscale-android normally keeps
+  mobile-clients alive via magicsock disco every ~30s — the observed ZERO
+  wire bytes suggest even disco idle traffic is suspended (Android battery
+  optimization throttling the tailscale app between bursts?). Check the
+  phone's battery-optimization exemption for Tailscale FIRST — a throttled
+  tailscale app matches every observation: burst (app awake, network
+  flowing) → quiet (Doze throttles the app → keepalives stop → mapping/
+  socket dies) → strike on next activity... though strikes fire DURING the
+  quiet, not on next activity — so Doze-throttle alone is insufficient;
+  the router fork stays live.
+
+## VERDICT #9 (2026-10-04, 21:2x–21:4xZ): production-path confirmation — paired instrument reads out 5/5; relay exonerated live; inbound-dead asymmetry during recovery
+
+Field capture `debug/app-capture-2026-10-04T21-42-33-190Z-277802736e11.bin`
+(6786 events, v0.12.0+28 daily driver) paired with concurrent relay logs
+(relay 0.5.5 instrument, DEBUG; excerpt
+`.work/session-notes/metronome-2026-10-04-relay-window.log`). Five strikes,
+all on the real phone→relay path — first production confirmation of verdict
+#8's phone-RST theory without harness legs:
+
+| # | app channelLost (cid) | relay saw (addr) | Δ | relay frames_out |
+|---|---|---|---|---|
+| 1 | 21:24:09.274 (63) | 21:24:07.675 IO-104 RST (:50714) | 1.60s | 339 |
+| 2 | 21:24:27.575 (65) | 21:24:25.996 IO-104 RST (:49222) | 1.58s | 148 |
+| 3 | 21:24:47.820 (67) | 21:24:46.225 IO-104 RST (:54878) | 1.59s | 46 |
+| 4 | 21:31:17.143 (72) | 21:31:15.585 IO-104 RST (:40408) | 1.56s | 27 |
+| 5 | 21:41:01.246 (77) | 21:40:59.635 IO-104 RST (:39002) | 1.61s | 2163 |
+
+New facts beyond #7/#8:
+
+1. **The RST→app-teardown gap is a 1.56–1.61s constant across 5/5** —
+   metronome-grade determinism on the real path. The relay NEVER sent a
+   close and saw no protocol violation; every reset originates phone-side.
+2. **App `closeInitiated` (firstByte 136) fires at −0.00s in all 5** — the
+   app writes its close frame into an already-RST'd socket; the relay
+   receives RST, not close. `closeOrigin:"serverCloseFrame" closeCode:1002`
+   is definitively dart-synthesized misattribution (fix-story unit 1 now
+   field-proven 5/5).
+3. **Inbound-dead asymmetry during episodes** (new): every retry ladder
+   connection sends `hello` (relay receives it — relay logs
+   `handshake step failed phase="auth"` ~11s later from each retry port),
+   the relay's preauth reply NEVER appears in app `wsIn` (zero rows for
+   those connectionIds), the app gives up ~3s in and closes. Phone→relay
+   delivery works; relay→phone is dead for the episode duration. One-way
+   reachability, not just a killed flow — strengthens the phone
+   tailscale-netstack wedge theory and the pending tailscale-android bug
+   report.
+4. **Burst correlation in production**: relay frames_out before each RST
+   (339/148/46/27/2163); capture shows a 216KB single envelope 2.9s before
+   strike 2 plus ~30 envelope floods in the final second; strike 5 rode a
+   2,163-frame push. Online→lost spans: 3.8s / 11.3s / 161.9s / 336.9s —
+   burst-correlated, not fixed-period; the metronome can strike within
+   seconds of online.
+5. **Recovery pain field-confirmed**: after strikes 2–3 the ladder burned
+   8× `retryConnect _CancelledError` + 1 TimeoutException across
+   1s/2s/5s/10s/30s backoffs — ~4 min offline. The parked cancel-race fix
+   is the primary UX lever (verdict #8 consequence (b), now with production
+   shape).
+
+The v0.12.0 instrument delivered exactly the conclusive pairing it was cut
+for; no tungstenite frame=trace was needed (no WS-layer violation exists).
+
+
+## Stride (2026-10-05, autopilot pre-release drain)
+
+- Verdict #9 field evidence cross-checked against shipped code: the
+  attribution relabel (dart-synthesized 1002/1001 → streamError +
+  dartProtocolError/dartPingWatchdog) ALREADY LANDED in v0.12.1
+  (story-fix-metronome-phantom-close-teardown, 2177087f1). Verdict #9's
+  capture ran the v0.12.0+28 daily driver, so its serverCloseFrame/1002
+  rows validated the fix's premise, not a missing fix. Unit 1 closed.
+- Cancellation-site attribution logging LANDED this stride: typed
+  `ConnCancelEvent` (tag connCancel; sites factoryStart /
+  reentrantConnect / supervisorInvalidate / performConnectEntry, each
+  carrying the connect generation) wired at every `_connectCancel.cancel()`
+  site + factory checkpoint; registry + production-seam routing test
+  (generations pair the checkpoint with its attempt and its superseder).
+  The next field capture names the cancel-race canceller from these rows.
+- Remaining work is NOT autonomously completable: (a) operator-side —
+  tailscale-android bug report with the verdict #8/#9 evidence package,
+  battery-optimization check, repro confirm on a v0.12.1+ build; (b) the
+  cancel-race BEHAVIORAL fix, deliberately held until the new logging
+  names the canceller (story discipline: no blind behavioral fixes);
+  (c) optional mitigations (home-LAN relay candidate, rehydration burst
+  splitting) — undecided, operator call.

@@ -10,4 +10,4 @@ tags: [cockpit, workflow]
 Cockpit file-viewer `_save()`/`_format()` asynchronous actions need one owned rejection boundary whether invoked via keyboard shortcut (VoidCallback slot) or toolbar (owned rejection-observing adapter), with focus restoration preserved and both entry-point tests kept distinct. Folded from two gate-refactor lifecycle findings.
 
 Consolidated 2026-10-05 by operator-confirmed groom merge from: gate-refactor-lifecycle-file-viewer-shortcut-promise, gate-refactor-lifecycle-file-viewer-toolbar-promise.
-Scope-promote via /agile-workflow:scope when wanted.
+Promote via Workbench `work` when wanted.
