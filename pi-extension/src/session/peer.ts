@@ -77,7 +77,7 @@ export interface AckResult {
 
 interface AckBody {
   type: "ack";
-  status: "received" | "busy" | "denied" | "unknown_peer";
+  status: "received" | "busy" | "denied" | "invalid_envelope" | "unknown_peer";
   target: string;
 }
 
@@ -347,6 +347,7 @@ export class SessionPeer {
 
     try {
       await this._rejoin(reason);
+      if (this.leftFlag) return;
       this.rejoinBackoff = REJOIN_BACKOFF_FLOOR_MS;
       // The new broker's peers map starts fresh — consumers must re-query
       // any cached state (peer count, etc.) that depended on the old broker.
@@ -373,12 +374,25 @@ export class SessionPeer {
     this.rejoinTimer.unref?.();
   }
 
+  /** Election seam (overridable in lifecycle tests for deterministic barriers). */
+  protected _elect(): Promise<ElectionResult> {
+    return joinOrLead(this.opts.sockPath);
+  }
+
   /** One joinOrLead + staged register + atomic promote. Throws on election
    *  failure (caller owns the retry). The OLD connection is destroyed only
    *  after the candidate registered — make-before-break. */
   private async _rejoin(reason: string): Promise<string> {
     void reason;
-    const result: ElectionResult = await joinOrLead(this.opts.sockPath);
+    const result: ElectionResult = await this._elect();
+    if (this.leftFlag) {
+      if (result.role === "leader") {
+        await new Promise<void>((resolve) => result.server.close(() => resolve()));
+      } else {
+        try { result.socket.destroy(); } catch { /* already gone */ }
+      }
+      return this.assignedName;
+    }
 
     if (result.role === "leader") {
       this.role = "leader";
@@ -408,10 +422,29 @@ export class SessionPeer {
       // racer publishing between verify and connect cannot wedge us into
       // the successor while still hosting the old broker.
       const sock = createConnection(result.leaderInfo.target);
-      await new Promise<void>((resolve, reject) => {
-        sock.once("connect", () => resolve());
-        sock.once("error", reject);
-      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          sock.once("connect", () => resolve());
+          sock.once("error", reject);
+        });
+      } catch (err) {
+        try { sock.destroy(); } catch { /* already gone */ }
+        if (this.broker === broker) {
+          this.broker = null;
+          this.role = "follower";
+        }
+        await broker.close().catch(() => undefined);
+        throw err;
+      }
+      if (this.leftFlag) {
+        try { sock.destroy(); } catch { /* already gone */ }
+        if (this.broker === broker) {
+          this.broker = null;
+          this.role = "follower";
+        }
+        await broker.close().catch(() => undefined);
+        return this.assignedName;
+      }
       return await this._registerStaged(sock);
     }
 
@@ -441,7 +474,16 @@ export class SessionPeer {
     });
     sock.on("error", () => { /* close will follow */ });
 
+    let wait: ReturnType<typeof setTimeout> | null = null;
+    const clearWait = (): void => {
+      if (wait !== null) {
+        clearTimeout(wait);
+        wait = null;
+      }
+    };
+
     const fail = (reject: (err: Error) => void, err: Error): void => {
+      clearWait();
       staged.preAck = null;
       staged.onDeath = undefined;
       this.staged.delete(staged);
@@ -452,11 +494,13 @@ export class SessionPeer {
     return new Promise<string>((resolve, reject) => {
       staged.onDeath = (err: Error) => fail(reject, err);
       // The first inbound line MUST be the register_ack. Buffer-aware.
-      const wait = setTimeout(() => {
+      wait = setTimeout(() => {
+        wait = null;
         fail(reject, new Error("register_ack timeout"));
       }, 5_000);
+      wait.unref?.();
       staged.preAck = (raw: unknown) => {
-        clearTimeout(wait);
+        clearWait();
         // plan/38: a new broker returns `address_assigned` (canonical key) +
         // `name_assigned` (clean leaf). Read both with cross-fallback so we
         // work against either a new broker OR a legacy one (only
@@ -505,7 +549,6 @@ export class SessionPeer {
       try {
         sock.write(req);
       } catch (e) {
-        clearTimeout(wait);
         fail(reject, e as Error);
       }
     });

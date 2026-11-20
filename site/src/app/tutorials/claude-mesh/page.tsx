@@ -175,14 +175,14 @@ Agent name [api]: reviewer`}
             </ul>
           </DocsSubsection>
 
-          <DocsSubsection id="channels" title="Message delivery: polling by default">
+          <DocsSubsection id="channels" title="Message delivery: inbox-drained by default, opt-in push">
             <p>
               When a message lands, the MCP server buffers it in this
               agent&apos;s inbox. Claude reads pending messages by calling{" "}
               <InlineCode>get_messages</InlineCode> — the skill has it do so at
               the start of every turn, so an incoming message is seen the next
-              time you prompt it (turn-boundary polling). That is the default,
-              and it needs no special flags.
+              time you prompt it (inbox-drained turn-boundary polling). That is
+              the default, and it needs no special flags.
             </p>
             <p>
               Immediate wake is an opt-in: launch with{" "}
@@ -190,9 +190,21 @@ Agent name [api]: reviewer`}
               server&apos;s channel notification{" "}
               <strong className="text-fg">wakes Claude</strong> right away —
               no prompt needed. A wake is edge-triggered and rate-capped: a
-              burst or broadcast nudges once, not once per message, and the
-              nudge itself carries no message body — <InlineCode>get_messages</InlineCode>{" "}
-              stays the single authoritative way to read what arrived.
+              burst or broadcast nudges once, not once per message. With{" "}
+              <InlineCode>--outpost-mesh-wake</InlineCode> alone, the nudge
+              carries no message body and <InlineCode>get_messages</InlineCode>{" "}
+              stays the single authoritative drain.
+            </p>
+            <p>
+              To skip the extra <InlineCode>get_messages</InlineCode> round-trip
+              for local peers, add <InlineCode>--push-deliver</InlineCode>{" "}
+              alongside <InlineCode>--outpost-mesh-wake</InlineCode> (hybrid
+              push-turn delivery): local peer envelopes are pushed directly into
+              the turn in rate-capped (5s), byte-bounded (64 KiB) batches and
+              are already drained, while cross-PC (<InlineCode>&lt;pc&gt;:</InlineCode>)
+              and <InlineCode>_relay</InlineCode> messages (plus oversized or
+              transport-failed local fallbacks) stay buffered in{" "}
+              <InlineCode>get_messages</InlineCode>.
             </p>
           </DocsSubsection>
         </DocsSection>
@@ -200,9 +212,10 @@ Agent name [api]: reviewer`}
         <DocsSection id="flags" title="Safe defaults, opt-in flags">
           <p>
             The wrapper launches Claude with its normal permission policy —
-            Claude asks you before running tools, and mesh messages arrive via{" "}
-            <InlineCode>get_messages</InlineCode> polling. Two distinct opt-ins
-            change that, and the wrapper only ever manages the second for you:
+            Claude asks you before running tools, and mesh messages run in
+            inbox-drained mode via <InlineCode>get_messages</InlineCode>{" "}
+            polling. Three distinct opt-ins change that, and the wrapper never
+            touches the first:
           </p>
           <ul className="list-disc pl-6 space-y-1">
             <li>
@@ -212,17 +225,26 @@ Agent name [api]: reviewer`}
               wrapper never injects it.
             </li>
             <li>
-              <strong className="text-fg">Initiative</strong> —{" "}
-              <InlineCode>--outpost-mesh-wake</InlineCode> lets mesh peers
+              <strong className="text-fg">Initiative (wake nudges)</strong> —{" "}
+              <InlineCode>--outpost-mesh-wake</InlineCode> lets LOCAL mesh peers
               START turns on the session. The wrapper expands it to the
               development-channels flag (Claude asks one consent question at
               launch) and pre-approves the read-only{" "}
               <InlineCode>get_messages</InlineCode> drain so an unattended
               woken turn can read what woke it.
             </li>
+            <li>
+              <strong className="text-fg">Push-turn delivery (hybrid)</strong> —{" "}
+              <InlineCode>--push-deliver</InlineCode> (strictly requires{" "}
+              <InlineCode>--outpost-mesh-wake</InlineCode>; passing it or
+              ambient <InlineCode>OUTPOST_PI_MCP_PUSH_DELIVER=1</InlineCode>{" "}
+              alone exits 1 fail-fast) pushes local peer envelopes directly as
+              turn input instead of body-free nudges while keeping cross-PC
+              traffic in <InlineCode>get_messages</InlineCode>.
+            </li>
           </ul>
           <CodeBlock
-            code={"# wake only — woken turns still face the approval gate:\noutpost-pi claude ~/code/api --outpost-mesh-wake\n\n# both — unattended peer-driven turns:\noutpost-pi claude ~/code/api --outpost-mesh-wake --dangerously-skip-permissions"}
+            code={"# wake nudges only — woken turns still face the approval gate:\noutpost-pi claude ~/code/api --outpost-mesh-wake\n\n# hybrid push-turn delivery (local envelopes pushed directly; cross-PC in get_messages):\noutpost-pi claude ~/code/api --outpost-mesh-wake --push-deliver\n\n# unattended peer-driven turns (you asked for it):\noutpost-pi claude ~/code/api --outpost-mesh-wake --push-deliver --dangerously-skip-permissions"}
             label="Opt in (you type this)"
             language="bash"
           />

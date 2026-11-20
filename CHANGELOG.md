@@ -1,3 +1,72 @@
+## v0.14.0 — 2026-11-20
+
+### Features
+
+- **MCP push-turn delivery and delivery-mode generalization** — generalized
+  `pi-extension/skills/agent-network/SKILL.md`, MCP server instructions,
+  `pi-extension/README.md`, `PROTOCOL.md`, `docs/DECISIONS.md`, and the Claude
+  mesh tutorial around push-delivered vs. inbox-drained delivery modes and the
+  hybrid local-push / remote-inbox invariant. Added opt-in `--push-deliver` on
+  `outpost-pi claude` (fail-fast exit 1 for both `--push-deliver` and ambient
+  `OUTPOST_PI_MCP_PUSH_DELIVER=1` without `--outpost-mesh-wake`, preserving
+  authority/drain/local-only guards) and `--push-deliver` /
+  `OUTPOST_PI_MCP_PUSH_DELIVER=1` on `mesh_server.ts`, backed by a dedicated
+  bounded `pushQueue` (1,000 messages / 4 MiB), 5s `WakeGate` rate cap, 64 KiB
+  UTF-8 burst batching, single-flight FIFO delivery, oversized-envelope and
+  transport-failure rollback to `get_messages`, and synchronous `dispose()`
+  teardown. Recorded settled Part 2b Antigravity (`agy`) empirical probe
+  findings and Slice 2 architecture in `pi-extension/docs/agy-push-delivery.md`.
+- **Name-scoped MCP endpoint lock ownership & coexistence** — moved the MCP
+  mesh endpoint onto the shared `(cwd, name)`-scoped lock walk
+  (`acquireUniqueNamedCwdLock`) with restart-race grace before `#N` suffixing,
+  in-channel contention notifications, actionable `degradedReason`, and a
+  bounded shutdown exit timer, retiring the single-endpoint-per-folder
+  `OUTPOST_PI_MCP_CWD` workaround.
+- **Restart-loop fresh-start path and loud relaunch diagnostics** — added an
+  explicit `--fresh-first` path (`PI_RESTART_FRESH=1`) to
+  `scripts/pi-restart-loop.sh` so skill/package changes reach sessions without
+  mobile `/new`, alongside persistent lifecycle logs and `RELAUNCH-FAILED-FAST`
+  failure traces.
+
+### Fixes
+
+- **Local mesh broker rendezvous generations** — eliminated multi-generation
+  local mesh broker splits during mass restart sweeps via unique
+  `broker-<generation>.sock` targets and atomic `broker.sock` symlink
+  rendezvous publication, supersession dissolution, and single-flight
+  make-before-break `SessionPeer` failover (including disposal guards when
+  `leave()` races `joinOrLead()` or register handshake).
+- **Enforced `re` UUID-only contract and loud `invalid_envelope` NACK** —
+  validated `re` (`null` or UUID via single-source `UUID_RE`) at both
+  `agent_send` send surfaces (Pi extension tool and MCP server) and added loud
+  `invalid_envelope` NACK + bounded audit logging in the local broker so
+  malformed envelopes fail fast instead of timing out silently.
+- **Distinguishable app↔relay outbound-mailbox saturation closes** — the relay
+  now emits a dedicated WebSocket close (`1013` +
+  `relay_outbound_mailbox_saturated`, bounded by a 1s send timeout) when a
+  client's outbound mailbox saturates, and the Flutter app projects that exact
+  close frame into `serverCloseFrame` / `transportBackpressure` diagnostics
+  instead of generic protocol failures.
+
+### Security
+
+- **Release dependency hardening** — updated `site/` (`next` 16.4.0 → 16.4.6,
+  clearing critical advisories `GHSA-2464-fhr4-w9xw` and `GHSA-673q-mjm6-r5xr`
+  plus `GHSA-p3m5-59mp-jv5r`; transitive `zod` refreshed), `pi-extension/`
+  (`zod` 4.4.3 → 4.6.7, `vite` 8.2.1 → 8.3.8, `body-parser` refreshed, `undici`
+  override 8.10.2 → 8.12.4 — all `pnpm audit --audit-level=high` lanes green
+  under `minimumReleaseAge`), and `relay/Cargo.lock` (`rustls`, `rustls-webpki`,
+  `webpki-roots`, `quinn-proto`, `quinn-udp`, `tokio`, `rustix` updated — zero
+  high/critical advisories remain).
+
+### Internal
+
+- Migrated the `.work/` ledger from `agile-workflow` to Workbench v0.26.13
+  with `scripts/validate-work.py` preserving local gitignored
+  `.work/session-notes/`.
+- Unified `pnpm@11.9.0` via `packageManager` pins across `pi-extension`,
+  `site`, `protocol`, and CI workflows.
+
 ## v0.13.0 — 2026-10-07
 
 ### Features
@@ -217,8 +286,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
-
-## [Unreleased]
 
 ## [v0.8.1] — 2026-08-26
 

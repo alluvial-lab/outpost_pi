@@ -461,12 +461,9 @@ export class Broker {
         delivered: [],
         ack_status: "invalid_envelope",
         via: "uds",
-        error: reason,
+        error: auditText(reason),
       }) + "\n";
-      const write = this.auditWrite.then(async () => {
-        await mkdir(dirname(this.auditPath!), { recursive: true, mode: 0o700 });
-        await appendFile(this.auditPath!, auditLine, "utf8");
-      });
+      const write = this.auditWrite.then(() => this._appendAuditLine(auditLine));
       this.auditWrite = write.catch(() => undefined);
     }
   }

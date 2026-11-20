@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mkdtempSync, readFileSync, readlinkSync, lstatSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readlinkSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer, type Server } from "node:net";
@@ -77,7 +77,7 @@ describe("broker generation surfaces (design v2 G1)", () => {
     expect(ack.status).toBe("unknown_peer");
     expect(ack.target).toBe("ghost");
 
-    const audit = await until(() => readFileSync(auditPath, "utf8").includes("unknown_peer"));
+    const audit = await until(() => existsSync(auditPath) && readFileSync(auditPath, "utf8").includes("unknown_peer"));
     expect(audit).toBe(true);
     await a.leave();
   });
@@ -90,6 +90,7 @@ describe("broker generation surfaces (design v2 G1)", () => {
     await b.leave();
     await a.leave();
     const lines = await until(() => {
+      if (!existsSync(auditPath)) return false;
       const t = readFileSync(auditPath, "utf8");
       return t.includes("\"event\":\"bind\"") &&
         t.includes("\"event\":\"register\"") &&
@@ -171,12 +172,18 @@ describe("peer lifecycle hardening (review findings 2+4)", () => {
     const sock = tmpSock();
     const liveSockets = new Set<import("node:net").Socket>();
     const registrations: string[] = [];
-    // A SLOW legacy-style broker: delays register_ack 300ms so leave() lands
-    // mid-handshake; tracks its accepted sockets.
+    let markRegistered!: () => void;
+    const registerArrived = new Promise<void>((res) => { markRegistered = res; });
+    let pendingConn: import("node:net").Socket | null = null;
+    let pendingName = "";
+
+    // Explicit barrier broker: holds register_ack until the test releases it
+    // after leave() has completed (no wall-clock race).
     const slow: Server = await new Promise((res) => {
       const s = createServer((conn) => {
         liveSockets.add(conn);
         conn.on("close", () => liveSockets.delete(conn));
+        conn.on("error", () => { /* expected EPIPE when writing after client leave() */ });
         let buf = "";
         conn.setEncoding("utf8");
         conn.on("data", (chunk: string) => {
@@ -189,11 +196,9 @@ describe("peer lifecycle hardening (review findings 2+4)", () => {
             const msg = JSON.parse(line) as { type?: string; name?: string };
             if (msg.type === "register" && typeof msg.name === "string") {
               registrations.push(msg.name);
-              setTimeout(() => {
-                conn.write(JSON.stringify({
-                  type: "register_ack", name_assigned: msg.name, address_assigned: msg.name,
-                }) + "\n");
-              }, 300);
+              pendingConn = conn;
+              pendingName = msg.name;
+              markRegistered();
             }
           } catch { /* ignore */ }
         });
@@ -203,14 +208,63 @@ describe("peer lifecycle hardening (review findings 2+4)", () => {
 
     const p = new SessionPeer({ sockPath: sock, name: "ghost", generationProbeMs: 0 });
     const started = p.start();
-    await wait(80); // register sent, ack still pending
+    await registerArrived;
+    // leave() lands deterministically while register_ack is still pending.
     await p.leave();
     await started;
-    await wait(450); // the delayed ack arrives here
-    // No ghost: the broker-side socket for our candidate is gone.
-    expect(liveSockets.size).toBe(0);
+    // Attempt late ack delivery (socket is already destroyed, must not resurrect).
+    try {
+      pendingConn?.write(JSON.stringify({
+        type: "register_ack", name_assigned: pendingName, address_assigned: pendingName,
+      }) + "\n");
+    } catch { /* already closed */ }
+    expect(await until(() => liveSockets.size === 0)).toBe(true);
     expect(registrations).toEqual(["ghost"]);
     await new Promise<void>((res) => slow.close(() => res()));
+  });
+
+  test("leave() during in-flight joinOrLead closes won leader server without leaking a Broker or firing reconnectHandlers", async () => {
+    const dir = tmpSock().slice(0, tmpSock().lastIndexOf("/"));
+    const sock = join(dir, "broker.sock");
+    const target = join(dir, "broker-barrier.sock");
+    const wonServer: Server = await new Promise((res) => {
+      const s = createServer();
+      s.listen(target, () => res(s));
+    });
+
+    let electEntered!: () => void;
+    const electionStarted = new Promise<void>((res) => { electEntered = res; });
+    let releaseElection!: () => void;
+    const electionRelease = new Promise<void>((res) => { releaseElection = res; });
+
+    class BarrierElectPeer extends SessionPeer {
+      protected override async _elect() {
+        electEntered();
+        await electionRelease;
+        return {
+          role: "leader" as const,
+          server: wonServer,
+          leaderInfo: { target, generation: "gen-barrier" },
+        };
+      }
+    }
+
+    const p = new BarrierElectPeer({ sockPath: sock, name: "leaver", generationProbeMs: 0 });
+    let reconnectCount = 0;
+    p.onReconnect(() => { reconnectCount++; });
+
+    const started = p.start();
+    await electionStarted;
+    // leave() completes while _rejoin() is suspended inside _elect().
+    await p.leave();
+    // Now release the election with a real listening leader server.
+    releaseElection();
+    await started;
+
+    // Leader server must be closed, no Broker retained, no reconnect callback fired.
+    expect(wonServer.listening).toBe(false);
+    expect(p.localBroker()).toBeNull();
+    expect(reconnectCount).toBe(0);
   });
 
   test("identity fence: an old broker's late supersede never clears the new leader", async () => {
