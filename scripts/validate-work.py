@@ -19,20 +19,26 @@ SUMMARY_PREFIXES = ("Workbench validation passed:", "Workbench validation failed
 
 def session_notes_is_clean_local_only(root: Path) -> tuple[bool, str | None]:
     """Verify `.work/session-notes` is gitignored and has zero git-tracked files."""
-    ignored = subprocess.run(
-        ["git", "check-ignore", "-q", ".work/session-notes"],
-        cwd=root,
-        check=False,
-    )
+    try:
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", ".work/session-notes"],
+            cwd=root,
+            check=False,
+        )
+    except OSError as exc:
+        return False, f"ERROR: failed to run git check-ignore for .work/session-notes: {exc}"
     if ignored.returncode != 0:
         return False, "ERROR: .work/session-notes must be gitignored"
-    tracked = subprocess.run(
-        ["git", "ls-files", ".work/session-notes"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", ".work/session-notes"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return False, f"ERROR: failed to run git ls-files for .work/session-notes: {exc}"
     if tracked.returncode != 0:
         return False, "ERROR: failed to verify git-tracked files under .work/session-notes"
     if tracked.stdout.strip():
@@ -68,6 +74,7 @@ def main() -> int:
     warnings: list[str] = []
     other_lines: list[str] = []
     saw_summary = False
+    suppressed_session_notes = False
 
     for line in proc.stdout.splitlines():
         if line.startswith(SUMMARY_PREFIXES):
@@ -76,6 +83,7 @@ def main() -> int:
         if line == SESSION_NOTES_ERROR:
             ok, reason = session_notes_is_clean_local_only(root)
             if ok:
+                suppressed_session_notes = True
                 continue
             errors.append(reason or line)
             continue
@@ -93,8 +101,8 @@ def main() -> int:
     for error in errors:
         print(error)
 
-    if not saw_summary and proc.returncode != 0 and not errors:
-        print("ERROR: bundled Workbench validator exited nonzero without diagnostics")
+    if proc.returncode != 0 and not errors and (not saw_summary or not suppressed_session_notes):
+        print("ERROR: bundled Workbench validator exited nonzero without an exempted error")
         return proc.returncode
 
     if errors:

@@ -263,6 +263,7 @@ function pushRig(opts?: {
   pushLimits?: { maxMessages: number; maxBytes: number };
   maxBatchBytes?: number;
   deliver?: (content: string) => Promise<void>;
+  onTransportError?: (err: unknown) => void;
 }) {
   const inbox = new BoundedInbox<WakeMessage>(
     jsonByteSize,
@@ -288,7 +289,7 @@ function pushRig(opts?: {
     scheduler,
     maxBatchBytes: opts?.maxBatchBytes,
     now: () => clock,
-    onTransportError: (err) => errors.push(err),
+    onTransportError: opts?.onTransportError ?? ((err) => errors.push(err)),
   });
   return {
     inbox,
@@ -714,6 +715,7 @@ describe("createPushDeliveryCoordinator (hybrid push-turn delivery)", () => {
   test("throwing onTransportError does not strand queued messages or escape as unhandled rejection", async () => {
     let failFirst = true;
     let firstReject: ((err: Error) => void) | undefined;
+    let hookCalls = 0;
     const delivered: string[] = [];
     const r = pushRig({
       deliver: (content) => {
@@ -727,6 +729,7 @@ describe("createPushDeliveryCoordinator (hybrid push-turn delivery)", () => {
         return Promise.resolve();
       },
       onTransportError: () => {
+        hookCalls++;
         throw new Error("diagnostic hook blew up");
       },
     });
@@ -740,6 +743,7 @@ describe("createPushDeliveryCoordinator (hybrid push-turn delivery)", () => {
     firstReject!(new Error("channel disconnected"));
     await flushMicrotasks();
 
+    expect(hookCalls).toBe(1);
     expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["id-1"]);
     expect(r.scheduler.armed).not.toBeNull();
 
