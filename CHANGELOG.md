@@ -36,6 +36,11 @@
   rendezvous publication, supersession dissolution, and single-flight
   make-before-break `SessionPeer` failover (including disposal guards when
   `leave()` races `joinOrLead()` or register handshake).
+- **Single-flight local mesh join & lock ownership** — coalesced concurrent
+  `LocalMeshCommands.join()` and `cwdLock` acquisition (with `stop()` epoch
+  fencing) so an overlapping `session_start` auto-start and explicit
+  `/outpost-pi` connect never spawn a second `MeshNode` (`#2` follower) that
+  orphans the leader broker and drops the cross-PC relay bridge.
 - **Enforced `re` UUID-only contract and loud `invalid_envelope` NACK** —
   validated `re` (`null` or UUID via single-source `UUID_RE`) at both
   `agent_send` send surfaces (Pi extension tool and MCP server) and added loud

@@ -84,6 +84,9 @@ export interface LocalMeshCommandsDeps {
 export class LocalMeshCommands {
   private cwdLock: AcquiredLock | null = null;
   private lockedName: string | null = null;
+  private cwdLockInFlight: Promise<boolean> | null = null;
+  private joinInFlight: Promise<void> | null = null;
+  private joinEpoch = 0;
   private readonly controlCommands: ControlCommands;
 
   constructor(private readonly deps: LocalMeshCommandsDeps) {
@@ -131,16 +134,8 @@ export class LocalMeshCommands {
     // auto-releases on exit/crash) bound for THIS process's lifetime; repeat
     // `/outpost-pi` calls are idempotent.
     if (this.cwdLock === null) {
-      const unique = await acquireUniqueNamedCwdLock(cwd, requestedName);
-      if (unique === null) {
-        ctx.ui.notify(
-          `[outpost-pi] Could not start: too many agents named "${requestedName}" already running in this folder.`,
-          "warning",
-        );
-        return;
-      }
-      this.cwdLock = unique.lock;
-      this.lockedName = unique.name;
+      const ok = await this.ensureCwdLock(cwd, requestedName, ctx);
+      if (!ok) return;
     }
 
     // First-time wizard: no local config in this cwd → run interactive setup.
@@ -242,16 +237,55 @@ export class LocalMeshCommands {
     ctx.ui.notify(`[outpost-pi] peers:\n${formatPeerInventory(peers, selfName)}`, "info");
   }
 
+  private ensureCwdLock(
+    cwd: string,
+    requestedName: string,
+    ctx: Pick<ExtensionContext, "ui">,
+  ): Promise<boolean> {
+    if (this.cwdLock !== null) return Promise.resolve(true);
+    if (this.cwdLockInFlight !== null) return this.cwdLockInFlight;
+    const tracked = (async (): Promise<boolean> => {
+      const unique = await acquireUniqueNamedCwdLock(cwd, requestedName);
+      if (unique === null) {
+        ctx.ui.notify(
+          `[outpost-pi] Could not start: too many agents named "${requestedName}" already running in this folder.`,
+          "warning",
+        );
+        return false;
+      }
+      if (this.deps.isDisposed()) {
+        try { unique.lock.release(); } catch { /* ignored */ }
+        return false;
+      }
+      this.cwdLock = unique.lock;
+      this.lockedName = unique.name;
+      return true;
+    })().finally(() => {
+      if (this.cwdLockInFlight === tracked) {
+        this.cwdLockInFlight = null;
+      }
+    });
+    this.cwdLockInFlight = tracked;
+    return tracked;
+  }
+
   /**
    * `/outpost-pi stop` — full teardown. Leaves the local UDS mesh AND closes
    * the relay. Safe when one or both are already off. To resume, run
    * `/outpost-pi` again.
    */
   async stop(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
+    const inFlightJoin = this.joinInFlight;
+    const hadJoinInFlight = inFlightJoin !== null;
+    this.joinEpoch++;
+    if (inFlightJoin !== null) {
+      await inFlightJoin.catch(() => undefined);
+    }
+
     const meshNode = this.deps.meshNode();
     const meshUp = meshNode !== null;
     const relayUp = this.deps.getState() !== "idle";
-    if (!meshUp && !relayUp) {
+    if (!meshUp && !relayUp && !hadJoinInFlight) {
       ctx.ui.notify("[outpost-pi] Already stopped — nothing to do.", "info");
       return;
     }
@@ -276,8 +310,35 @@ export class LocalMeshCommands {
    * is up and the user hasn't explicitly stopped. The session name is no
    * longer user-configurable: every Pi on the same machine joins the same
    * broker.
+   *
+   * Single-flight (join-in-flight-operations): concurrent callers (e.g.
+   * background `session_start` auto-start racing an explicit `/outpost-pi`
+   * or harness `connect()`) share the in-flight join instead of opening a
+   * second `MeshNode` that would register as a `#2` follower and orphan the
+   * leader broker.
    */
   async join(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
+    if (this.joinInFlight !== null) {
+      return this.joinInFlight;
+    }
+    if (this.deps.meshNode()) {
+      ctx.ui.notify("[outpost-pi] Already on the local mesh.", "warning");
+      return;
+    }
+    const epoch = ++this.joinEpoch;
+    const tracked = this._runJoin(ctx, epoch).finally(() => {
+      if (this.joinInFlight === tracked) {
+        this.joinInFlight = null;
+      }
+    });
+    this.joinInFlight = tracked;
+    return tracked;
+  }
+
+  private async _runJoin(
+    ctx: Pick<ExtensionContext, "ui" | "cwd">,
+    epoch: number,
+  ): Promise<void> {
     const cwd = "cwd" in ctx ? (ctx as ExtensionCommandContext).cwd : process.cwd();
     const local = loadLocalConfig(cwd);
     const sessionName = LOCAL_SESSION_NAME;
@@ -289,8 +350,7 @@ export class LocalMeshCommands {
     // (e.g. legacy/test paths).
     const agentName = this.lockedName ?? requestedName;
 
-    if (this.deps.meshNode()) {
-      ctx.ui.notify("[outpost-pi] Already on the local mesh.", "warning");
+    if (this.deps.isDisposed() || this.joinEpoch !== epoch || this.deps.meshNode()) {
       return;
     }
 
@@ -366,11 +426,12 @@ export class LocalMeshCommands {
 
     try {
       const assigned = await peer.connect();
-      // Race guard: a `session_shutdown` may have landed while `connect()` was
-      // in flight (the broker now has us registered, but this instance is being
-      // discarded). Leave immediately instead of publishing a ghost peer that
-      // the replacement instance would then collide with as `name#2`.
-      if (this.deps.isDisposed()) {
+      // Race guard: a `session_shutdown` or `/outpost-pi stop` may have landed
+      // while `connect()` was in flight (the broker now has us registered, but
+      // this join was superseded/disposed). Leave immediately instead of
+      // publishing a ghost peer that the replacement instance would collide
+      // with as `name#2`.
+      if (this.deps.isDisposed() || this.joinEpoch !== epoch) {
         try { await peer.close(); } catch { /* best-effort */ }
         return;
       }
