@@ -113,6 +113,8 @@ export interface WakeCoordinator {
   /** Called after a full inbox drain: re-arm the edge, cancel pending
    *  deferred re-checks (nothing left to wake about). */
   onDrain(): void;
+  /** Cancel any pending deferred timer and suppress future scheduling on shutdown. */
+  dispose(): void;
 }
 
 /** Wire the wake policy to an inbox: LOCAL-PEER-ONLY, edge-triggered
@@ -131,35 +133,45 @@ export function createWakeCoordinator(
   now: () => number = Date.now,
 ): WakeCoordinator {
   let armed = false;
+  let disposed = false;
 
-  const armDeferred = (): void => {
-    if (armed) return;
-    const delay = gate.retryAfterMs(now());
+  const armDeferred = (nowMs: number): void => {
+    if (armed || disposed) return;
+    const delay = gate.retryAfterMs(nowMs);
     if (delay === null) return;
     armed = true;
     scheduler.arm(delay, () => {
       armed = false;
+      if (disposed) return;
       // Liveness re-check: the inbox may have drained (nothing to wake
       // about) or still hold capped local messages that never woke anyone.
       // An early fire inside the cap window (clock skew) re-arms instead of
       // forcing a wake or dropping the pending work.
       const local = inbox.find((m) => isLocalPeerAddress(m.from));
       if (!local) return;
-      if (gate.onDeferredRecheck(now())) emit(local.from);
-      else armDeferred();
+      const recheckNow = now();
+      if (gate.onDeferredRecheck(recheckNow)) emit(local.from);
+      else armDeferred(recheckNow);
     });
   };
 
   return {
     onMessage(msg: WakeMessage): void {
+      if (disposed) return;
       const hadLocalUnread = inbox.some((m) => isLocalPeerAddress(m.from));
       inbox.push(msg);
       if (!isLocalPeerAddress(msg.from)) return; // remote: buffer only
       if (hadLocalUnread) return; // not a wake-eligible edge
-      if (gate.onMessage(now())) emit(msg.from);
-      else armDeferred();
+      const currentNow = now();
+      if (gate.onMessage(currentNow)) emit(msg.from);
+      else armDeferred(currentNow);
     },
     onDrain(): void {
+      armed = false;
+      scheduler.cancel();
+    },
+    dispose(): void {
+      disposed = true;
       armed = false;
       scheduler.cancel();
     },

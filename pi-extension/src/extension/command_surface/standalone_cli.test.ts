@@ -1,7 +1,17 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { MESH_WAKE_FLAG, buildClaudeLaunchArgs, removeEphemeralMcpDir, splitClaudeCliArgs, writeEphemeralMcpConfig } from "./standalone_cli.js";
+import {
+  MESH_WAKE_FLAG,
+  PUSH_DELIVER_FLAG,
+  buildClaudeLaunchArgs,
+  launchClaudeCli,
+  removeEphemeralMcpDir,
+  splitClaudeCliArgs,
+  validateClaudeCliArgs,
+  writeEphemeralMcpConfig,
+} from "./standalone_cli.js";
+import { PUSH_DELIVER_ENV_VAR } from "../../mcp/push_delivery.js";
 
 describe("splitClaudeCliArgs", () => {
   test("no args → caller cwd, empty passthrough, wake off", () => {
@@ -40,6 +50,93 @@ describe("splitClaudeCliArgs", () => {
     expect(res.targetCwd).toBe("/tmp/proj");
     expect(res.passthroughArgs).toEqual(["--resume"]);
     expect(res.meshWake).toBe(true);
+    expect(res.pushDeliver).toBe(false);
+  });
+
+  test("push-deliver flag is stripped before cwd detection and never leaked to passthrough", () => {
+    const before = splitClaudeCliArgs([PUSH_DELIVER_FLAG, MESH_WAKE_FLAG, "/tmp/proj", "--resume"]);
+    expect(before).toEqual({
+      targetCwd: "/tmp/proj",
+      meshWake: true,
+      pushDeliver: true,
+      passthroughArgs: ["--resume"],
+    });
+
+    const after = splitClaudeCliArgs(["/tmp/proj", MESH_WAKE_FLAG, PUSH_DELIVER_FLAG]);
+    expect(after).toEqual({
+      targetCwd: "/tmp/proj",
+      meshWake: true,
+      pushDeliver: true,
+      passthroughArgs: [],
+    });
+  });
+});
+
+describe("validateClaudeCliArgs & fail-fast --push-deliver contract", () => {
+  test("permits default, wake-only, and wake+push-deliver combinations", () => {
+    expect(validateClaudeCliArgs({ meshWake: false, pushDeliver: false })).toBeNull();
+    expect(validateClaudeCliArgs({ meshWake: true, pushDeliver: false })).toBeNull();
+    expect(validateClaudeCliArgs({ meshWake: true, pushDeliver: true })).toBeNull();
+  });
+
+  test("rejects --push-deliver without --outpost-mesh-wake with actionable usage error", () => {
+    const err = validateClaudeCliArgs({ meshWake: false, pushDeliver: true });
+    expect(err).not.toBeNull();
+    expect(err).toContain(PUSH_DELIVER_FLAG);
+    expect(err).toContain(MESH_WAKE_FLAG);
+  });
+
+  test("rejects ambient OUTPOST_PI_MCP_PUSH_DELIVER=1 without --outpost-mesh-wake", () => {
+    const err = validateClaudeCliArgs(
+      { meshWake: false, pushDeliver: false },
+      { [PUSH_DELIVER_ENV_VAR]: "1" },
+    );
+    expect(err).not.toBeNull();
+    expect(err).toContain(PUSH_DELIVER_ENV_VAR);
+    expect(err).toContain(MESH_WAKE_FLAG);
+    expect(
+      validateClaudeCliArgs(
+        { meshWake: true, pushDeliver: false },
+        { [PUSH_DELIVER_ENV_VAR]: "1" },
+      ),
+    ).toBeNull();
+  });
+
+  test("launchClaudeCli exits 1 fail-fast when --push-deliver or ambient OUTPOST_PI_MCP_PUSH_DELIVER=1 lacks --outpost-mesh-wake", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null): never => {
+      throw new Error(`EXIT:${String(code)}`);
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const prevEnv = process.env[PUSH_DELIVER_ENV_VAR];
+    try {
+      delete process.env[PUSH_DELIVER_ENV_VAR];
+      await expect(
+        launchClaudeCli([PUSH_DELIVER_FLAG], import.meta.url),
+      ).rejects.toThrow("EXIT:1");
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(MESH_WAKE_FLAG));
+
+      errorSpy.mockClear();
+      await expect(
+        launchClaudeCli(
+          [PUSH_DELIVER_FLAG, "--dangerously-load-development-channels=server:outpost-pi-mesh"],
+          import.meta.url,
+        ),
+      ).rejects.toThrow("EXIT:1");
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(PUSH_DELIVER_FLAG));
+
+      errorSpy.mockClear();
+      process.env[PUSH_DELIVER_ENV_VAR] = "1";
+      await expect(
+        launchClaudeCli([], import.meta.url),
+      ).rejects.toThrow("EXIT:1");
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(PUSH_DELIVER_ENV_VAR));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(MESH_WAKE_FLAG));
+    } finally {
+      if (prevEnv === undefined) delete process.env[PUSH_DELIVER_ENV_VAR];
+      else process.env[PUSH_DELIVER_ENV_VAR] = prevEnv;
+      exitSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
   });
 });
 
@@ -130,6 +227,21 @@ describe("writeEphemeralMcpConfig (gate-security-mcp-tmp-config-path)", () => {
       removeEphemeralMcpDir(second);
       expect(existsSync(first)).toBe(false);
       expect(existsSync(second)).toBe(false);
+    }
+  });
+
+  test("appends --push-deliver to mesh_server args only when explicitly enabled", () => {
+    const offPath = writeEphemeralMcpConfig("/fake/mesh_server.js", { pushDeliver: false });
+    const onPath = writeEphemeralMcpConfig("/fake/mesh_server.js", { pushDeliver: true });
+    try {
+      const readArgs = (p: string) =>
+        (JSON.parse(readFileSync(p, "utf8")) as { mcpServers: Record<string, { args: string[] }> })
+          .mcpServers["outpost-pi-mesh"]!.args;
+      expect(readArgs(offPath)).toEqual(["/fake/mesh_server.js"]);
+      expect(readArgs(onPath)).toEqual(["/fake/mesh_server.js", PUSH_DELIVER_FLAG]);
+    } finally {
+      removeEphemeralMcpDir(offPath);
+      removeEphemeralMcpDir(onPath);
     }
   });
 });

@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
- * MCP server that bridges Claude Code to the outpost-pi agent mesh.
+ * MCP server that bridges an MCP-capable coding agent to the outpost-pi agent mesh.
  *
- * Spawned by Claude Code as an MCP server subprocess (stdio).
- * Joins the mesh through the shared `MeshNode` abstraction — the SAME
- * composition the Pi extension uses — so Claude is a first-class mesh
+ * Spawned by an MCP host (such as Claude Code or Antigravity) as a stdio
+ * subprocess. Joins the mesh through the shared `MeshNode` abstraction — the
+ * SAME composition the Pi extension uses — so the host is a first-class mesh
  * participant: it can lead the local UDS broker when no Pi/daemon is up,
  * and (as leader) bring up its own cross-PC relay bridge with its own
  * Pi-key. As a follower it rides the existing leader's bridge.
  *
- * Launched by `outpost-pi claude` (registers this in Claude's local MCP
- * scope). Args: [--cwd <path>] [--name <agentName>] [--no-bridge]
- * Env: OUTPOST_PI_MCP_CWD, OUTPOST_PI_MCP_NAME
+ * Launched by `outpost-pi claude` (or registered in an MCP host's config).
+ * Args: [--cwd <path>] [--name <agentName>] [--no-bridge] [--push-deliver]
+ * Env: OUTPOST_PI_MCP_CWD, OUTPOST_PI_MCP_NAME, OUTPOST_PI_MCP_PUSH_DELIVER=1
  *
  * Lock ownership: this endpoint takes the (cwd, name)-scoped lock — several
- * agents (Pi and/or Claude) may share a folder under distinct names; when
+ * agents (Pi and/or MCP hosts) may share a folder under distinct names; when
  * the folder's default name is already held, this endpoint coexists under a
  * `#N`-suffixed name instead of failing. No OUTPOST_PI_MCP_CWD pointing at
- * a sibling directory is needed to run a Claude agent beside a resident Pi.
+ * a sibling directory is needed to run an MCP agent beside a resident Pi.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -26,7 +26,20 @@ import { z } from "zod";
 import { MeshNode } from "../session/mesh_node.js";
 import { loadLocalConfig, defaultAgentName, localConfigExists } from "../session/local_config.js";
 import { BoundedInbox, jsonByteSize, renderInboxMessage } from "./inbox.js";
-import { WAKE_MIN_INTERVAL_MS, WakeGate, createWakeCoordinator, wakeNudgeContent } from "./wake.js";
+import {
+  WAKE_MIN_INTERVAL_MS,
+  WakeGate,
+  createWakeCoordinator,
+  wakeNudgeContent,
+  type WakeCoordinator,
+  type WakeScheduler,
+} from "./wake.js";
+import {
+  buildMcpInstructions,
+  createPushDeliveryCoordinator,
+  parseMeshServerOptions,
+  type PushDeliveryTransport,
+} from "./push_delivery.js";
 import { sessionSockPath, sessionAuditPath, LOCAL_SESSION_NAME } from "../session/global_config.js";
 import { resolveRelayUrl } from "../config.js";
 import { acquireCwdLock, acquireUniqueNamedCwdLock, type AcquiredLock } from "../session/cwd_lock.js";
@@ -35,23 +48,19 @@ import { realpathSync } from "node:fs";
 
 // ── Args / config ─────────────────────────────────────────────────────────────
 
-const _argv = process.argv.slice(2);
-// This agent's folder = the dir the `claude` session was launched in, which
-// Claude sets as this subprocess's `process.cwd()`. We deliberately do NOT use
+// This agent's folder = the dir the host session was launched in, which the
+// host sets as this subprocess's `process.cwd()`. We deliberately do NOT use
 // CLAUDE_PROJECT_DIR: that's the git repo root, which would collapse every
 // monorepo subproject (app/, relay/, …) into one identity + one lock. The
 // `outpost-pi claude` launcher therefore registers us WITHOUT a baked `--cwd`,
 // so one shared local-scope entry self-identifies per session. `--cwd` and
 // OUTPOST_PI_MCP_CWD remain as explicit overrides (tests / manual launches).
-let _cwd = process.env["OUTPOST_PI_MCP_CWD"] ?? process.cwd();
-let _nameOverride = process.env["OUTPOST_PI_MCP_NAME"];
-let _bridgeEnabled = true;
-
-for (let i = 0; i < _argv.length; i++) {
-  if (_argv[i] === "--cwd" && _argv[i + 1]) { _cwd = _argv[++i]!; }
-  else if (_argv[i] === "--name" && _argv[i + 1]) { _nameOverride = _argv[++i]; }
-  else if (_argv[i] === "--no-bridge") { _bridgeEnabled = false; }
-}
+const {
+  cwd: _cwd,
+  nameOverride: _nameOverride,
+  bridgeEnabled: _bridgeEnabled,
+  pushDeliver: _pushDeliver,
+} = parseMeshServerOptions(process.argv.slice(2), process.env, process.cwd());
 
 const _cfg = loadLocalConfig(_cwd);
 const AGENT_NAME = _nameOverride ?? _cfg.agent_name ?? defaultAgentName(_cwd);
@@ -71,35 +80,54 @@ interface IncomingMsg {
 
 const inbox = new BoundedInbox<IncomingMsg>(jsonByteSize);
 
-// ── Wake wiring (policy lives in wake.ts; this is the server-side adapter) ───
+// ── Delivery wiring (policy lives in wake.ts / push_delivery.ts) ──────────────
 
 const wakeGate = new WakeGate(WAKE_MIN_INTERVAL_MS);
 let _deferredWakeTimer: ReturnType<typeof setTimeout> | null = null;
-const wakeCoordinator = createWakeCoordinator(
-  inbox,
-  wakeGate,
-  (from) => {
+const wakeScheduler: WakeScheduler = {
+  arm: (delayMs, fire) => {
+    const t = setTimeout(fire, delayMs);
+    t.unref?.();
+    _deferredWakeTimer = t;
+  },
+  cancel: () => {
+    if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
+  },
+};
+
+const claudeChannelTransport: PushDeliveryTransport = {
+  deliver: (content) =>
     // Transport errors only: an un-opted client silently ignores custom
-    // notification methods, so this catch can NEVER signal "wake off" — the
-    // server cannot detect whether the session runs the dev channel.
-    void mcp.server.notification({
+    // notification methods, so rejection cannot detect "dev-channels off".
+    // That is why `--push-deliver` is opt-in and strictly gated on
+    // `--outpost-mesh-wake` at the CLI boundary.
+    mcp.server.notification({
       method: "notifications/claude/channel",
-      params: { content: wakeNudgeContent(from) },
-    }).catch((err: unknown) => {
-      logErr(`wake notification transport error: ${String(err)}`);
-    });
-  },
-  {
-    arm: (delayMs, fire) => {
-      const t = setTimeout(fire, delayMs);
-      t.unref?.();
-      _deferredWakeTimer = t;
-    },
-    cancel: () => {
-      if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
-    },
-  },
-);
+      params: { content },
+    }),
+};
+
+const deliveryCoordinator: WakeCoordinator = _pushDeliver
+  ? createPushDeliveryCoordinator({
+      inbox,
+      pushQueue: new BoundedInbox<IncomingMsg>(jsonByteSize),
+      gate: wakeGate,
+      transport: claudeChannelTransport,
+      scheduler: wakeScheduler,
+      onTransportError: (err) => {
+        logErr(`push delivery transport error (fell back to inbox): ${String(err)}`);
+      },
+    })
+  : createWakeCoordinator(
+      inbox,
+      wakeGate,
+      (from) => {
+        void claudeChannelTransport.deliver(wakeNudgeContent(from)).catch((err: unknown) => {
+          logErr(`wake notification transport error: ${String(err)}`);
+        });
+      },
+      wakeScheduler,
+    );
 
 // ── Mesh node ─────────────────────────────────────────────────────────────────
 
@@ -159,14 +187,7 @@ const mcp = new McpServer(
   { name: "outpost-pi-mesh", version: "0.4.3" },
   {
     capabilities: { experimental: { "claude/channel": {} } },
-    instructions: [
-      `You are connected to the outpost-pi agent mesh (requested name "${AGENT_NAME}"; when the folder already hosts a same-named agent, your live name carries a #N coexistence suffix — confirm your exact address via list_peers).`,
-      "At the start of each turn call get_messages to check for incoming messages from other agents.",
-      "Use list_peers to discover available agents.",
-      "Use agent_send to send messages — pass the exact address returned by list_peers (form `<cwd>@<name>`, `<pc>:` prefix cross-PC) VERBATIM; never build one by hand.",
-      'Use "broadcast" as the target to send to all peers in your folder (cwd) at once.',
-      "Follow the agent-network protocol (in your system prompt) for the full details (ACK statuses, replies via re, `<cwd>@<name>` addresses, cross-PC `<pc>:` prefix).",
-    ].join("\n"),
+    instructions: buildMcpInstructions(AGENT_NAME, _pushDeliver),
   },
 );
 
@@ -255,13 +276,16 @@ mcp.registerTool("agent_send", {
 });
 
 mcp.registerTool("get_messages", {
-  description: "Return and clear all pending incoming messages from other agents. Call at the start of each turn.",
+  description: _pushDeliver
+    ? "Return and clear buffered incoming messages (cross-PC '<pc>:' and '_relay' envelopes, plus any local fallback). Local peer envelopes are push-delivered directly — do not call get_messages for them."
+    : "Return and clear all pending incoming messages from other agents. Call at the start of each turn in inbox-drained mode.",
   inputSchema: {},
 }, async () => {
   const { items: msgs, dropped } = inbox.drain();
-  // A full drain empties the inbox: re-arm the wake edge and cancel any
-  // pending deferred re-check (nothing left to wake about).
-  if (msgs.length > 0) wakeCoordinator.onDrain();
+  // In inbox-drained mode, a full drain empties the inbox and cancels any
+  // pending deferred wake re-check. In push-deliver mode, onDrain() is a no-op
+  // so draining cross-PC messages never cancels a pending local push batch.
+  if (msgs.length > 0) deliveryCoordinator.onDrain();
   if (msgs.length === 0 && dropped === 0) {
     return { content: [{ type: "text" as const, text: "(no messages)" }] };
   }
@@ -429,11 +453,14 @@ async function tryJoinMesh(): Promise<void> {
         re: env.re,
         at: isoNow(),
       };
-      // Local-only, edge-triggered, rate-capped wake decision (see
-      // createWakeCoordinator). Only sessions launched with the dev-channels
-      // flag honor the notification — for everyone else it is inertly ignored
-      // and get_messages polling remains the delivery path.
-      wakeCoordinator.onMessage(msg);
+      // Route through the active delivery coordinator:
+      // - inbox-drained mode (default): retains in `inbox` and runs local-only
+      //   edge-triggered, rate-capped body-free wake nudges.
+      // - push-deliver mode (--push-deliver / OUTPOST_PI_MCP_PUSH_DELIVER=1):
+      //   pushes local peer envelopes in rate-capped, byte-bounded batches from
+      //   a dedicated queue (never duplicating into `inbox`) while keeping
+      //   cross-PC (`<pc>:`) and `_relay` traffic in `inbox`.
+      deliveryCoordinator.onMessage(msg);
     });
   }
 
@@ -497,10 +524,10 @@ function shutdown(): void {
   if (_shuttingDown) return;
   _shuttingDown = true;
   if (_lockRetryTimer) { clearTimeout(_lockRetryTimer); _lockRetryTimer = null; }
-  // Cancel any pending deferred wake synchronously (scan-lifecycle): its
-  // callback would otherwise fire a notification during/after teardown —
+  // Cancel any pending deferred wake/push timer synchronously (scan-lifecycle):
+  // its callback would otherwise fire a notification during/after teardown —
   // unref() keeps it from holding the process open but never cancels it.
-  if (_deferredWakeTimer) { clearTimeout(_deferredWakeTimer); _deferredWakeTimer = null; }
+  deliveryCoordinator.dispose();
   const hardExit = setTimeout(() => {
     logErr(`shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms — hard exit; the OS releases the cwd lock with the process`);
     process.exit(0);

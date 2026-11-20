@@ -1,55 +1,77 @@
 ---
 name: agent-network
-description: Use when the outpost-pi mesh tools (`list_peers`, `agent_send`, and — on Claude — `get_messages`) are available. You are an agent (a Claude session or a Pi coding agent) connected to the outpost-pi agent mesh over a local broker. This skill teaches how to discover who's online (`list_peers`), how to send messages with a delivery ACK (`agent_send`), how incoming messages reach you (via `get_messages` on Claude, or delivered into your turn on Pi), how to reply (echo `re`), and how peer addresses work — `<cwd>@<name>` locally (echo verbatim, never compose), with a `<pc>:` prefix cross-PC.
+description: Use when the outpost-pi mesh tools (`list_peers`, `agent_send`, and — on MCP harnesses — `get_messages`) are available. You are a coding agent connected to the outpost-pi agent mesh over a local broker. This skill teaches how to discover who's online (`list_peers`), how to send messages with a delivery ACK (`agent_send`), how incoming messages reach you across delivery modes (push-delivered directly into your turn, inbox-drained via `get_messages`, or hybrid local-push + remote-inbox), how to reply (echo `re`), and how peer addresses work — `<cwd>@<name>` locally (echo verbatim, never compose), with a `<pc>:` prefix cross-PC.
 ---
 
 # Agent Network (outpost-pi mesh)
 
-You are connected to the **outpost-pi agent mesh**. Other agents — other Claude
-sessions, Pi coding agents on this machine, and agents on the Owner's other PCs
-(reached through the relay) — can send you messages, and you can send messages
-to them.
+You are connected to the **outpost-pi agent mesh**. Other agents — sibling
+coding agents on this machine (Pi extensions and MCP-connected harnesses) and
+agents on the Owner's other PCs (reached through the relay) — can send you
+messages, and you can send messages to them.
 
 Read this to the end before acting. The protocol is **event-driven**, not
 request/reply. Getting the receive model wrong leaves coordination broken.
 
-**Your tools:** `list_peers` and `agent_send` always. On Claude you also have
-`get_messages` (a Pi agent receives messages directly into its turn instead —
-see below).
+**Your tools:** `list_peers` and `agent_send` always. MCP-connected harnesses
+also expose `get_messages` for buffered inbox draining (native push-only
+extensions such as Pi do not expose `get_messages` — see delivery modes below).
 
 ---
 
-## The most important rule: read your inbox every turn
+## Receive model: delivery modes
 
 You only ever receive messages addressed to you — the broker filters before
 delivery. **If a message arrived, someone wanted your attention. Don't ignore
-it.** How a message reaches you depends on your runtime:
+it.** How an incoming envelope reaches your turn depends on your harness's
+**delivery mode**:
 
-- **Claude (MCP):** incoming messages are buffered. **At the start of every
-  turn, call `get_messages`** to drain and read them:
+1. **Push-delivered** — envelopes arrive directly as turn input the moment they
+   are delivered (for example, the Pi extension `[agent-network] message from …`,
+   an MCP harness with `--push-deliver`, or future push-enabled MCP/sidecar
+   harnesses).
+   - A push-delivered envelope carries `from`, `id`, `re`, and `body` directly
+     in the turn text.
+   - **It is already drained** — do **not** call `get_messages` for a
+     push-delivered envelope. Reply with `agent_send` echoing its `id` as `re`.
 
-  ```
-  get_messages()
-  → "[2026-05-30T12:00:01Z] from=backend re=<your-id>
-     id=<msg-id>
-     { "shape": { "sub": "string", "exp": "number" } }"
-  ```
+2. **Inbox-drained** — incoming envelopes buffer in a bounded in-memory MCP
+   inbox (`1,000` messages / `4 MiB`, shedding the oldest on overflow). **At
+   the start of every turn, call `get_messages`** to drain and read them:
 
-  It returns all pending messages and clears the buffer (call once per turn),
-  or `(no messages)` when nothing is waiting — that's normal, keep working. If
-  your session runs with the mesh wake enabled (launched with
-  `--outpost-mesh-wake`), an idle session may be nudged awake by a channel
-  push (`📨 mesh message from … arrived — call get_messages …`) when a
-  LOCAL peer messages you (cross-PC messages only buffer for your next
-  drain): the nudge carries no payload and no message id — `get_messages`
-  is always the authoritative drain, at turn start, wake or no wake.
+   ```
+   get_messages()
+   → "[2026-05-30T12:00:01Z] from=backend re=<your-id>
+      id=<msg-id>
+      { "shape": { "sub": "string", "exp": "number" } }"
+   ```
 
-- **Pi:** the runtime delivers each incoming message directly as a new turn
-  input the moment it arrives — no polling, no `get_messages`. You'll see it
-  prefixed `[agent-network] message from "<peer>" (id=…, re=…)`.
+   It returns all pending messages and clears the buffer (call once per turn),
+   or `(no messages)` when nothing is waiting — that's normal, keep working.
+   When body-free wake nudges are enabled (for example, `--outpost-mesh-wake`
+   without `--push-deliver`), an idle session may be nudged awake by a channel
+   notification (`📨 mesh message from … arrived — call get_messages …`) when a
+   **local** peer messages you: the nudge carries no payload and no message id,
+   so `get_messages` stays the authoritative drain at turn start, wake or no
+   wake.
 
-Either way: no wait/sleep/poll-loop. Replies to your own sends arrive on a
-**later turn**, never inline.
+### Hybrid invariant (local-only push policy)
+
+On MCP harnesses running with push delivery enabled (e.g. `--push-deliver` /
+`OUTPOST_PI_MCP_PUSH_DELIVER=1`), delivery is **hybrid** to preserve the
+local-only trust boundary:
+
+- **Local peer envelopes (`<cwd>@<name>`)** are **push-delivered** directly
+  into your turn in rate-capped, byte-bounded batches from a dedicated push
+  queue. They **never** duplicate into `get_messages` — do **not** call
+  `get_messages` for them.
+- **Cross-PC (`<pc>:`) and `_relay` envelopes** (plus any local envelope that
+  exceeded the push batch byte cap or fell back after a push transport failure)
+  remain **inbox-drained** in `get_messages`. Call `get_messages` when
+  expecting cross-PC traffic or when a fallback pointer directs you to drain.
+
+In every delivery mode: no wait/sleep/poll-loop. Replies to your own sends
+arrive on a **later turn**, never inline.
 
 ---
 
@@ -138,7 +160,7 @@ inspect the status — it dictates what to do next.**
 
 | Status | Means | What you do |
 |---|---|---|
-| `received` | The broker accepted the envelope and forwarded it to the peer (it ACKs on socket write, before the recipient processes it). On Pi the harness enqueues it into the peer's next turn; on Claude (MCP) the peer's MCP process buffers it for the next `get_messages` drain — that buffer is in-memory, so an MCP restart or session exit before a drain can drop it. | Move on. Any reply arrives later. |
+| `received` | The broker accepted the envelope and forwarded it to the peer (it ACKs on socket write, before the recipient processes it). In push-delivered mode the peer's harness delivers it as a turn; in inbox-drained mode the MCP server buffers it in memory for the next `get_messages` drain (an MCP restart or session exit before drain can drop buffered messages). | Move on. Any reply arrives later. |
 | `denied` | Peer explicitly refused (or no such peer). | Do NOT retry. Report to the user. |
 | `timeout` | No ACK (~5s). Transport error — broker down, or peer vanished. | Treat as transient. Retry once after ~10s, then escalate. |
 
@@ -147,15 +169,14 @@ fire-and-forget (`status: "sent"`).
 
 **Delivery is reliable on the wire — no retry-on-busy.** A message sent to
 a peer that's mid-turn is still delivered: the broker forwards it and the
-peer's harness (Pi) or MCP inbox (Claude) queues it for its upcoming turn.
-On Claude, `received` means *accepted by the broker and handed to the
-peer's process*, not *handled* — retention is bounded best-effort (the
-in-memory inbox holds at most 1,000 messages / 4 MiB, shedding the oldest
-beyond that and rejecting individually oversized messages), so a drain can
-legitimately miss messages that arrived during long gaps. You never need
-to retry because a peer was busy. `re=<id>` is purely **correlation** —
-set it so the recipient (and you) can thread an answer to a question; it
-carries no special delivery semantics.
+peer's harness queues it for push delivery or holds it in its MCP inbox for
+its upcoming turn. For buffered MCP queues, retention is bounded best-effort
+(at most 1,000 messages / 4 MiB, shedding the oldest beyond that and rejecting
+individually oversized messages), so a drain or delayed push can legitimately
+miss messages that arrived during long gaps. You never need to retry because
+a peer was busy. `re=<id>` is purely **correlation** — set it so the recipient
+(and you) can thread an answer to a question; it carries no special delivery
+semantics.
 
 ---
 
@@ -166,8 +187,9 @@ You **do not block** waiting for a reply. The model is event-driven:
 1. You call `agent_send` → status `received`.
 2. Your turn continues / ends.
 3. **Later** the peer finishes its own work and sends a reply.
-4. The reply reaches your inbox (via `get_messages` on Claude, or as a new turn
-   input on Pi), with `re` set to the `id` you originally sent.
+4. The reply reaches you according to your delivery mode (pushed directly into
+   a new turn, or drained via `get_messages`), with `re` set to the `id` you
+   originally sent.
 
 ### Walk-through
 
@@ -288,15 +310,22 @@ On Pi you may see a tool called `agent_request` that takes a target + body and
 **blocks the entire turn** waiting for the peer's content reply. It still
 works but emits a deprecation warning. It blocks your turn (costs tokens and
 wall time), gives no ACK signal, and pairs badly with parallel multi-peer
-questions. **Migrate every `agent_request` to `agent_send`** + reading your
-inbox on a later turn. (Claude has no `agent_request` — use `agent_send`.)
+questions. **Migrate every `agent_request` to `agent_send`** + handling replies
+asynchronously on a later turn. (MCP harnesses do not expose `agent_request` —
+use `agent_send`.)
 
 ---
 
 ## Single-page summary
 
-1. **Every turn**: read your inbox first — `get_messages()` on Claude; on Pi
-   messages arrive as turn input automatically.
+1. **Delivery mode**:
+   - **Push-delivered** (Pi, MCP with `--push-deliver`, or push-enabled
+     sidecars): local envelopes arrive directly as turn input (already drained
+     — do **not** call `get_messages` for them).
+   - **Inbox-drained** (default MCP, or body-free wake nudges): call
+     `get_messages()` at the start of every turn.
+   - **Hybrid invariant**: under local-only push policy, cross-PC (`<pc>:`) and
+     `_relay` messages stay buffered in `get_messages`.
 2. **Discover**: `list_peers()` → addresses `<cwd>@<name>` (local) + `<pc>:…`
    (cross-PC). Echo verbatim, never compose. Synchronous, self-excluded.
    Presence is pull-based — join/leave don't wake you.

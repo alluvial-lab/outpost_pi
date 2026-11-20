@@ -364,8 +364,13 @@ agent_send({
 `agent_send.to` is a single string; the native Pi tool does not accept an array
 for multicast. `agent_request` is still registered but deprecated because it
 blocks the current turn; prefer `agent_send` and let replies arrive on a later
-turn. Native Pi has no `get_messages` tool — incoming mesh messages are
-injected as turns. `get_messages` exists only in the Claude MCP adapter.
+turn. Delivery is framed by two modes: **push-delivered** (envelopes arrive
+directly as turn input — native Pi has no `get_messages` tool, and MCP
+harnesses can opt into local push delivery via `--push-deliver`) and
+**inbox-drained** (MCP harnesses expose `get_messages` to drain buffered
+envelopes at turn start). Under local-only push policy, cross-PC (`<pc>:`) and
+`_relay` messages remain buffered in `get_messages` while pushed local
+envelopes are already drained.
 
 The wire format is a 5-field envelope `{ from, to, id, re, body }` serialized
 as one JSON line per message. The leader's broker writes an `audit.jsonl`
@@ -405,27 +410,43 @@ suffix. There is no need to point `OUTPOST_PI_MCP_CWD` at a sibling directory
 to dodge the folder's lock.
 
 Launch defaults are safe: Claude keeps its own permission policy (every tool
-call asks), and mesh messages are seen at the next turn boundary through
-`get_messages` polling. Two opt-ins change that, in distinct ways:
+call asks), and mesh messages run in **inbox-drained** mode (read at each turn
+boundary via `get_messages`). Three distinct opt-ins change that:
 
 - **Authority** — `--dangerously-skip-permissions` auto-approves every tool
   call. Pass it through yourself for unattended operation; the wrapper never
   injects it.
-- **Initiative** — `--outpost-mesh-wake` lets LOCAL mesh peers START turns
-  on the
-  session. The wrapper expands it to the development-channels flag (Claude
-  asks one consent question at launch — answer once and proceed) and
-  pre-approves the read-only `get_messages` drain, so an unattended woken
-  turn can read what woke it. It changes no permission policy, but combined
-  with `--dangerously-skip-permissions` a peer message can drive unattended
-tool execution — combining both is a conscious trust decision.
+- **Initiative (wake nudges)** — `--outpost-mesh-wake` lets LOCAL mesh peers
+  START turns on the session. The wrapper expands it to the development-channels
+  flag (Claude asks one consent question at launch — answer once and proceed)
+  and pre-approves the read-only `get_messages` drain, so an unattended woken
+  turn can read what woke it. Without `--push-deliver`, wakes carry a body-free
+  nudge and `get_messages` stays the single drain surface. It changes no
+  permission policy, but combined with `--dangerously-skip-permissions` a peer
+  message can drive unattended tool execution — combining both is a conscious
+  trust decision.
+- **Push-turn delivery (hybrid)** — `--push-deliver` (also available on
+  `mesh_server.js` via `--push-deliver` or `OUTPOST_PI_MCP_PUSH_DELIVER=1`,
+  default OFF) pushes **local** peer envelopes directly into the turn in
+  rate-capped (5s), byte-bounded (64 KiB) batches from a dedicated push queue,
+  so local envelopes are already drained and never duplicate into
+  `get_messages`. Cross-PC (`<pc>:`) and `_relay` messages (plus oversized or
+  transport-failed local fallbacks) stay buffered in `get_messages`, and
+  `--allowedTools=mcp__outpost-pi-mesh__get_messages` remains pre-approved for
+  them. `--push-deliver` (or ambient `OUTPOST_PI_MCP_PUSH_DELIVER=1` under
+  `outpost-pi claude`) **strictly requires `--outpost-mesh-wake`** (passing
+  either without `--outpost-mesh-wake` exits 1 with a usage error, because the
+  MCP server cannot detect whether dev-channels is enabled).
 
 ```bash
-# wake only — woken turns still face the approval gate:
+# wake nudges only (inbox-drained) — woken turns still face the approval gate:
 outpost-pi claude ~/code/api --outpost-mesh-wake
 
-# both — unattended peer-driven turns (you asked for it):
-outpost-pi claude ~/code/api --outpost-mesh-wake \
+# hybrid push-turn delivery (local envelopes pushed directly; cross-PC stays in get_messages):
+outpost-pi claude ~/code/api --outpost-mesh-wake --push-deliver
+
+# unattended peer-driven turns (you asked for it):
+outpost-pi claude ~/code/api --outpost-mesh-wake --push-deliver \
   --dangerously-skip-permissions
 ```
 

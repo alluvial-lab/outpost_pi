@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { Buffer } from "node:buffer";
 import {
   WAKE_MIN_INTERVAL_MS,
   WakeGate,
@@ -8,7 +9,15 @@ import {
   type WakeMessage,
   type WakeScheduler,
 } from "./wake.js";
-import { BoundedInbox } from "./inbox.js";
+import {
+  PUSH_BATCH_MAX_BYTES,
+  buildMcpInstructions,
+  createPushDeliveryCoordinator,
+  oversizedPushNudgeContent,
+  parseMeshServerOptions,
+  type PushDeliveryTransport,
+} from "./push_delivery.js";
+import { BoundedInbox, jsonByteSize } from "./inbox.js";
 
 describe("wakeNudgeContent", () => {
   test("names the sender, directs the drain, and carries no body", () => {
@@ -224,5 +233,557 @@ describe("createWakeCoordinator (server-boundary wiring)", () => {
     // A fresh local message is a genuine new edge and wakes again.
     r.coord.onMessage(msg("/a@3"));
     expect(r.emits).toEqual(["/a@1", "/a@3"]);
+  });
+
+  test("dispose cancels pending deferred wake and suppresses late arrivals", () => {
+    const r = rig();
+    r.coord.onMessage(msg("/a@1"));
+    r.inbox.drain();
+    r.coord.onDrain();
+    r.tick(1_000);
+    r.coord.onMessage(msg("/a@2")); // capped, armed
+    expect(r.scheduler.armed).not.toBeNull();
+    r.coord.dispose();
+    expect(r.scheduler.armed).toBeNull();
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.coord.onMessage(msg("/a@3"));
+    expect(r.emits).toEqual(["/a@1"]);
+  });
+});
+
+// ── Push-delivery coordinator tests (Part 2a) ────────────────────────────
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function pushRig(opts?: {
+  inboxLimits?: { maxMessages: number; maxBytes: number };
+  pushLimits?: { maxMessages: number; maxBytes: number };
+  maxBatchBytes?: number;
+  deliver?: (content: string) => Promise<void>;
+}) {
+  const inbox = new BoundedInbox<WakeMessage>(
+    jsonByteSize,
+    opts?.inboxLimits ?? { maxMessages: 100, maxBytes: 1_000_000 },
+  );
+  const pushQueue = new BoundedInbox<WakeMessage>(
+    jsonByteSize,
+    opts?.pushLimits ?? { maxMessages: 100, maxBytes: 1_000_000 },
+  );
+  const gate = new WakeGate(WAKE_MIN_INTERVAL_MS);
+  const scheduler = new FakeScheduler();
+  const delivered: string[] = [];
+  const errors: unknown[] = [];
+  const transport: PushDeliveryTransport = {
+    deliver: opts?.deliver ?? (async (content: string) => { delivered.push(content); }),
+  };
+  let clock = 10_000;
+  const coord = createPushDeliveryCoordinator({
+    inbox,
+    pushQueue,
+    gate,
+    transport,
+    scheduler,
+    maxBatchBytes: opts?.maxBatchBytes,
+    now: () => clock,
+    onTransportError: (err) => errors.push(err),
+  });
+  return {
+    inbox,
+    pushQueue,
+    coord,
+    delivered,
+    errors,
+    scheduler,
+    tick: (ms: number) => { clock += ms; },
+  };
+}
+
+describe("createPushDeliveryCoordinator (hybrid push-turn delivery)", () => {
+  test("local envelope pushes directly as already-drained turn and NEVER duplicates into get_messages", async () => {
+    const r = pushRig();
+    r.coord.onMessage({ from: "/proj@peer", body: { task: "run tests" }, id: "uuid-1", re: "uuid-0", at: "2026-11-19T17:00:00Z" });
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(1);
+    const payload = r.delivered[0]!;
+    expect(payload).toContain("push-delivered");
+    expect(payload).toContain("do not call get_messages");
+    expect(payload).toContain("from=/proj@peer re=uuid-0");
+    expect(payload).toContain("id=uuid-1");
+    expect(payload).toContain('{"task":"run tests"}');
+
+    // Dedicated push queue invariant: get_messages inbox stayed completely empty.
+    expect(r.inbox.drain()).toEqual({ items: [], dropped: 0 });
+    expect(r.pushQueue.length).toBe(0);
+  });
+
+  test("cross-PC, base64-prefixed PC, and _relay envelopes stay in get_messages and never push", async () => {
+    const r = pushRig();
+    r.coord.onMessage(msg("laptop:/x@y", "remote-1", "r1"));
+    r.coord.onMessage(msg("/wAAAAAA:/tmp/r@p", "remote-2", "r2"));
+    r.coord.onMessage(msg("_relay", { type: "transport_error" }, "r3"));
+    await flushMicrotasks();
+
+    expect(r.delivered).toEqual([]);
+    expect(r.scheduler.armed).toBeNull();
+    expect(r.pushQueue.length).toBe(0);
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["r1", "r2", "r3"]);
+  });
+
+  test("hybrid traffic keeps local pushed and remote buffered without cross-contamination", async () => {
+    const r = pushRig();
+    r.coord.onMessage(msg("laptop:/x@y", "from-remote", "r1"));
+    r.coord.onMessage(msg("/local@peer", "from-local", "l1"));
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(1);
+    expect(r.delivered[0]).toContain("from-local");
+    expect(r.delivered[0]).not.toContain("from-remote");
+
+    const drained = r.inbox.drain();
+    expect(drained.items.map((m) => m.id)).toEqual(["r1"]);
+  });
+
+  test("rate-capped burst batches into one deferred push after 5s cap without entering inbox", async () => {
+    const r = pushRig();
+    r.coord.onMessage(msg("/a@1", "first", "id-1")); // immediate push at t=10_000
+    await flushMicrotasks();
+    expect(r.delivered).toHaveLength(1);
+
+    // Burst during the 5s cap window: queued in pushQueue, timer armed once.
+    r.tick(500);
+    r.coord.onMessage(msg("/a@2", "second", "id-2"));
+    r.tick(500);
+    r.coord.onMessage(msg("/a@3", "third", "id-3"));
+    r.tick(500);
+    r.coord.onMessage(msg("/a@4", "fourth", "id-4"));
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(1);
+    expect(r.scheduler.armed).not.toBeNull();
+    expect(r.scheduler.armed!.delayMs).toBe(WAKE_MIN_INTERVAL_MS - 500);
+    expect(r.inbox.length).toBe(0);
+
+    // Past the 5s window: deferred fire pushes [id-2, id-3, id-4] as ONE batch.
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(2);
+    expect(r.delivered[1]).toContain("3 mesh messages");
+    expect(r.delivered[1]).toContain("id=id-2");
+    expect(r.delivered[1]).toContain("id=id-3");
+    expect(r.delivered[1]).toContain("id=id-4");
+    expect(r.inbox.drain()).toEqual({ items: [], dropped: 0 });
+  });
+
+  test("burst exceeding maxBatchBytes splits cleanly across rate-cap windows using UTF-8 bytes", async () => {
+    // Each message block with 40x 'é' (80 UTF-8 bytes) renders to ~115 bytes.
+    // Single header is ~127 bytes; 2-msg header is ~135 bytes.
+    // A 340-byte cap fits 1 message (~242 B), NOT 2 messages (~367 B).
+    const body = "é".repeat(40);
+    const r = pushRig({ maxBatchBytes: 340 });
+
+    r.coord.onMessage(msg("/a@1", "kickoff", "id-0")); // immediate push at t=10_000
+    await flushMicrotasks();
+    expect(r.delivered).toHaveLength(1);
+
+    r.tick(100);
+    r.coord.onMessage(msg("/a@1", body, "id-1"));
+    r.coord.onMessage(msg("/a@2", body, "id-2"));
+    await flushMicrotasks();
+    expect(r.scheduler.armed).not.toBeNull();
+
+    // First deferred window: only id-1 fits <= 340 UTF-8 bytes; id-2 re-arms.
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(2);
+    expect(Buffer.byteLength(r.delivered[1]!, "utf8")).toBeLessThanOrEqual(340);
+    expect(r.delivered[1]).toContain("id=id-1");
+    expect(r.delivered[1]).not.toContain("id=id-2");
+    expect(r.scheduler.armed).not.toBeNull(); // liveness for remaining id-2
+
+    // Second deferred window: id-2 flushes cleanly.
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(3);
+    expect(Buffer.byteLength(r.delivered[2]!, "utf8")).toBeLessThanOrEqual(340);
+    expect(r.delivered[2]).toContain("id=id-2");
+    expect(r.inbox.drain()).toEqual({ items: [], dropped: 0 });
+  });
+
+  test("oversized single local envelope falls back to inbox with body-free pointer and no duplication on failure", async () => {
+    let shouldFail = false;
+    const delivered: string[] = [];
+    const r = pushRig({
+      maxBatchBytes: 250,
+      deliver: async (content) => {
+        if (shouldFail) throw new Error("channel down");
+        delivered.push(content);
+      },
+    });
+
+    const huge = msg("/local@big", "x".repeat(400), "big-1");
+    r.coord.onMessage(huge);
+    await flushMicrotasks();
+
+    // Moved into inbox and a compact body-free pointer was delivered.
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toBe(oversizedPushNudgeContent("/local@big"));
+    expect(delivered[0]).not.toContain("xxxx");
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["big-1"]);
+
+    // Even when the pointer transport ALSO fails, the oversized envelope lands
+    // in inbox exactly ONCE (no duplicate rollback).
+    shouldFail = true;
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.coord.onMessage(msg("/local@big2", "y".repeat(400), "big-2"));
+    await flushMicrotasks();
+
+    expect(r.errors).toHaveLength(1);
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["big-2"]);
+  });
+
+  test("transport rejection rolls back the unsent batch into get_messages without silent loss", async () => {
+    let failNext = true;
+    const delivered: string[] = [];
+    const r = pushRig({
+      deliver: async (content) => {
+        if (failNext) throw new Error("stdio broken");
+        delivered.push(content);
+      },
+    });
+
+    // First local message fails transport -> rolls back to inbox.
+    r.coord.onMessage(msg("/a@1", "important-1", "id-1"));
+    await flushMicrotasks();
+
+    expect(delivered).toEqual([]);
+    expect(r.errors).toHaveLength(1);
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["id-1"]);
+
+    // Transport recovers after cap window -> next local batch delivers normally.
+    failNext = false;
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.coord.onMessage(msg("/a@2", "important-2", "id-2"));
+    await flushMicrotasks();
+
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain("id=id-2");
+    expect(r.inbox.drain()).toEqual({ items: [], dropped: 0 });
+  });
+
+  test("synchronous transport throw also rolls back safely into get_messages", async () => {
+    const r = pushRig({
+      deliver: () => { throw new Error("sync boom"); },
+    });
+    r.coord.onMessage(msg("/a@1", "payload", "id-sync"));
+    await flushMicrotasks();
+
+    expect(r.errors).toHaveLength(1);
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["id-sync"]);
+  });
+
+  test("in-flight async transport serializes batches FIFO without overlapping sends", async () => {
+    const pending: Array<{ content: string; resolve: () => void }> = [];
+    const r = pushRig({
+      deliver: (content) =>
+        new Promise<void>((resolve) => {
+          pending.push({ content, resolve });
+        }),
+    });
+
+    // Batch 1 starts and stays in-flight.
+    r.coord.onMessage(msg("/a@1", "first", "id-1"));
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.content).toContain("id=id-1");
+
+    // Even after 5s+ elapses while batch 1 is still in-flight, batch 2 waits.
+    r.tick(WAKE_MIN_INTERVAL_MS + 1_000);
+    r.coord.onMessage(msg("/a@2", "second", "id-2"));
+    expect(pending).toHaveLength(1);
+
+    // Once batch 1 resolves, batch 2 flushes immediately (cap window already elapsed).
+    pending[0]!.resolve();
+    await flushMicrotasks();
+    expect(pending).toHaveLength(2);
+    expect(pending[1]!.content).toContain("id=id-2");
+
+    pending[1]!.resolve();
+    await flushMicrotasks();
+    expect(r.inbox.drain()).toEqual({ items: [], dropped: 0 });
+  });
+
+  test("draining get_messages (onDrain) does NOT cancel a pending deferred local push timer", async () => {
+    const r = pushRig();
+    r.coord.onMessage(msg("/a@1", "m1", "id-1")); // immediate push
+    await flushMicrotasks();
+
+    r.tick(1_000);
+    r.coord.onMessage(msg("/a@2", "m2", "id-2")); // capped, armed in pushQueue
+    r.coord.onMessage(msg("laptop:/r@1", "remote", "r-1")); // buffered in inbox
+    expect(r.scheduler.armed).not.toBeNull();
+
+    // Agent calls get_messages to read remote traffic.
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["r-1"]);
+    r.coord.onDrain();
+
+    // Deferred push timer for /a@2 MUST still be armed!
+    expect(r.scheduler.cancelled).toBe(0);
+    expect(r.scheduler.armed).not.toBeNull();
+
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+    expect(r.delivered).toHaveLength(2);
+    expect(r.delivered[1]).toContain("id=id-2");
+  });
+
+  test("push-queue overflow sheds oldest local messages and surfaces drop warning in next batch", async () => {
+    const r = pushRig({ pushLimits: { maxMessages: 2, maxBytes: 1_000_000 } });
+    r.coord.onMessage(msg("/a@1", "kickoff", "id-0"));
+    await flushMicrotasks();
+
+    r.tick(500);
+    r.coord.onMessage(msg("/a@1", "dropped", "id-1"));
+    r.coord.onMessage(msg("/a@2", "kept-1", "id-2"));
+    r.coord.onMessage(msg("/a@3", "kept-2", "id-3")); // sheds id-1
+
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(2);
+    expect(r.delivered[1]).toContain("⚠ 1 earlier local message(s) shed");
+    expect(r.delivered[1]).not.toContain("id=id-1");
+    expect(r.delivered[1]).toContain("id=id-2");
+    expect(r.delivered[1]).toContain("id=id-3");
+  });
+
+  test("early timer fire inside cap window re-arms without forcing or dropping queued locals", async () => {
+    const r = pushRig();
+    r.coord.onMessage(msg("/a@1", "m1", "id-1"));
+    await flushMicrotasks();
+
+    r.tick(1_000);
+    r.coord.onMessage(msg("/a@2", "m2", "id-2"));
+    r.tick(1_000); // still inside 5s cap
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+
+    expect(r.delivered).toHaveLength(1);
+    expect(r.scheduler.armed).not.toBeNull();
+
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+    expect(r.delivered).toHaveLength(2);
+    expect(r.delivered[1]).toContain("id=id-2");
+  });
+
+  test("dispose cancels timers and suppresses re-arming when in-flight delivery settles", async () => {
+    const pending: Array<() => void> = [];
+    const r = pushRig({
+      deliver: () => new Promise<void>((resolve) => { pending.push(resolve); }),
+    });
+    r.coord.onMessage(msg("/a@1", "m1", "id-1"));
+    r.coord.onMessage(msg("/a@2", "m2", "id-2")); // queued while id-1 in-flight
+    r.coord.dispose();
+
+    pending[0]!();
+    await flushMicrotasks();
+
+    expect(r.scheduler.armed).toBeNull();
+    expect(pending).toHaveLength(1); // id-2 was NOT started after dispose
+  });
+
+  test("default batch ceiling and oversized pointer escaping match contract", () => {
+    expect(PUSH_BATCH_MAX_BYTES).toBe(64 * 1024);
+    expect(oversizedPushNudgeContent('/hostile"name\n')).not.toMatch(/\n/);
+  });
+
+  test("[review regression] clock advancing across cap boundary between reads does not strand queued locals", async () => {
+    // Sequence of clock reads: 10_000 (first push), then 14_999 on gate check
+    // (capped by 1ms) followed by 15_000 if a second read occurred. A single
+    // sampled timestamp must arm a 1ms deferred timer instead of stranding.
+    const timestamps = [10_000, 14_999, 15_000, 15_000];
+    let idx = 0;
+    const inbox = new BoundedInbox<WakeMessage>(jsonByteSize, { maxMessages: 100, maxBytes: 1_000_000 });
+    const pushQueue = new BoundedInbox<WakeMessage>(jsonByteSize, { maxMessages: 100, maxBytes: 1_000_000 });
+    const gate = new WakeGate(WAKE_MIN_INTERVAL_MS);
+    const scheduler = new FakeScheduler();
+    const delivered: string[] = [];
+    const coord = createPushDeliveryCoordinator({
+      inbox,
+      pushQueue,
+      gate,
+      transport: { deliver: async (c) => { delivered.push(c); } },
+      scheduler,
+      now: () => timestamps[Math.min(idx++, timestamps.length - 1)]!,
+    });
+
+    coord.onMessage(msg("/a@1", "first", "id-1")); // reads 10_000 -> delivers
+    await flushMicrotasks();
+    expect(delivered).toHaveLength(1);
+
+    coord.onMessage(msg("/a@2", "second", "id-2")); // reads 14_999 -> capped by 1ms -> MUST arm
+    await flushMicrotasks();
+    expect(scheduler.armed).not.toBeNull();
+    expect(scheduler.armed!.delayMs).toBe(1);
+
+    scheduler.armed!.fire(); // reads 15_000 -> delivers
+    await flushMicrotasks();
+    expect(delivered).toHaveLength(2);
+    expect(delivered[1]).toContain("id=id-2");
+  });
+
+  test("[review regression] immediate flush after cap window cancels stale deferred timer and re-arms remainder", async () => {
+    const body = "x".repeat(80);
+    const r = pushRig({ maxBatchBytes: 340 });
+
+    r.coord.onMessage(msg("/a@1", "kickoff", "id-0")); // immediate at t=10_000
+    await flushMicrotasks();
+
+    r.tick(1_000);
+    r.coord.onMessage(msg("/a@1", body, "id-1")); // capped -> arms timer at t=11_000
+    expect(r.scheduler.armed).not.toBeNull();
+
+    // Event loop lags past the 5s window before the stale timer fires, and
+    // another local arrives: immediate flush cancels the stale timer, sends
+    // id-1, and arms a fresh deferred timer for the byte-capped remainder id-2.
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.coord.onMessage(msg("/a@2", body, "id-2"));
+    await flushMicrotasks();
+
+    expect(r.scheduler.cancelled).toBe(1);
+    expect(r.delivered).toHaveLength(2);
+    expect(r.delivered[1]).toContain("id=id-1");
+    expect(r.scheduler.armed).not.toBeNull();
+    expect(r.scheduler.armed!.delayMs).toBe(WAKE_MIN_INTERVAL_MS);
+
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+    expect(r.delivered).toHaveLength(3);
+    expect(r.delivered[2]).toContain("id=id-2");
+  });
+
+  test("[review regression] push-queue shed count survives a rejected delivery and surfaces on recovery", async () => {
+    let failNext = false;
+    const delivered: string[] = [];
+    const r = pushRig({
+      pushLimits: { maxMessages: 1, maxBytes: 1_000_000 },
+      deliver: async (content) => {
+        if (failNext) throw new Error("transient failure");
+        delivered.push(content);
+      },
+    });
+
+    r.coord.onMessage(msg("/a@1", "kickoff", "id-0"));
+    await flushMicrotasks();
+
+    r.tick(500);
+    r.coord.onMessage(msg("/a@1", "shed-me", "id-1"));
+    r.coord.onMessage(msg("/a@2", "survive-1", "id-2")); // sheds id-1 (dropped=1)
+
+    failNext = true;
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+
+    // id-2 rolled back to inbox; dropped=1 must NOT be lost.
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["id-2"]);
+
+    failNext = false;
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.coord.onMessage(msg("/a@3", "after-recovery", "id-3"));
+    await flushMicrotasks();
+
+    expect(delivered).toHaveLength(2);
+    expect(delivered[1]).toContain("⚠ 1 earlier local message(s) shed");
+    expect(delivered[1]).toContain("id=id-3");
+  });
+
+  test("throwing onTransportError does not strand queued messages or escape as unhandled rejection", async () => {
+    let failFirst = true;
+    let firstReject: ((err: Error) => void) | undefined;
+    const delivered: string[] = [];
+    const r = pushRig({
+      deliver: (content) => {
+        if (failFirst) {
+          failFirst = false;
+          return new Promise<void>((_, reject) => {
+            firstReject = reject;
+          });
+        }
+        delivered.push(content);
+        return Promise.resolve();
+      },
+      onTransportError: () => {
+        throw new Error("diagnostic hook blew up");
+      },
+    });
+
+    r.coord.onMessage(msg("/a@1", "will-fail", "id-1"));
+    // Second local message queues while first delivery is in flight.
+    r.coord.onMessage(msg("/a@2", "queued-behind", "id-2"));
+
+    // Reject first delivery -> onTransportError throws, but id-1 must still
+    // roll back to inbox and id-2 must still arm/flush after the rate cap.
+    firstReject!(new Error("channel disconnected"));
+    await flushMicrotasks();
+
+    expect(r.inbox.drain().items.map((m) => m.id)).toEqual(["id-1"]);
+    expect(r.scheduler.armed).not.toBeNull();
+
+    r.tick(WAKE_MIN_INTERVAL_MS);
+    r.scheduler.armed!.fire();
+    await flushMicrotasks();
+
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain("id=id-2");
+  });
+});
+
+describe("parseMeshServerOptions & buildMcpInstructions", () => {
+  test("pushDeliver defaults OFF and activates on --push-deliver or OUTPOST_PI_MCP_PUSH_DELIVER=1", () => {
+    expect(parseMeshServerOptions([], {}, "/default").pushDeliver).toBe(false);
+    expect(parseMeshServerOptions([], { OUTPOST_PI_MCP_PUSH_DELIVER: "0" }, "/default").pushDeliver).toBe(false);
+    expect(parseMeshServerOptions([], { OUTPOST_PI_MCP_PUSH_DELIVER: "true" }, "/default").pushDeliver).toBe(false);
+    expect(parseMeshServerOptions([], { OUTPOST_PI_MCP_PUSH_DELIVER: "1" }, "/default").pushDeliver).toBe(true);
+    expect(parseMeshServerOptions(["--push-deliver"], {}, "/default").pushDeliver).toBe(true);
+
+    const parsed = parseMeshServerOptions(
+      ["--cwd", "/custom", "--name", "worker", "--no-bridge", "--push-deliver"],
+      {},
+      "/default",
+    );
+    expect(parsed).toEqual({
+      cwd: "/custom",
+      nameOverride: "worker",
+      bridgeEnabled: false,
+      pushDeliver: true,
+    });
+  });
+
+  test("MCP instructions frame delivery generically by mode without Claude-specific wording", () => {
+    const inboxMode = buildMcpInstructions("agent-a", false);
+    expect(inboxMode).toContain("inbox-drained");
+    expect(inboxMode).toContain("get_messages");
+    expect(inboxMode.toLowerCase()).not.toContain("claude");
+
+    const pushMode = buildMcpInstructions("agent-a", true);
+    expect(pushMode).toContain("hybrid push-delivered");
+    expect(pushMode).toContain("do NOT call get_messages");
+    expect(pushMode).toContain("<pc>:");
+    expect(pushMode).toContain("_relay");
+    expect(pushMode.toLowerCase()).not.toContain("claude");
   });
 });

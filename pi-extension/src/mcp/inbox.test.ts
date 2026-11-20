@@ -71,6 +71,29 @@ describe("BoundedInbox (gate-security-mcp-inbox-unbounded)", () => {
     expect(INBOX_LIMITS.maxMessages).toBe(1_000);
     expect(INBOX_LIMITS.maxBytes).toBe(4 * 1024 * 1024);
   });
+
+  test("peek, shift, takeDropped, and push boolean return preserve byte accounting", () => {
+    const itemSize = sizeOf({ from: "a", body: "1" });
+    const inbox = new BoundedInbox<Msg>(sizeOf, { maxMessages: 3, maxBytes: itemSize * 2 });
+    expect(inbox.peek()).toBeUndefined();
+    expect(inbox.shift()).toBeUndefined();
+    expect(inbox.push({ from: "huge", body: "x".repeat(100) })).toBe(false);
+    expect(inbox.takeDropped()).toBe(1);
+    expect(inbox.takeDropped()).toBe(0);
+
+    expect(inbox.push({ from: "a", body: "1" })).toBe(true);
+    expect(inbox.push({ from: "b", body: "2" })).toBe(true);
+    expect(inbox.peek()).toEqual({ from: "a", body: "1" });
+    expect(inbox.shift()).toEqual({ from: "a", body: "1" });
+    expect(inbox.length).toBe(1);
+    // After shifting "a", byte budget has room for "c" without shedding "b".
+    expect(inbox.push({ from: "c", body: "3" })).toBe(true);
+    expect(inbox.takeDropped()).toBe(0);
+    expect(inbox.drain()).toEqual({
+      items: [{ from: "b", body: "2" }, { from: "c", body: "3" }],
+      dropped: 0,
+    });
+  });
 });
 
 describe("byte accounting (final-review regression)", () => {

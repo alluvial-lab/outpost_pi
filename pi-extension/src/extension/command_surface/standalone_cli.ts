@@ -14,6 +14,10 @@ import {
   localConfigExists,
   saveLocalConfig,
 } from "../../session/local_config.js";
+import {
+  PUSH_DELIVER_CLI_FLAG,
+  PUSH_DELIVER_ENV_VAR,
+} from "../../mcp/push_delivery.js";
 import type { CronCommands } from "./cron_commands.js";
 import type { DaemonCommands, UiCtx } from "./daemon_commands.js";
 import type { ServiceCommands } from "./service_commands.js";
@@ -208,8 +212,10 @@ function outpostPiCliHelpText(): string {
     "                                  (safe defaults: Claude permissions stay on,",
     "                                  messages poll at each turn via get_messages;",
     "                                  pass claude flags through to opt in to more;",
-    "                                  add --outpost-mesh-wake to let mesh peers",
-    "                                  start turns on the idle session)",
+    "                                  add --outpost-mesh-wake to let local mesh peers",
+    "                                  start turns on the idle session; add --push-deliver",
+    "                                  with --outpost-mesh-wake to push local envelopes",
+    "                                  directly into the turn)",
   ].join("\n");
 }
 
@@ -220,11 +226,17 @@ function outpostPiCliHelpText(): string {
  *  pre-approval. */
 export const MESH_WAKE_FLAG = "--outpost-mesh-wake" as const;
 
-/** Split `outpost-pi claude` argv into the optional leading cwd, the
- *  wrapper-owned wake opt-in, and the verbatim claude-flag passthrough.
+/** Wrapper-owned opt-in that pushes local mesh envelopes directly as turn
+ *  input over the development channel instead of body-free wake nudges.
+ *  Strictly requires `MESH_WAKE_FLAG` (default OFF). */
+export const PUSH_DELIVER_FLAG = PUSH_DELIVER_CLI_FLAG;
+
+/** Split `outpost-pi claude` argv into the optional leading cwd, wrapper-owned
+ *  delivery opt-ins, and the verbatim claude-flag passthrough.
  *
- * Contract: `outpost-pi claude [cwd] [--outpost-mesh-wake] [claude-flags...]`.
- * MESH_WAKE_FLAG is filtered out FIRST so it can never shadow the cwd:
+ * Contract: `outpost-pi claude [cwd] [--outpost-mesh-wake] [--push-deliver] [claude-flags...]`.
+ * Wrapper flags (`MESH_WAKE_FLAG`, `PUSH_DELIVER_FLAG`) are filtered out FIRST
+ * so neither can shadow the cwd:
  * `outpost-pi claude --outpost-mesh-wake ~/code/api` must resolve the cwd to
  * ~/code/api, not fall back to the invoking cwd and pass ~/code/api through
  * as a prompt positional. The remaining optional cwd is ONLY the leading
@@ -236,15 +248,44 @@ export const MESH_WAKE_FLAG = "--outpost-mesh-wake" as const;
  */
 export function splitClaudeCliArgs(
   args: readonly string[],
-): { targetCwd: string; meshWake: boolean; passthroughArgs: string[] } {
+): { targetCwd: string; meshWake: boolean; pushDeliver: boolean; passthroughArgs: string[] } {
   const meshWake = args.includes(MESH_WAKE_FLAG);
-  const rest = args.filter((arg) => arg !== MESH_WAKE_FLAG);
+  const pushDeliver = args.includes(PUSH_DELIVER_FLAG);
+  const rest = args.filter((arg) => arg !== MESH_WAKE_FLAG && arg !== PUSH_DELIVER_FLAG);
   const hasCwdArg = rest.length > 0 && !rest[0]!.startsWith("-");
   return {
     targetCwd: hasCwdArg ? rest[0]! : process.cwd(),
     meshWake,
+    pushDeliver,
     passthroughArgs: hasCwdArg ? rest.slice(1) : [...rest],
   };
+}
+
+/** Validate wrapper-owned `outpost-pi claude` flags and env overrides before launch.
+ *
+ * Fail-fast contract: requesting push-turn delivery (via `--push-deliver` or
+ * ambient `OUTPOST_PI_MCP_PUSH_DELIVER=1`) strictly requires `--outpost-mesh-wake`.
+ * `mesh_server.ts` cannot detect whether Claude enabled dev-channels; pushing
+ * local envelopes out of `get_messages` without dev-channels would silently
+ * drop them. Returns a usage error message when invalid, or `null` when valid.
+ */
+export function validateClaudeCliArgs(
+  parsed: Readonly<{ meshWake: boolean; pushDeliver: boolean }>,
+  env: Readonly<Record<string, string | undefined>> = {},
+): string | null {
+  const envPushDeliver = env[PUSH_DELIVER_ENV_VAR] === "1";
+  if ((parsed.pushDeliver || envPushDeliver) && !parsed.meshWake) {
+    const trigger = parsed.pushDeliver
+      ? PUSH_DELIVER_FLAG
+      : `${PUSH_DELIVER_ENV_VAR}=1`;
+    return (
+      `[outpost-pi] ${trigger} requires ${MESH_WAKE_FLAG} ` +
+      `(the mesh MCP server cannot detect whether Claude enabled development channels; ` +
+      `pushing without ${MESH_WAKE_FLAG} would silently drop local messages).\n` +
+      `Usage: outpost-pi claude [cwd] ${MESH_WAKE_FLAG} ${PUSH_DELIVER_FLAG} [claude-flags...]`
+    );
+  }
+  return null;
 }
 
 /** Build the claude launch flags the wrapper owns: the ephemeral mesh MCP
@@ -301,12 +342,18 @@ export function buildClaudeLaunchArgs(
  * `mkdtempSync` yields an unpredictable 0700 directory; the file is created
  * exclusively (`wx`) inside it. Returns the config path; the caller removes
  * the whole directory on exit via `removeEphemeralMcpDir`. */
-export function writeEphemeralMcpConfig(meshServerPath: string): string {
+export function writeEphemeralMcpConfig(
+  meshServerPath: string,
+  options?: Readonly<{ pushDeliver?: boolean }>,
+): string {
   const dir = mkdtempSync(join(tmpdir(), "outpost-pi-mesh-mcp-"));
   const configPath = join(dir, "mcp-config.json");
+  const serverArgs = options?.pushDeliver
+    ? [meshServerPath, PUSH_DELIVER_FLAG]
+    : [meshServerPath];
   writeFileSync(configPath, JSON.stringify({
     mcpServers: {
-      "outpost-pi-mesh": { command: process.execPath, args: [meshServerPath] },
+      "outpost-pi-mesh": { command: process.execPath, args: serverArgs },
     },
   }), { flag: "wx" });
   return configPath;
@@ -317,9 +364,15 @@ export function removeEphemeralMcpDir(configPath: string): void {
   rmSync(dirname(configPath), { recursive: true, force: true });
 }
 
-/** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on missing build output. */
+/** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on invalid flags or missing build output. */
 export async function launchClaudeCli(args: string[], entrypointUrl: string): Promise<void> {
-  const { targetCwd, meshWake, passthroughArgs } = splitClaudeCliArgs(args);
+  const { targetCwd, meshWake, pushDeliver, passthroughArgs } = splitClaudeCliArgs(args);
+
+  const argError = validateClaudeCliArgs({ meshWake, pushDeliver }, process.env);
+  if (argError !== null) {
+    console.error(argError);
+    process.exit(1);
+  }
 
   // Wizard when no local config exists
   if (!localConfigExists(targetCwd)) {
@@ -371,7 +424,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
     cwd: absCwd, stdio: "ignore", shell: false,
   });
 
-  const mcpConfigPath = writeEphemeralMcpConfig(meshServerPath);
+  const mcpConfigPath = writeEphemeralMcpConfig(meshServerPath, { pushDeliver });
 
   const skillPath = agentNetworkSkillPath(entrypointUrl);
 

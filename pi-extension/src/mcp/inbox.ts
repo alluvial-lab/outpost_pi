@@ -1,13 +1,13 @@
 import { Buffer } from "node:buffer";
 
-/** Bounded retention policy for the mesh MCP inbox.
+/** Bounded retention policy for the mesh MCP inbox and push queue.
  *
  * Security contract (gate-security-mcp-inbox-unbounded): the MCP server
- * buffers inbound peer messages for polling-only Claude sessions that may
- * never drain. Without a ceiling, a compromised authorized peer can exhaust
- * the subprocess's memory with no Claude tool approval involved. The bound
+ * buffers inbound peer messages for polling-only or rate-capped sessions that
+ * may never drain. Without a ceiling, a compromised authorized peer can exhaust
+ * the subprocess's memory with no host tool approval involved. The bound
  * is count AND bytes, enforced drop-oldest with a surfaced drop count, so
- * the drain output stays honest about what was shed. A single message
+ * the drain/push output stays honest about what was shed. A single message
  * larger than the byte budget is rejected outright (counted as dropped) —
  * the honest reading of a byte ceiling.
  */
@@ -81,12 +81,14 @@ export class BoundedInbox<T> {
     return this.entries.some((e) => pred(e.item));
   }
 
-  /** Retain one message, shedding the OLDEST overflow (never the newest). */
-  push(item: T): void {
+  /** Retain one message, shedding the OLDEST overflow (never the newest).
+   *  Returns false when the single item exceeds `limits.maxBytes` and is
+   *  rejected outright (counted as dropped). */
+  push(item: T): boolean {
     const size = this.sizeOf(item);
     if (size > this.limits.maxBytes) {
       this._dropped++;
-      return;
+      return false;
     }
     this.entries.push({ item, size });
     this.bytes += size;
@@ -96,6 +98,27 @@ export class BoundedInbox<T> {
       this.bytes -= shed.size;
       this._dropped++;
     }
+    return true;
+  }
+
+  /** Oldest retained item without removing it. */
+  peek(): T | undefined {
+    return this.entries[0]?.item;
+  }
+
+  /** Remove and return the oldest retained item, maintaining byte accounting. */
+  shift(): T | undefined {
+    const entry = this.entries.shift();
+    if (!entry) return undefined;
+    this.bytes -= entry.size;
+    return entry.item;
+  }
+
+  /** Return and reset the count of shed/rejected messages without draining items. */
+  takeDropped(): number {
+    const dropped = this._dropped;
+    this._dropped = 0;
+    return dropped;
   }
 
   /** Remove and return everything retained; report and reset the drop count. */
